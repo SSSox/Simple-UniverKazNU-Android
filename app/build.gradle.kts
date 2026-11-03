@@ -20,8 +20,8 @@ android {
         applicationId = "com.univerflow.kaznu"
         minSdk = 24
         targetSdk = 37
-        versionCode = 28
-        versionName = "2.3"
+        versionCode = 29
+        versionName = "2.3.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -32,6 +32,8 @@ android {
             storePassword = releaseSigning.getProperty("storePassword")
             keyAlias = releaseSigning.getProperty("keyAlias")
             keyPassword = releaseSigning.getProperty("keyPassword")
+            // v3 lets a later key change keep updates working on Android 9+ (apksigner rotate).
+            enableV3Signing = true
         }
     }
 

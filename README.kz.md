@@ -33,7 +33,9 @@
 3. Файлды телефонда ашып, Android сұрағанда осы көзден орнатуға рұқсат беріңіз.
 4. Алғаш іске қосқанда Univer логині мен құпия сөзін енгізіп, «Сақтау және кіру» батырмасын басыңыз.
 
-**Жаңарту.** Жаңа APK ескісінің үстінен орнатылады, деректер сақталады. Release орнатпас бұрын жөндеу құрастырмасын (`app-debug.apk`) жою керек: олардың қолтаңбалары әртүрлі.
+**Қолтаңба.** Шығарылымдарға «SOX Team» кілтімен қол қойылған: сертификат `CN=SOX Team, O=SOX Team, C=KZ`, SHA-256 `0aa54a2d4714db17bc71b9a0a4d4bc7818cb57d91f10685200416bd2094732b9`. Оны Android SDK Build Tools құрамындағы `apksigner verify --print-certs app-release.apk` командасымен тексеруге болады: `certificate SHA-256 digest` жолы сәйкес келуі керек.
+
+**Жаңарту.** Жаңа APK ескісінің үстінен орнатылады, деректер сақталады. Release орнатпас бұрын жөндеу құрастырмасын (`app-debug.apk`) жою керек: олардың қолтаңбалары әртүрлі. 2026 жылғы 4 қарашаға дейін шыққан құрастырмаларға бұрынғы кілтпен қол қойылған, жаңа нұсқа олардың үстінен орнатылмайды: Android қолданба бар пакетпен қайшылыққа байланысты орнатылмағанын хабарлайды. Ескі қолданбаны жойып, жаңасын орнатыңыз да, қайта кіріңіз. Сақталған кіруді, PIN-кодты және жүктеулер тізімін қайта баптау керек болады, жүктелген файлдар «Жүктеулер» ішінде қалады.
 
 **Деректерді қалай жоюға болады.** «Баптаулар» → «Аккаунттан шығу» сайттың cookies, кэші мен тарихын тазартады. «Сақталған деректерді жою» шифрланған логин мен құпия сөзді де өшіреді. Қолданбаны жою бәрін алып тастайды.
 
@@ -52,7 +54,7 @@
 - кірістірілген JDK (`jbr`) бар [Android Studio](https://developer.android.com/studio);
 - Android SDK Platform 37 және Platform Tools (SDK Manager арқылы орнатылады).
 
-Gradle 9.8.0 нұсқасын `gradlew` қабықшасы өзі жүктейді; Gradle демонына арналған JDK 25 автоматты түрде таңдалады ([gradle/gradle-daemon-jvm.properties](gradle/gradle-daemon-jvm.properties)). Android Gradle Plugin 9.4.1, Kotlin оған кірістірілген. Барлық тәуелділіктер [gradle/libs.versions.toml](gradle/libs.versions.toml) ішінде бекітілген: тек AndroidX, Material Components және kotlinx-coroutines.
+Gradle 9.8.0 нұсқасын `gradlew` қабықшасы өзі жүктейді; Gradle демонына арналған JDK 25 автоматты түрде таңдалады ([gradle/gradle-daemon-jvm.properties](gradle/gradle-daemon-jvm.properties)). Android Gradle Plugin 9.5.0, Kotlin оған кірістірілген. Барлық тәуелділіктер [gradle/libs.versions.toml](gradle/libs.versions.toml) ішінде бекітілген: тек AndroidX, Material Components және kotlinx-coroutines.
 
 **Android Studio-да:** File → Open → жоба бумасы, Gradle Sync аяқталуын күтіп, `app` конфигурациясын таңдап, Run басыңыз.
 

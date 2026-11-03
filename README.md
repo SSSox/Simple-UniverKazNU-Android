@@ -33,7 +33,9 @@
 3. Откройте файл на телефоне и разрешите установку из этого источника, когда Android спросит.
 4. При первом запуске введите свой логин и пароль Univer и нажмите «Сохранить и войти».
 
-**Обновление.** Новый APK ставится поверх старого, данные сохраняются. Отладочную сборку (`app-debug.apk`) перед установкой release нужно удалить: у них разные подписи.
+**Подпись.** Выпуски подписаны ключом «SOX Team»: сертификат `CN=SOX Team, O=SOX Team, C=KZ`, SHA-256 `0aa54a2d4714db17bc71b9a0a4d4bc7818cb57d91f10685200416bd2094732b9`. Сверить можно командой `apksigner verify --print-certs app-release.apk` из Android SDK Build Tools: строка `certificate SHA-256 digest` должна совпасть.
+
+**Обновление.** Новый APK ставится поверх старого, данные сохраняются. Отладочную сборку (`app-debug.apk`) перед установкой release нужно удалить: у них разные подписи. Сборки, выпущенные до 4 ноября 2026, подписаны прежним ключом, и новая версия поверх них не встанет: Android сообщит, что приложение не установлено из-за конфликта с существующим пакетом. Удалите старое приложение и установите новое, затем войдите заново. Сохранённый вход, PIN-код и список загрузок придётся настроить снова, скачанные файлы останутся в «Загрузках».
 
 **Как убрать данные.** «Настройки» → «Выйти из аккаунта» очищает cookies, кеш и историю сайта. «Удалить сохранённые данные» стирает и зашифрованные логин с паролем. Удаление приложения убирает всё.
 
@@ -52,7 +54,7 @@
 - [Android Studio](https://developer.android.com/studio) со встроенным JDK (`jbr`);
 - Android SDK Platform 37 и Platform Tools (ставятся через SDK Manager).
 
-Gradle 9.8.0 скачивается обёрткой `gradlew` сам; JDK 25 для демона Gradle подбирается автоматически ([gradle/gradle-daemon-jvm.properties](gradle/gradle-daemon-jvm.properties)). Плагин Android Gradle 9.4.1, Kotlin встроен в него. Все зависимости закреплены в [gradle/libs.versions.toml](gradle/libs.versions.toml): это только AndroidX, Material Components и kotlinx-coroutines.
+Gradle 9.8.0 скачивается обёрткой `gradlew` сам; JDK 25 для демона Gradle подбирается автоматически ([gradle/gradle-daemon-jvm.properties](gradle/gradle-daemon-jvm.properties)). Плагин Android Gradle 9.5.0, Kotlin встроен в него. Все зависимости закреплены в [gradle/libs.versions.toml](gradle/libs.versions.toml): это только AndroidX, Material Components и kotlinx-coroutines.
 
 **В Android Studio:** File → Open → папка проекта, дождитесь Gradle Sync, выберите конфигурацию `app` и нажмите Run.
 

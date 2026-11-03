@@ -4,7 +4,7 @@
 
 ## Поддерживаемые версии
 
-Исправления безопасности выходят только для последней версии на странице Releases (сейчас 2.3).
+Исправления безопасности выходят только для последней версии на странице Releases (сейчас 2.3.1).
 
 ## Как сообщить об уязвимости
 
@@ -54,7 +54,7 @@
 - Список адресов: `SitePolicy.kt`, `SingleSignOnPolicy.kt` и [network_security_config.xml](app/src/main/res/xml/network_security_config.xml). Кроме них в коде есть только внутренний адрес просмотра файлов `univer-files.local` (в сеть не уходит) и ссылка на YouTube для встроенных видео, которая открывается в другом приложении.
 - Зависимости: [gradle/libs.versions.toml](gradle/libs.versions.toml), только AndroidX, Material Components и kotlinx-coroutines. Аналитики, рекламы, отчётов о сбоях и загрузки кода из сети нет.
 - Где обрабатывается пароль: `data/CredentialVault.kt`, `data/LockVault.kt`, `data/LockCrypto.kt`, `assets/univer-automation.js`.
-- Подпись APK можно сверить командой `apksigner verify --print-certs app-release.apk` (из Android SDK Build Tools).
+- Подпись APK можно сверить командой `apksigner verify --print-certs app-release.apk` (из Android SDK Build Tools). Сертификат выпусков: `CN=SOX Team, O=SOX Team, C=KZ`, SHA-256 `0aa54a2d4714db17bc71b9a0a4d4bc7818cb57d91f10685200416bd2094732b9`; подпись схемами v2 и v3.
 
 ## Известные ограничения
 

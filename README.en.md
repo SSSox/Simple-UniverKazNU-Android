@@ -33,7 +33,9 @@ Steps:
 3. Open the file on the phone and allow installation from this source when Android asks.
 4. On the first start enter your Univer login and password and tap "Save and sign in".
 
-**Updating.** A new APK installs over the old one and keeps the data. A debug build (`app-debug.apk`) has to be uninstalled before installing the release: they have different signatures.
+**Signature.** Releases are signed with the "SOX Team" key: certificate `CN=SOX Team, O=SOX Team, C=KZ`, SHA-256 `0aa54a2d4714db17bc71b9a0a4d4bc7818cb57d91f10685200416bd2094732b9`. Check it with `apksigner verify --print-certs app-release.apk` from Android SDK Build Tools: the `certificate SHA-256 digest` line must match.
+
+**Updating.** A new APK installs over the old one and keeps the data. A debug build (`app-debug.apk`) has to be uninstalled before installing the release: they have different signatures. Builds released before 4 November 2026 are signed with the previous key, and the new version will not install over them: Android reports that the app was not installed because it conflicts with an existing package. Uninstall the old app, install the new one and sign in again. The saved sign-in, PIN code and downloads list have to be set up again; downloaded files stay in Downloads.
 
 **Removing data.** "Settings" → "Sign out" clears the site's cookies, cache and history. "Delete saved credentials" also erases the encrypted login and password. Uninstalling the app removes everything.
 
@@ -52,7 +54,7 @@ You need:
 - [Android Studio](https://developer.android.com/studio) with its bundled JDK (`jbr`);
 - Android SDK Platform 37 and Platform Tools (installed through the SDK Manager).
 
-Gradle 9.8.0 is downloaded by the `gradlew` wrapper itself; JDK 25 for the Gradle daemon is picked automatically ([gradle/gradle-daemon-jvm.properties](gradle/gradle-daemon-jvm.properties)). Android Gradle Plugin 9.4.1, with Kotlin built in. All dependencies are pinned in [gradle/libs.versions.toml](gradle/libs.versions.toml): only AndroidX, Material Components and kotlinx-coroutines.
+Gradle 9.8.0 is downloaded by the `gradlew` wrapper itself; JDK 25 for the Gradle daemon is picked automatically ([gradle/gradle-daemon-jvm.properties](gradle/gradle-daemon-jvm.properties)). Android Gradle Plugin 9.5.0, with Kotlin built in. All dependencies are pinned in [gradle/libs.versions.toml](gradle/libs.versions.toml): only AndroidX, Material Components and kotlinx-coroutines.
 
 **In Android Studio:** File → Open → the project folder, wait for Gradle Sync, choose the `app` configuration and press Run.
 
