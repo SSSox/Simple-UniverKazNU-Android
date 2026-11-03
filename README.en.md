@@ -11,6 +11,7 @@ An unofficial Android app for the [Univer KazNU](https://univer.kaznu.kz/) stude
 - **Downloads and file viewer.** Course materials are saved to the phone's Downloads folder. PDF, Word (.docx, .doc, .rtf), Excel (.xlsx, .xls), PowerPoint (.pptx, .ppt), OpenDocument, web pages, images and text open inside the app. File text can be searched.
 - **Site notifications.** The bell collects the site's marks, for example "Анкетирование студентов (2)" (student questionnaires). Questionnaires the student has already answered are not shown.
 - **Moodle (СДО Moodle)** opens inside the app: sign-in through Univer, attaching files and photos to assignments.
+- **Updates from GitHub.** The app checks for new versions by itself, offers them at sign-in and installs them in a couple of taps.
 - **PIN code and biometrics** (optional), Russian, Kazakh and English, light and dark theme, text size.
 
 ## Installation
@@ -35,14 +36,14 @@ Steps:
 
 **Signature.** Releases are signed with the "SOX Team" key: certificate `CN=SOX Team, O=SOX Team, C=KZ`, SHA-256 `0aa54a2d4714db17bc71b9a0a4d4bc7818cb57d91f10685200416bd2094732b9`. Check it with `apksigner verify --print-certs app-release.apk` from Android SDK Build Tools: the `certificate SHA-256 digest` line must match.
 
-**Updating.** A new APK installs over the old one and keeps the data. A debug build (`app-debug.apk`) has to be uninstalled before installing the release: they have different signatures. Builds released before 4 November 2026 are signed with the previous key, and the new version will not install over them: Android reports that the app was not installed because it conflicts with an existing package. Uninstall the old app, install the new one and sign in again. The saved sign-in, PIN code and downloads list have to be set up again; downloaded files stay in Downloads.
+**Updating.** The app checks for new versions on GitHub by itself. At sign-in it shows a dialog with "Later" and "Install", and Settings has an "Updates" section with a check button. After "Install" the file is downloaded, verified and handed to the Android installer; the first time, Android asks you to allow installing from this app. The "Don't show again" checkbox hides the dialog for this version: checks go on, the version stays in Settings, and the next version is offered again. A new APK installs over the old one and keeps the data. A debug build (`app-debug.apk`) has to be uninstalled before installing the release: they have different signatures. Builds released before 4 November 2026 are signed with the previous key, and the new version will not install over them: Android reports that the app was not installed because it conflicts with an existing package. Uninstall the old app, install the new one and sign in again. The saved sign-in, PIN code and downloads list have to be set up again; downloaded files stay in Downloads.
 
 **Removing data.** "Settings" → "Sign out" clears the site's cookies, cache and history. "Delete saved credentials" also erases the encrypted login and password. Uninstalling the app removes everything.
 
 ## Security and privacy
 
 - The login and password are encrypted with AES-GCM under an Android Keystore key and never go into backups. With a PIN code the data is additionally locked with a PIN-derived key; after 10 wrong attempts the saved sign-in is erased.
-- The app connects only to `univer.kaznu.kz` and to Moodle (`dl.kaznu.kz`, `dl.kaznu.edu.kz`), over HTTPS only. Certificate checks are never turned off.
+- The app connects only to `univer.kaznu.kz` and to Moodle (`dl.kaznu.kz`, `dl.kaznu.edu.kz`), over HTTPS only. For updates it connects to GitHub (`github.com`, `*.githubusercontent.com`) without a login or cookies. Certificate checks are never turned off.
 - Automatic actions (sign-in, the known read notice and the additional agreement) run only on the exact address `https://univer.kaznu.kz`. The app submits no other forms.
 
 Details: the [privacy policy](PRIVACY.en.md) and the [security policy](SECURITY.en.md). The security policy also explains how to report a vulnerability and what to check in the code.
@@ -118,6 +119,7 @@ The app shows the real site: pages are neither copied nor replaced. The mobile l
 | [data/](app/src/main/java/com/univerflow/kaznu/data) | storage: Keystore encryption ([CredentialVault.kt](app/src/main/java/com/univerflow/kaznu/data/CredentialVault.kt)), PIN ([LockVault.kt](app/src/main/java/com/univerflow/kaznu/data/LockVault.kt), [LockCrypto.kt](app/src/main/java/com/univerflow/kaznu/data/LockCrypto.kt)), settings |
 | [web/](app/src/main/java/com/univerflow/kaznu/web) | address policy ([SitePolicy.kt](app/src/main/java/com/univerflow/kaznu/web/SitePolicy.kt)), WebView settings ([SecureWebSettings.kt](app/src/main/java/com/univerflow/kaznu/web/SecureWebSettings.kt)), sign-in automation and its limits ([AutomationController.kt](app/src/main/java/com/univerflow/kaznu/web/AutomationController.kt), [SessionGuard.kt](app/src/main/java/com/univerflow/kaznu/web/SessionGuard.kt)), mobile layout |
 | [download/](app/src/main/java/com/univerflow/kaznu/download) | downloads to the phone's Downloads folder with a check of the server's response |
+| [update/](app/src/main/java/com/univerflow/kaznu/update), [Updates.kt](app/src/main/java/com/univerflow/kaznu/domain/Updates.kt) | checking and installing updates from GitHub: versions, allowed addresses, SHA-256 and signature |
 | [preview/](app/src/main/java/com/univerflow/kaznu/preview) | the app's own document readers: PDF, Word, Excel, PowerPoint, OpenDocument, HTML |
 | [ui/](app/src/main/java/com/univerflow/kaznu/ui), [main/](app/src/main/java/com/univerflow/kaznu/main) | native screens: "Downloads", file viewer, PIN, settings, notifications |
 | [assets/](app/src/main/assets) | JavaScript for the site's pages: sign-in ([univer-automation.js](app/src/main/assets/univer-automation.js)), mobile layout, notifications ([univer-notices.js](app/src/main/assets/univer-notices.js)) |

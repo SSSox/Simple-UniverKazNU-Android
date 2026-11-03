@@ -222,4 +222,24 @@
     <string name="notices_show">Show</string>
     <string name="notices_badge">Notifications, unread: %1$d</string>
     <string name="notice_detail_until">%1$s, until %2$s</string>
+    <string name="update_section">Updates</string>
+    <string name="update_title">Update available</string>
+    <string name="update_message">Version %1$s is ready to install. You have %2$s.</string>
+    <string name="update_never">Don’t show again</string>
+    <string name="update_later">Later</string>
+    <string name="update_install">Install</string>
+    <string name="update_check">Check for updates</string>
+    <string name="update_checking">Checking for updates…</string>
+    <string name="update_current">Installed version: %1$s</string>
+    <string name="update_latest">You have the latest version</string>
+    <string name="update_available">Version %1$s is available</string>
+    <string name="update_checked">Checked: %1$s</string>
+    <string name="update_check_failed">Could not check for updates. Check your connection.</string>
+    <string name="update_downloading">Downloading the update: %1$d%%</string>
+    <string name="update_preparing">Preparing to install…</string>
+    <string name="update_download_failed">Could not download the update. Try again.</string>
+    <string name="update_verify_failed">The update file failed verification and was deleted.</string>
+    <string name="update_signature_failed">This build cannot update itself: its signature differs. Install the new version from the Releases page.</string>
+    <string name="update_install_failed">Could not install the update.</string>
+    <string name="update_allow">Allow installing from this app, and the update will continue by itself.</string>
 </resources>

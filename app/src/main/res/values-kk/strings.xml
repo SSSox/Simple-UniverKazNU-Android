@@ -222,4 +222,24 @@
     <string name="notices_show">Көрсету</string>
     <string name="notices_badge">Хабарландырулар, оқылмаған: %1$d</string>
     <string name="notice_detail_until">%1$s, %2$s дейін</string>
+    <string name="update_section">Жаңартулар</string>
+    <string name="update_title">Жаңарту бар</string>
+    <string name="update_message">%1$s нұсқасы орнатуға дайын. Қазір сізде %2$s нұсқасы.</string>
+    <string name="update_never">Қайта көрсетпеу</string>
+    <string name="update_later">Кейінірек</string>
+    <string name="update_install">Орнату</string>
+    <string name="update_check">Жаңартуларды тексеру</string>
+    <string name="update_checking">Жаңартулар тексерілуде…</string>
+    <string name="update_current">Орнатылған нұсқа: %1$s</string>
+    <string name="update_latest">Сізде соңғы нұсқа</string>
+    <string name="update_available">%1$s нұсқасы қолжетімді</string>
+    <string name="update_checked">Тексерілді: %1$s</string>
+    <string name="update_check_failed">Жаңартуларды тексеру мүмкін болмады. Интернетті тексеріңіз.</string>
+    <string name="update_downloading">Жаңарту жүктелуде: %1$d%%</string>
+    <string name="update_preparing">Орнатуға дайындалуда…</string>
+    <string name="update_download_failed">Жаңартуды жүктеу мүмкін болмады. Қайталап көріңіз.</string>
+    <string name="update_verify_failed">Жаңарту файлы тексеруден өтпеді және жойылды.</string>
+    <string name="update_signature_failed">Бұл құрастырма өзі жаңартылмайды: қолтаңбасы басқа. Жаңа нұсқаны Releases бетінен орнатыңыз.</string>
+    <string name="update_install_failed">Жаңартуды орнату мүмкін болмады.</string>
+    <string name="update_allow">Осы қолданбадан орнатуға рұқсат беріңіз, сонда жаңарту өзі жалғасады.</string>
 </resources>

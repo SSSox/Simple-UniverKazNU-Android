@@ -21,6 +21,8 @@ import com.univerflow.kaznu.ui.context
 import com.univerflow.kaznu.databinding.SettingsSheetBinding
 import com.univerflow.kaznu.ui.BiometricUi
 import com.univerflow.kaznu.ui.missingBottomInset
+import com.univerflow.kaznu.update.UpdatePhase
+import com.univerflow.kaznu.update.UpdateState
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -39,6 +41,10 @@ class SettingsForms(private val activity: AppCompatActivity, private val model: 
         fun openDownloads()
         fun setMobileLayout(enabled: Boolean, form: SettingsSheetBinding?)
         fun setTextZoom(percent: Int)
+        val updateState: UpdateState
+        val updateStatus: String
+        fun checkUpdates()
+        fun installUpdate()
     }
 
     private var firstForm: SettingsSheetBinding? = null
@@ -123,6 +129,8 @@ class SettingsForms(private val activity: AppCompatActivity, private val model: 
         }
         bindPreferences(form)
         bindSecurity(form)
+        form.updateCheck.setOnClickListener { host.checkUpdates() }
+        form.updateInstall.setOnClickListener { host.installUpdate() }
         return form
     }
 
@@ -270,6 +278,22 @@ class SettingsForms(private val activity: AppCompatActivity, private val model: 
         }
         if (form.languages.checkedRadioButtonId != selected) form.languages.check(selected)
         updateSecurity(form, first)
+        updateApp(form, first)
+    }
+
+    /** The update check always runs; this section stays even for a version whose dialog was turned off. */
+    private fun updateApp(form: SettingsSheetBinding, first: Boolean) {
+        form.updateSection.isVisible = !first
+        if (first) return
+        val update = host.updateState
+        val idle = update.phase == UpdatePhase.IDLE
+        form.updateLabel.text = host.text(R.string.update_section)
+        form.updateStatus.text = host.updateStatus
+        form.updateInstall.text = host.text(R.string.update_install)
+        form.updateInstall.isVisible = update.available != null
+        form.updateInstall.isEnabled = idle
+        form.updateCheck.text = host.text(R.string.update_check)
+        form.updateCheck.isEnabled = idle
     }
 
     private fun updateSecurity(form: SettingsSheetBinding, first: Boolean) {

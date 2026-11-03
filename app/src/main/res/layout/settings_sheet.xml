@@ -106,6 +106,28 @@
             </com.google.android.material.card.MaterialCardView>
         </LinearLayout>
 
+        <LinearLayout android:id="@+id/update_section" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="vertical">
+            <TextView android:id="@+id/update_label" style="@style/Univer.SectionTitle"
+                android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/update_section" />
+            <com.google.android.material.card.MaterialCardView android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:orientation="vertical" android:paddingHorizontal="16dp" android:paddingVertical="12dp">
+                    <TextView android:id="@+id/update_status" android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface"
+                        android:accessibilityLiveRegion="polite" />
+                    <com.google.android.material.button.MaterialButton android:id="@+id/update_install"
+                        android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp"
+                        android:minHeight="48dp" android:text="@string/update_install" app:icon="@drawable/ic_download" />
+                    <com.google.android.material.button.MaterialButton android:id="@+id/update_check"
+                        style="@style/Widget.Material3.Button.TonalButton" android:layout_width="match_parent"
+                        android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp"
+                        android:text="@string/update_check" app:icon="@drawable/ic_refresh" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+        </LinearLayout>
+
         <com.google.android.material.button.MaterialButton android:id="@+id/more_options"
             style="@style/Widget.Material3.Button.TextButton" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp"

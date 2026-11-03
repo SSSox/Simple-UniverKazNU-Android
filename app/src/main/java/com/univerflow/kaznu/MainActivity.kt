@@ -68,6 +68,7 @@ import com.univerflow.kaznu.main.LockFlow
 import com.univerflow.kaznu.main.MainChrome
 import com.univerflow.kaznu.main.NoticesSheet
 import com.univerflow.kaznu.main.SettingsForms
+import com.univerflow.kaznu.main.UpdateFlow
 import com.univerflow.kaznu.ui.AppLockSession
 import com.univerflow.kaznu.ui.DocumentViewer
 import com.univerflow.kaznu.ui.DownloadsActivity
@@ -77,6 +78,7 @@ import com.univerflow.kaznu.ui.LockUi
 import com.univerflow.kaznu.ui.Motion
 import com.univerflow.kaznu.ui.NoticeLoadingOverlay
 import com.univerflow.kaznu.ui.ThemeMode
+import com.univerflow.kaznu.update.UpdateManager
 import com.univerflow.kaznu.web.AppSection
 import com.univerflow.kaznu.web.AutomationController
 import com.univerflow.kaznu.web.AutomationStatus
@@ -124,6 +126,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var lock: LockFlow
     private lateinit var forms: SettingsForms
     private lateinit var downloads: DownloadLauncher
+    private lateinit var updates: UpdateFlow
     private val hosts = Hosts()
     private val logoutNavigation = LogoutNavigation { endSession(false) }
     private val fileChooser = FileChooser(this, { text(R.string.choose_file) }, { message(R.string.open_failed) })
@@ -186,6 +189,7 @@ class MainActivity : AppCompatActivity() {
         lock = LockFlow(this, model, lockUi, hosts)
         forms = SettingsForms(this, model, lock, hosts)
         downloads = DownloadLauncher(this, model, hosts)
+        updates = UpdateFlow(this, model, hosts)
         // Leaving the app for longer than the chosen time locks it: the password leaves memory and the PIN is asked again.
         AppLockSession.track(this) {
             if (model.state.value.lock.enabled) binding.drawer.visibility = View.INVISIBLE
@@ -353,6 +357,9 @@ class MainActivity : AppCompatActivity() {
             repeatOnLifecycle(Lifecycle.State.STARTED) { DownloadService.events.collect { event -> event?.let(::downloadEvent) } }
         }
         lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) { UpdateManager.get(this@MainActivity).state.collect(updates::render) }
+        }
+        lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 DownloadRepository.get(this@MainActivity).records.collect { list ->
                     chrome.downloads(list.count { it.state == DownloadState.RUNNING }, model.state.value)
@@ -488,7 +495,8 @@ class MainActivity : AppCompatActivity() {
         updateDrawerLock()
         if (reopenSettings) { reopenSettings = false; if (state.hasCredentials) forms.show() }
         // onResume skipped the checks while the lock was up; unlocking in place must start them.
-        if (justUnlocked) { scanNotices(); startNoticeChecks() }
+        if (justUnlocked) { scanNotices(); startNoticeChecks(); updates.entered() }
+        updates.refresh()
     }
 
     /** Page adaptation, animations, home tiles and text size follow the settings; the page is re-adapted only on a change. */
@@ -1202,6 +1210,7 @@ class MainActivity : AppCompatActivity() {
         if (pageFailed) schedulePageRecovery()
         if (documents.isOpen) documents.resume() else { automation.resume(); scanNotices() }
         startNoticeChecks()
+        updates.entered()
     }
 
     /** (Re)starts the periodic notice check; it stops while the app is paused, locked or a page is failed. */
@@ -1247,7 +1256,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** What the screen's parts ask of the page and the session. */
-    private inner class Hosts : DownloadLauncher.Host, LockFlow.Host, SettingsForms.Host {
+    private inner class Hosts : DownloadLauncher.Host, LockFlow.Host, SettingsForms.Host, UpdateFlow.Host {
         override fun text(id: Int) = this@MainActivity.text(id)
         override fun message(id: Int) = this@MainActivity.message(id)
         override fun track(dialog: Dialog) = this@MainActivity.track(dialog)
@@ -1297,6 +1306,12 @@ class MainActivity : AppCompatActivity() {
         override fun endSession(delete: Boolean) = this@MainActivity.endSession(delete)
         override fun setMobileLayout(enabled: Boolean, form: SettingsSheetBinding?) = this@MainActivity.setMobileLayout(enabled, form)
         override fun setTextZoom(percent: Int) = this@MainActivity.setTextZoom(percent)
+        override val settingsShowing get() = forms.showing
+        override fun refreshSettings() = forms.refresh()
+        override val updateState get() = updates.state
+        override val updateStatus get() = updates.status()
+        override fun checkUpdates() = updates.check()
+        override fun installUpdate() = updates.install()
     }
 
     private companion object {

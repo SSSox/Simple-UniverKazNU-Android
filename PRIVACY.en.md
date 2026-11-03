@@ -14,10 +14,12 @@ The app is an unofficial client of the [Univer KazNU](https://univer.kaznu.kz/) 
 | Cookies and site data (session, page settings) | The app's WebView storage | Only to the Univer site and KazNU Moodle (`dl.kaznu.kz`, `dl.kaznu.edu.kz`) when you sign in through Univer |
 | Downloaded files | The phone's Downloads folder and the app's downloads list | Nowhere |
 | Settings (language, text size, tiles, PIN code) | The app's settings on the phone | Nowhere |
+| Update check (the version found, the check time) | The app's settings on the phone | A plain request without a login or cookies goes to `github.com`: GitHub sees the IP address and the app's name |
 
 - The app does **not** collect analytics, show ads, use third-party tracking SDKs or send data to the developer.
 - Univer pages may include third-party services themselves (for example Google Analytics on the site). This is the site's behaviour; the app does not add it. Third-party cookies are disabled in the WebView.
 - Distance-course task information is read from the same Univer pages you would open manually and cached for 5 minutes in the site tab only.
+- The update file is downloaded only after you tap "Install", is kept in the app's temporary folder and is deleted after installation.
 - Cloud backup of app data and transfer to another device are disabled.
 
 ## Deleting data
@@ -28,6 +30,6 @@ The app is an unofficial client of the [Univer KazNU](https://univer.kaznu.kz/) 
 
 ## Permissions
 
-Internet and network state are needed for the site to work, notifications and a foreground service for download progress, storage write access only on Android 7–9 to save files to Downloads; the camera is opened by the system camera app only when you choose "Take photo" for an attachment.
+Internet and network state are needed for the site to work, notifications and a foreground service for download progress, storage write access only on Android 7–9 to save files to Downloads; the camera is opened by the system camera app only when you choose "Take photo" for an attachment; installing apps is needed only to update Univer itself, and you allow it separately.
 
 Questions and data requests: through the app's publication page or the developer contacts listed there.

@@ -22,7 +22,7 @@
 - Окна ввода пароля и PIN, а при включённом PIN и всё приложение, закрыты от снимков экрана и списка недавних приложений (`FLAG_SECURE`).
 
 **Сеть.**
-- Приложение обращается только к `https://univer.kaznu.kz` и к СДО Moodle (`dl.kaznu.kz`, `dl.kaznu.edu.kz`). HTTP отключён (`usesCleartextTraffic="false"`).
+- Приложение обращается только к `https://univer.kaznu.kz` и к СДО Moodle (`dl.kaznu.kz`, `dl.kaznu.edu.kz`). Для обновлений: `github.com` и `*.githubusercontent.com`, без логина и cookies. HTTP отключён (`usesCleartextTraffic="false"`).
 - Сертификаты проверяются системой. Дополнительно доверен только публичный корневой сертификат Sectigo R46 и только для `univer.kaznu.kz` (старые Android 7–14 его не знают). На Android 17 включена проверка Certificate Transparency. Проверка сертификатов и имени сервера нигде не отключается.
 - Внешние ссылки (браузер, YouTube) открываются в других приложениях; WebView их не загружает.
 
@@ -37,6 +37,8 @@
 - Файл сохраняется, только если ответ пришёл с Univer или Moodle; страница входа вместо файла, ответ 213 и переадресация на другой сайт отклоняются.
 - Документы открываются собственными читателями приложения в WebView с отдельным внутренним адресом, где выключены JavaScript, доступ к файлам и сеть. Размеры и структура файлов проверяются, повреждённый файл не открывается.
 
+**Обновления.** При входе, не чаще раза в 6 часов, приложение узнаёт у GitHub номер последнего выпуска (`domain/Updates.kt`, `update/`). Отключить проверку нельзя, но установка происходит только после нажатия «Установить». Файл берётся только с `github.com` и `*.githubusercontent.com` по HTTPS, каждая переадресация проверяется. Перед установкой сверяются SHA-256 из файла выпуска, имя пакета, более новая версия и подпись: APK должен быть подписан тем же сертификатом, что и установленное приложение, иначе он удаляется. Ставит файл системный установщик Android.
+
 ## Разрешения
 
 | Разрешение | Зачем |
@@ -46,13 +48,15 @@
 | `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_DATA_SYNC` | скачивание файлов не прерывается при сворачивании |
 | `POST_NOTIFICATIONS` | уведомление о ходе скачивания |
 | `WRITE_EXTERNAL_STORAGE` (только Android 9 и старше) | сохранение в папку «Загрузки» на старых версиях |
+| `REQUEST_INSTALL_PACKAGES` | установка обновления самого приложения после нажатия «Установить» |
+| `UPDATE_PACKAGES_WITHOUT_USER_ACTION` | на Android 12+ обновление может поставиться без второго подтверждения, если приложение уже обновляло само себя |
 
 Камера, контакты, местоположение, микрофон и SMS не запрашиваются. Фото для задания делает системное приложение камеры.
 
 ## Как проверить код самостоятельно
 
-- Список адресов: `SitePolicy.kt`, `SingleSignOnPolicy.kt` и [network_security_config.xml](app/src/main/res/xml/network_security_config.xml). Кроме них в коде есть только внутренний адрес просмотра файлов `univer-files.local` (в сеть не уходит) и ссылка на YouTube для встроенных видео, которая открывается в другом приложении.
-- Зависимости: [gradle/libs.versions.toml](gradle/libs.versions.toml), только AndroidX, Material Components и kotlinx-coroutines. Аналитики, рекламы, отчётов о сбоях и загрузки кода из сети нет.
+- Список адресов: `SitePolicy.kt`, `SingleSignOnPolicy.kt`, `Updates.kt` и [network_security_config.xml](app/src/main/res/xml/network_security_config.xml). Кроме них в коде есть только внутренний адрес просмотра файлов `univer-files.local` (в сеть не уходит) и ссылка на YouTube для встроенных видео, которая открывается в другом приложении.
+- Зависимости: [gradle/libs.versions.toml](gradle/libs.versions.toml), только AndroidX, Material Components и kotlinx-coroutines. Аналитики, рекламы и отчётов о сбоях нет. Код из сети приложение не выполняет: новая версия ставится только как обычный APK через установщик Android.
 - Где обрабатывается пароль: `data/CredentialVault.kt`, `data/LockVault.kt`, `data/LockCrypto.kt`, `assets/univer-automation.js`.
 - Подпись APK можно сверить командой `apksigner verify --print-certs app-release.apk` (из Android SDK Build Tools). Сертификат выпусков: `CN=SOX Team, O=SOX Team, C=KZ`, SHA-256 `0aa54a2d4714db17bc71b9a0a4d4bc7818cb57d91f10685200416bd2094732b9`; подпись схемами v2 и v3.
 

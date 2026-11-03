@@ -226,4 +226,24 @@
     <string name="notices_show">Показать</string>
     <string name="notices_badge">Уведомления, непрочитанных: %1$d</string>
     <string name="notice_detail_until">%1$s, до %2$s</string>
+    <string name="update_section">Обновления</string>
+    <string name="update_title">Доступно обновление</string>
+    <string name="update_message">Версия %1$s готова к установке. Сейчас у вас %2$s.</string>
+    <string name="update_never">Больше не показывать</string>
+    <string name="update_later">Позже</string>
+    <string name="update_install">Установить</string>
+    <string name="update_check">Проверить обновления</string>
+    <string name="update_checking">Проверяем обновления…</string>
+    <string name="update_current">Установлена версия %1$s</string>
+    <string name="update_latest">У вас последняя версия</string>
+    <string name="update_available">Доступна версия %1$s</string>
+    <string name="update_checked">Проверено: %1$s</string>
+    <string name="update_check_failed">Не удалось проверить обновления. Проверьте интернет.</string>
+    <string name="update_downloading">Скачиваем обновление: %1$d%%</string>
+    <string name="update_preparing">Готовим установку…</string>
+    <string name="update_download_failed">Не удалось скачать обновление. Попробуйте ещё раз.</string>
+    <string name="update_verify_failed">Файл обновления не прошёл проверку и удалён.</string>
+    <string name="update_signature_failed">Эта сборка не обновляется сама: у неё другая подпись. Установите новую версию со страницы Releases.</string>
+    <string name="update_install_failed">Не удалось установить обновление.</string>
+    <string name="update_allow">Разрешите установку из этого приложения, и обновление продолжится само.</string>
 </resources>

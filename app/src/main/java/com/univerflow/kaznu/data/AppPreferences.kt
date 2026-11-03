@@ -43,6 +43,21 @@ class AppPreferences(context: Context, name: String = "univer.preferences") {
     var theme: AppTheme
         get() = AppTheme.fromCode(preferences.getString("theme", AppTheme.SYSTEM.code))
         set(value) { check(preferences.edit().putString("theme", value.code).commit()) }
+    /** The last update check: the newer version it found, and when. Not account data, so kept through logout. */
+    var updateVersion: String?
+        get() = preferences.getString("update_version", null)
+        set(value) { check(preferences.edit().putString("update_version", value).commit()) }
+    var updateChecked: Long
+        get() = preferences.getLong("update_checked", 0)
+        set(value) { check(preferences.edit().putLong("update_checked", value).commit()) }
+    /** The version whose dialog the student turned off. */
+    var updateSkipped: String?
+        get() = preferences.getString("update_skipped", null)
+        set(value) { check(preferences.edit().putString("update_skipped", value).commit()) }
+    /** An install is waiting for the student to allow installing from this app. */
+    var updateResume: Boolean
+        get() = preferences.getBoolean("update_resume", false)
+        set(value) { check(preferences.edit().putBoolean("update_resume", value).commit()) }
     /** Pinned home links and tile order: plain validated data, kept through logout. */
     var shortcuts: HomeShortcuts
         get() = runCatching {
