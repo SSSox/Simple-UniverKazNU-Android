@@ -58,7 +58,7 @@ Camera, contacts, location, microphone and SMS are not requested. Photos for ass
 - The address list: `SitePolicy.kt`, `SingleSignOnPolicy.kt`, `Updates.kt` and [network_security_config.xml](app/src/main/res/xml/network_security_config.xml). Besides them, the code has only the file viewer's internal address `univer-files.local` (it never goes to the network) and a YouTube link for embedded videos, which opens in another app.
 - Dependencies: [gradle/libs.versions.toml](gradle/libs.versions.toml), only AndroidX, Material Components and kotlinx-coroutines. There is no analytics, advertising or crash reporting. The app runs no code from the network: a new version installs only as an ordinary APK through the Android installer.
 - Where the password is handled: `data/CredentialVault.kt`, `data/LockVault.kt`, `data/LockCrypto.kt`, `assets/univer-automation.js`.
-- The APK signature can be checked with `apksigner verify --print-certs app-release.apk` (from Android SDK Build Tools). The release certificate is `CN=SOX Team, O=SOX Team, C=KZ`, SHA-256 `0aa54a2d4714db17bc71b9a0a4d4bc7818cb57d91f10685200416bd2094732b9`; signed with schemes v2 and v3.
+- The APK signature can be checked with `apksigner verify --print-certs Simple-UniverKazNU.apk` (from Android SDK Build Tools). The release certificate is `CN=SOX Team, O=SOX Team, C=KZ`, SHA-256 `0aa54a2d4714db17bc71b9a0a4d4bc7818cb57d91f10685200416bd2094732b9`; signed with schemes v2 and v3.
 
 ## Known limitations
 

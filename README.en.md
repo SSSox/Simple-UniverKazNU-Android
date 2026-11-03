@@ -23,18 +23,18 @@ Requirements:
 
 Steps:
 
-1. Download `app-release.apk` from the **Releases** page of this repository.
+1. Download `Simple-UniverKazNU.apk` from the **Releases** page of this repository.
 2. Compare its SHA-256 checksum with the one published in the release description:
    ```powershell
-   Get-FileHash .\app-release.apk -Algorithm SHA256   # Windows
+   Get-FileHash .\Simple-UniverKazNU.apk -Algorithm SHA256   # Windows
    ```
    ```bash
-   sha256sum app-release.apk                           # Linux, macOS: shasum -a 256
+   sha256sum Simple-UniverKazNU.apk                           # Linux, macOS: shasum -a 256
    ```
 3. Open the file on the phone and allow installation from this source when Android asks.
 4. On the first start enter your Univer login and password and tap "Save and sign in".
 
-**Signature.** Releases are signed with the "SOX Team" key: certificate `CN=SOX Team, O=SOX Team, C=KZ`, SHA-256 `0aa54a2d4714db17bc71b9a0a4d4bc7818cb57d91f10685200416bd2094732b9`. Check it with `apksigner verify --print-certs app-release.apk` from Android SDK Build Tools: the `certificate SHA-256 digest` line must match.
+**Signature.** Releases are signed with the "SOX Team" key: certificate `CN=SOX Team, O=SOX Team, C=KZ`, SHA-256 `0aa54a2d4714db17bc71b9a0a4d4bc7818cb57d91f10685200416bd2094732b9`. Check it with `apksigner verify --print-certs Simple-UniverKazNU.apk` from Android SDK Build Tools: the `certificate SHA-256 digest` line must match.
 
 **Updating.** The app checks for new versions on GitHub by itself. At sign-in it shows a dialog with "Later" and "Install", and Settings has an "Updates" section with a check button. After "Install" the file is downloaded, verified and handed to the Android installer; the first time, Android asks you to allow installing from this app. The "Don't show again" checkbox hides the dialog for this version: checks go on, the version stays in Settings, and the next version is offered again. A new APK installs over the old one and keeps the data. A debug build (`app-debug.apk`) has to be uninstalled before installing the release: they have different signatures. Builds released before 4 November 2026 are signed with the previous key, and the new version will not install over them: Android reports that the app was not installed because it conflicts with an existing package. Uninstall the old app, install the new one and sign in again. The saved sign-in, PIN code and downloads list have to be set up again; downloaded files stay in Downloads.
 

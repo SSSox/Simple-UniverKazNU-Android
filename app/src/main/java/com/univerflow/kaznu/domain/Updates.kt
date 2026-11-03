@@ -6,7 +6,7 @@ import java.net.URI
 object Updates {
     const val REPOSITORY = "https://github.com/SSSox/Simple-UniverKazNU-Android"
     const val LATEST = "$REPOSITORY/releases/latest"
-    const val APK = "app-release.apk"
+    const val APK = "Simple-UniverKazNU.apk"
     /** Automatic checks run at most this often; the Settings button checks at once. */
     const val CHECK_INTERVAL_MS = 6 * 60 * 60_000L
     /** A failed automatic check waits this long, so an offline phone does not retry on every return to the app. */

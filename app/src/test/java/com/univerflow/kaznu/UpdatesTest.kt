@@ -60,7 +60,7 @@ class UpdatesTest {
 
     @Test fun aChecksumFileGivesItsHash() {
         val hash = "AE8C2254353DCACBECD79AD7FC0F4146612E9835060EF2660B720D6E9DC6617F"
-        assertEquals(hash.lowercase(), Updates.checksum("$hash  app-release.apk\n"))
+        assertEquals(hash.lowercase(), Updates.checksum("$hash  Simple-UniverKazNU.apk\n"))
         assertEquals(hash.lowercase(), Updates.checksum(hash))
         assertNull(Updates.checksum("not a hash"))
         assertNull(Updates.checksum(""))
@@ -125,7 +125,7 @@ class UpdatesTest {
 
     @Test fun theChecksumFileIsReadFromTheRelease() {
         val hash = "a".repeat(64)
-        val client = client(Updates.checksumUrl("2.4") to { url -> Response(url, 200, body = "$hash  app-release.apk\n".toByteArray()) })
+        val client = client(Updates.checksumUrl("2.4") to { url -> Response(url, 200, body = "$hash  Simple-UniverKazNU.apk\n".toByteArray()) })
         assertEquals(hash, client.checksum("2.4"))
         val empty = client(Updates.checksumUrl("2.4") to { url -> Response(url, 200, body = "oops".toByteArray()) })
         assertThrows(IOException::class.java) { empty.checksum("2.4") }

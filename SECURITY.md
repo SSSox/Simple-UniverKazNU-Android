@@ -58,7 +58,7 @@
 - Список адресов: `SitePolicy.kt`, `SingleSignOnPolicy.kt`, `Updates.kt` и [network_security_config.xml](app/src/main/res/xml/network_security_config.xml). Кроме них в коде есть только внутренний адрес просмотра файлов `univer-files.local` (в сеть не уходит) и ссылка на YouTube для встроенных видео, которая открывается в другом приложении.
 - Зависимости: [gradle/libs.versions.toml](gradle/libs.versions.toml), только AndroidX, Material Components и kotlinx-coroutines. Аналитики, рекламы и отчётов о сбоях нет. Код из сети приложение не выполняет: новая версия ставится только как обычный APK через установщик Android.
 - Где обрабатывается пароль: `data/CredentialVault.kt`, `data/LockVault.kt`, `data/LockCrypto.kt`, `assets/univer-automation.js`.
-- Подпись APK можно сверить командой `apksigner verify --print-certs app-release.apk` (из Android SDK Build Tools). Сертификат выпусков: `CN=SOX Team, O=SOX Team, C=KZ`, SHA-256 `0aa54a2d4714db17bc71b9a0a4d4bc7818cb57d91f10685200416bd2094732b9`; подпись схемами v2 и v3.
+- Подпись APK можно сверить командой `apksigner verify --print-certs Simple-UniverKazNU.apk` (из Android SDK Build Tools). Сертификат выпусков: `CN=SOX Team, O=SOX Team, C=KZ`, SHA-256 `0aa54a2d4714db17bc71b9a0a4d4bc7818cb57d91f10685200416bd2094732b9`; подпись схемами v2 и v3.
 
 ## Известные ограничения
 
