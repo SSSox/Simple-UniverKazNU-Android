@@ -58,6 +58,25 @@ class NetworkSecurityConfigTest {
         }
     }
 
+    @Test fun updateFileRootIsThePublishedOneAndStaysOnGitHubFileHosts() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val certificate = context.resources.openRawResource(R.raw.isrg_root_x1).use {
+            CertificateFactory.getInstance("X.509").generateCertificate(it) as X509Certificate
+        }
+        val fingerprint = MessageDigest.getInstance("SHA-256").digest(certificate.encoded)
+            .joinToString("") { "%02X".format(it.toInt() and 0xff) }
+        assertEquals("96BCEC06264976F37460779ACF28C5A7CFE8A3C0AAE11A8FFCEE05C0BDDF08C6", fingerprint)
+        certificate.checkValidity()
+        // Android 17 has this root in the system store, and its own policy file adds nothing.
+        org.junit.Assume.assumeTrue(Build.VERSION.SDK_INT < 37)
+        val factory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
+        factory.init(null as KeyStore?)
+        val manager = X509TrustManagerExtensions(factory.trustManagers.filterIsInstance<X509TrustManager>().single())
+        for (host in listOf("github.com", "univer.kaznu.kz", "githubusercontent.com.evil.invalid", "example.com")) {
+            assertFalse("The update root must not extend to $host", manager.isSameTrustConfiguration("release-assets.githubusercontent.com", host))
+        }
+    }
+
     @Test fun cleartextRemainsBlockedAndAndroid17RetainsCertificateTransparency() {
         val policy = NetworkSecurityPolicy.getInstance()
         for (host in listOf("univer.kaznu.kz", "kaznu.kz", "docs.univer.kaznu.kz", "example.com")) {

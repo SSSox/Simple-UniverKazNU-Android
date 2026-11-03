@@ -123,7 +123,7 @@ Release R8 арқылы құрастырылады (код пен ресурст
 | [preview/](app/src/main/java/com/univerflow/kaznu/preview) | қолданбаның өз құжат оқу құралдары: PDF, Word, Excel, PowerPoint, OpenDocument, HTML |
 | [ui/](app/src/main/java/com/univerflow/kaznu/ui), [main/](app/src/main/java/com/univerflow/kaznu/main) | нативті экрандар: «Жүктеулер», файлдарды қарау, PIN, баптаулар, хабарландырулар |
 | [assets/](app/src/main/assets) | сайт беттеріне арналған JavaScript: кіру ([univer-automation.js](app/src/main/assets/univer-automation.js)), мобильді көрініс, хабарландырулар ([univer-notices.js](app/src/main/assets/univer-notices.js)) |
-| [res/xml/network_security_config.xml](app/src/main/res/xml/network_security_config.xml) | сенімді сертификаттар: жүйелік және тек `univer.kaznu.kz` үшін Sectigo R46 |
+| [res/xml/network_security_config.xml](app/src/main/res/xml/network_security_config.xml) | сенімді сертификаттар: жүйелік, сондай-ақ тек `univer.kaznu.kz` үшін Sectigo R46 және тек `*.githubusercontent.com` жаңарту файлдары үшін ISRG Root X1 |
 | [app/src/test](app/src/test), [app/src/androidTest](app/src/androidTest) | синтетикалық беттері бар бірлік тесттері және эмулятордағы тесттер |
 
 Кіру сайттың өз пішіні арқылы жүреді: скрипт `#login_frm` көрінетін өрістерін толтырып, оның батырмасын басады, сондықтан сайттың құпия сөзді шифрлауы мен өңдегіштері айналып өтілмейді. Әрекеттер саны шектелген; сайт құпия сөзді қабылдамаса, қолданба тоқтап, оны баптауларда түзеткенше немесе «Қайталау» басылғанша күтеді.

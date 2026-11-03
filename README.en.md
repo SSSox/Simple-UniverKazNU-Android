@@ -123,7 +123,7 @@ The app shows the real site: pages are neither copied nor replaced. The mobile l
 | [preview/](app/src/main/java/com/univerflow/kaznu/preview) | the app's own document readers: PDF, Word, Excel, PowerPoint, OpenDocument, HTML |
 | [ui/](app/src/main/java/com/univerflow/kaznu/ui), [main/](app/src/main/java/com/univerflow/kaznu/main) | native screens: "Downloads", file viewer, PIN, settings, notifications |
 | [assets/](app/src/main/assets) | JavaScript for the site's pages: sign-in ([univer-automation.js](app/src/main/assets/univer-automation.js)), mobile layout, notifications ([univer-notices.js](app/src/main/assets/univer-notices.js)) |
-| [res/xml/network_security_config.xml](app/src/main/res/xml/network_security_config.xml) | trusted certificates: the system ones plus Sectigo R46 for `univer.kaznu.kz` only |
+| [res/xml/network_security_config.xml](app/src/main/res/xml/network_security_config.xml) | trusted certificates: the system ones, plus Sectigo R46 for `univer.kaznu.kz` only and ISRG Root X1 only for update files on `*.githubusercontent.com` |
 | [app/src/test](app/src/test), [app/src/androidTest](app/src/androidTest) | unit tests and emulator tests with synthetic pages |
 
 Sign-in goes through the site's own form: the script fills the visible `#login_frm` fields and presses its button, so the site's password encryption and handlers are not bypassed. The number of attempts is limited; if the site rejected the password, the app stops and waits until it is corrected in the settings or "Retry" is tapped.

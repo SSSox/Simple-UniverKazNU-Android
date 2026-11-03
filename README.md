@@ -123,7 +123,7 @@ Release собирается с R8 (сокращение кода и ресур�
 | [preview/](app/src/main/java/com/univerflow/kaznu/preview) | собственные читатели документов: PDF, Word, Excel, PowerPoint, OpenDocument, HTML |
 | [ui/](app/src/main/java/com/univerflow/kaznu/ui), [main/](app/src/main/java/com/univerflow/kaznu/main) | нативные экраны: «Загрузки», просмотр файлов, PIN, настройки, уведомления |
 | [assets/](app/src/main/assets) | JavaScript для страниц сайта: вход ([univer-automation.js](app/src/main/assets/univer-automation.js)), мобильный вид, уведомления ([univer-notices.js](app/src/main/assets/univer-notices.js)) |
-| [res/xml/network_security_config.xml](app/src/main/res/xml/network_security_config.xml) | доверенные сертификаты: системные плюс Sectigo R46 только для `univer.kaznu.kz` |
+| [res/xml/network_security_config.xml](app/src/main/res/xml/network_security_config.xml) | доверенные сертификаты: системные, плюс Sectigo R46 только для `univer.kaznu.kz` и ISRG Root X1 только для файлов обновлений на `*.githubusercontent.com` |
 | [app/src/test](app/src/test), [app/src/androidTest](app/src/androidTest) | юнит-тесты и тесты на эмуляторе с синтетическими страницами |
 
 Вход идёт через форму самого сайта: скрипт заполняет видимые поля `#login_frm` и нажимает его кнопку, поэтому шифрование пароля и обработчики сайта не обходятся. Число попыток ограничено; если сайт отклонил пароль, приложение останавливается и ждёт, пока его исправят в настройках или нажмут «Повторить».

@@ -23,7 +23,7 @@ Security fixes are released only for the latest version on the Releases page (cu
 
 **Network.**
 - The app connects only to `https://univer.kaznu.kz` and to Moodle (`dl.kaznu.kz`, `dl.kaznu.edu.kz`). For updates: `github.com` and `*.githubusercontent.com`, without a login or cookies. HTTP is disabled (`usesCleartextTraffic="false"`).
-- Certificates are checked by the system. In addition, only the public Sectigo R46 root certificate is trusted, and only for `univer.kaznu.kz` (old Android 7–14 do not know it). Certificate Transparency checking is on for Android 17. Certificate and hostname checks are never turned off.
+- Certificates are checked by the system. In addition, only the public Sectigo R46 root certificate is trusted, and only for `univer.kaznu.kz` (old Android 7–14 do not know it), and the public ISRG Root X1 root only for update files on `*.githubusercontent.com` (Android 7.0 does not know it). Certificate Transparency checking is on for Android 17. Certificate and hostname checks are never turned off.
 - External links (browser, YouTube) open in other apps; the WebView does not load them.
 
 **WebView.**

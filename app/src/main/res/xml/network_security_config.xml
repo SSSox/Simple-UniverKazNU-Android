@@ -13,4 +13,12 @@
             <certificates src="@raw/sectigo_public_server_authentication_root_r46" />
         </trust-anchors>
     </domain-config>
+    <!-- Android 7.0 lacks the root of GitHub's release file host; only that host gets it. -->
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">githubusercontent.com</domain>
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="@raw/isrg_root_x1" />
+        </trust-anchors>
+    </domain-config>
 </network-security-config>
