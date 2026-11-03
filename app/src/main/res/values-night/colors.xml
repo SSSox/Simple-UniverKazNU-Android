@@ -1,0 +1,45 @@
+<resources>
+    <!-- Dark Material 3 roles around the same accent: light blue on blue-grey surfaces, the page darker than its cards. -->
+    <color name="md_primary">#A7C8FF</color>
+    <color name="md_on_primary">#003060</color>
+    <color name="md_primary_container">#0E4785</color>
+    <color name="md_on_primary_container">#D5E3FF</color>
+    <color name="md_secondary">#BCC7DB</color>
+    <color name="md_on_secondary">#263141</color>
+    <color name="md_secondary_container">#2E3A4B</color>
+    <color name="md_on_secondary_container">#D8E3F8</color>
+    <color name="md_tertiary">#8FD7AB</color>
+    <color name="md_on_tertiary">#003920</color>
+    <color name="md_tertiary_container">#005231</color>
+    <color name="md_on_tertiary_container">#ABF4C6</color>
+    <color name="md_error">#FFB4AB</color>
+    <color name="md_on_error">#690005</color>
+    <color name="md_error_container">#93000A</color>
+    <color name="md_on_error_container">#FFDAD6</color>
+    <color name="md_background">#0F151C</color>
+    <color name="md_surface">#121921</color>
+    <color name="md_on_surface">#E2E8F0</color>
+    <color name="md_surface_variant">#3F4752</color>
+    <color name="md_on_surface_variant">#BFC7D3</color>
+    <color name="md_outline">#8A939E</color>
+    <color name="md_outline_variant">#2E3742</color>
+    <color name="md_surface_container_lowest">#0B1016</color>
+    <color name="md_surface_container_low">#161E27</color>
+    <color name="md_surface_container">#1A232D</color>
+    <color name="md_surface_container_high">#212B36</color>
+    <color name="md_surface_container_highest">#2B3541</color>
+    <color name="md_inverse_surface">#E2E8F0</color>
+    <color name="md_inverse_on_surface">#2B3A4B</color>
+    <color name="md_inverse_primary">#1B5FA6</color>
+    <color name="card_surface">#1D2630</color>
+    <color name="app_bar">#161E27</color>
+    <color name="app_bar_line">#2C3540</color>
+    <color name="warning_container">#4A3510</color>
+    <color name="on_warning_container">#FFDDA6</color>
+    <color name="kind_pdf">#FF8A80</color>
+    <color name="kind_word">#8FB4F0</color>
+    <color name="kind_excel">#7FD6A2</color>
+    <color name="kind_powerpoint">#FFA77A</color>
+    <color name="kind_image">#C7A6F0</color>
+    <color name="kind_other">#A9B6C4</color>
+</resources>

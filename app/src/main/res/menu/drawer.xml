@@ -1,0 +1,27 @@
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Same grouping as the Windows sidebar: study sections ("Кабинет") and app tools ("Приложение"). -->
+    <item android:id="@+id/nav_group_portal" android:title="@string/nav_group_portal">
+        <menu>
+            <group android:id="@+id/nav_sections" android:checkableBehavior="single">
+                <item android:id="@+id/nav_home" android:icon="@drawable/ic_home" android:title="@string/nav_home" />
+                <item android:id="@+id/nav_schedule" android:icon="@drawable/ic_calendar" android:title="@string/nav_schedule" />
+                <item android:id="@+id/nav_journal" android:icon="@drawable/ic_grades" android:title="@string/nav_journal" />
+                <item android:id="@+id/nav_attestation" android:icon="@drawable/ic_attestation" android:title="@string/nav_attestation" />
+                <item android:id="@+id/nav_materials" android:icon="@drawable/ic_book" android:title="@string/nav_materials" />
+                <item android:id="@+id/nav_distance" android:icon="@drawable/ic_distance" android:title="@string/nav_distance" />
+                <item android:id="@+id/nav_moodle" android:icon="@drawable/ic_moodle" android:title="@string/nav_moodle" android:checkable="false" />
+            </group>
+        </menu>
+    </item>
+    <item android:id="@+id/nav_group_app" android:title="@string/nav_group_app">
+        <menu>
+            <group android:id="@+id/nav_files">
+                <item android:id="@+id/nav_notices" android:icon="@drawable/ic_notifications" android:title="@string/notices" />
+                <item android:id="@+id/nav_downloads" android:icon="@drawable/ic_downloads" android:title="@string/downloads" />
+                <item android:id="@+id/nav_all_sections" android:icon="@drawable/ic_apps" android:title="@string/nav_all_sections" />
+                <item android:id="@+id/nav_settings" android:icon="@drawable/ic_settings" android:title="@string/settings" />
+                <item android:id="@+id/nav_browser" android:icon="@drawable/ic_open_in_new" android:title="@string/browser" />
+            </group>
+        </menu>
+    </item>
+</menu>

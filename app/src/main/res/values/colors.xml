@@ -1,0 +1,47 @@
+<resources>
+    <!-- Material 3 roles built around the Windows accent #1B5FA6. The dark theme is in values-night/colors.xml. -->
+    <color name="md_primary">#1B5FA6</color>
+    <color name="md_on_primary">#FFFFFF</color>
+    <color name="md_primary_container">#D5E3FF</color>
+    <color name="md_on_primary_container">#001C3B</color>
+    <color name="md_secondary">#545F71</color>
+    <color name="md_on_secondary">#FFFFFF</color>
+    <color name="md_secondary_container">#E6EFFA</color>
+    <color name="md_on_secondary_container">#111C2B</color>
+    <color name="md_tertiary">#1E7A4C</color>
+    <color name="md_on_tertiary">#FFFFFF</color>
+    <color name="md_tertiary_container">#D7F2E2</color>
+    <color name="md_on_tertiary_container">#00210F</color>
+    <color name="md_error">#B42318</color>
+    <color name="md_on_error">#FFFFFF</color>
+    <color name="md_error_container">#FFDAD6</color>
+    <color name="md_on_error_container">#410002</color>
+    <color name="md_background">#F1F4F7</color>
+    <color name="md_surface">#F7F9FC</color>
+    <color name="md_on_surface">#16283B</color>
+    <color name="md_surface_variant">#E0E4EC</color>
+    <color name="md_on_surface_variant">#4B5B6C</color>
+    <color name="md_outline">#7A8796</color>
+    <color name="md_outline_variant">#DFE5EC</color>
+    <color name="md_surface_container_lowest">#FFFFFF</color>
+    <color name="md_surface_container_low">#F7F9FB</color>
+    <color name="md_surface_container">#ECF0F6</color>
+    <color name="md_surface_container_high">#E6EBF2</color>
+    <color name="md_surface_container_highest">#E0E6EE</color>
+    <color name="md_inverse_surface">#2B3A4B</color>
+    <color name="md_inverse_on_surface">#EEF2F8</color>
+    <color name="md_inverse_primary">#A7C8FF</color>
+    <!-- Windows app-bar surface and hairline (Theme.cs Border). -->
+    <!-- Settings and Downloads cards: white on the light surfaces, one step above the sheet in the dark theme. -->
+    <color name="card_surface">#FFFFFF</color>
+    <color name="app_bar">#FFFFFF</color>
+    <color name="app_bar_line">#DFE5EC</color>
+    <color name="warning_container">#FFF1D6</color>
+    <color name="on_warning_container">#3D2600</color>
+    <color name="kind_pdf">#C8342C</color>
+    <color name="kind_word">#2B579A</color>
+    <color name="kind_excel">#217346</color>
+    <color name="kind_powerpoint">#C45224</color>
+    <color name="kind_image">#7C4DAF</color>
+    <color name="kind_other">#5B6B7C</color>
+</resources>

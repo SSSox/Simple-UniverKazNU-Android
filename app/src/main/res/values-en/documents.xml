@@ -1,0 +1,11 @@
+<resources>
+    <string name="document_error_message">Unable to load the document. Check your connection and retry, or return to the previous section.</string>
+    <string name="document_transcript">Transcript</string>
+    <string name="document_recordbook">Record book</string>
+    <string name="document_iup">Study plan</string>
+    <string name="document_syllabus">Syllabus</string>
+    <string name="document_title">Document</string>
+    <string name="document_back">Back to section</string>
+    <string name="document_original">Original</string>
+    <string name="document_read">Read</string>
+</resources>

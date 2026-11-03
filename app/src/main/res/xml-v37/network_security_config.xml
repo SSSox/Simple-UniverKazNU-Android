@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="false">univer.kaznu.kz</domain>
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="@raw/sectigo_public_server_authentication_root_r46" />
+        </trust-anchors>
+        <!-- A bundled CA otherwise disables Android 17's default CT requirement. -->
+        <certificateTransparency enabled="true" />
+    </domain-config>
+</network-security-config>

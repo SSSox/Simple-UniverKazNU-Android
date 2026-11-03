@@ -1,0 +1,14 @@
+# R8 keep rules for the release build (AGP combines every *.keep file in src/main/keepRules).
+# The app has no JavascriptInterface, reflection or serializers; library rules ship with the libraries.
+
+# Download records persist DownloadState/DownloadFailure by name() and the Downloads screen restores its FileKind
+# filter with valueOf(); the stored names must keep matching the enum constants.
+-keepclassmembers enum com.univerflow.kaznu.domain.DownloadState,
+                       com.univerflow.kaznu.domain.DownloadFailure,
+                       com.univerflow.kaznu.domain.FileKind {
+    <fields>;
+}
+
+# Readable crash reports: keep line numbers; the mapping file (build/outputs/mapping/release) restores names.
+-keepattributes SourceFile,LineNumberTable
+-renamesourcefileattribute SourceFile

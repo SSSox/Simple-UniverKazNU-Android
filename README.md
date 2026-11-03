@@ -1,0 +1,139 @@
+**Русский** · [Қазақша](README.kz.md) · [English](README.en.md)
+
+# Univer · КазНУ
+
+Неофициальное Android-приложение для студенческого портала [Univer КазНУ](https://univer.kaznu.kz/). Оно открывает сайт во встроенном WebView, само входит с сохранёнными данными и делает страницы удобными для телефона. Приложение не связано с КазНУ им. аль-Фараби, у него нет своего сервера, аналитики и рекламы.
+
+## Возможности
+
+- **Вход без повторного ввода.** Логин и пароль хранятся только на телефоне в зашифрованном виде. Когда сессия на сайте заканчивается, приложение входит заново через форму самого сайта.
+- **Мобильный вид сайта.** Таблицы расписания, успеваемости, аттестации, УМКД и дистанционных курсов показаны карточками. Переключатель «Оригинал» возвращает исходную страницу сайта без изменений.
+- **Загрузки и просмотр файлов.** Материалы курсов сохраняются в папку «Загрузки» телефона. PDF, Word (.docx, .doc, .rtf), Excel (.xlsx, .xls), PowerPoint (.pptx, .ppt), OpenDocument, веб-страницы, картинки и текст открываются внутри приложения. Есть поиск по тексту файлов.
+- **Уведомления сайта.** Колокольчик собирает отметки сайта, например «Анкетирование студентов (2)». Анкеты, на которые студент уже ответил, не показываются.
+- **СДО Moodle** открывается внутри приложения: вход через Univer, прикрепление файлов и фото к заданиям.
+- **PIN-код и биометрия** (по желанию), русский, казахский и английский языки, светлая и тёмная тема, размер текста.
+
+## Установка
+
+Требования:
+
+- Android 7.0 (API 24) или новее;
+- актуальный Android System WebView или Chrome: скрипты мобильного вида рассчитаны на Chromium 80+.
+
+Шаги:
+
+1. Скачайте `app-release.apk` со страницы **Releases** этого репозитория.
+2. Сверьте контрольную сумму SHA-256 с той, что опубликована в описании выпуска:
+   ```powershell
+   Get-FileHash .\app-release.apk -Algorithm SHA256   # Windows
+   ```
+   ```bash
+   sha256sum app-release.apk                           # Linux, macOS: shasum -a 256
+   ```
+3. Откройте файл на телефоне и разрешите установку из этого источника, когда Android спросит.
+4. При первом запуске введите свой логин и пароль Univer и нажмите «Сохранить и войти».
+
+**Обновление.** Новый APK ставится поверх старого, данные сохраняются. Отладочную сборку (`app-debug.apk`) перед установкой release нужно удалить: у них разные подписи.
+
+**Как убрать данные.** «Настройки» → «Выйти из аккаунта» очищает cookies, кеш и историю сайта. «Удалить сохранённые данные» стирает и зашифрованные логин с паролем. Удаление приложения убирает всё.
+
+## Безопасность и конфиденциальность
+
+- Логин и пароль шифруются AES-GCM ключом Android Keystore и не попадают в резервные копии. С PIN-кодом данные дополнительно закрыты ключом из PIN; после 10 неверных попыток сохранённый вход стирается.
+- Приложение обращается только к `univer.kaznu.kz` и к СДО Moodle (`dl.kaznu.kz`, `dl.kaznu.edu.kz`), только по HTTPS. Проверка сертификатов не отключается.
+- Автоматические действия (вход, известное уведомление о прочтении и дополнительное соглашение) выполняются только на точном адресе `https://univer.kaznu.kz`. Другие формы приложение не отправляет.
+
+Подробно: [политика конфиденциальности](PRIVACY.md) и [политика безопасности](SECURITY.md). В политике безопасности также описано, как сообщить об уязвимости и что проверить в коде.
+
+## Сборка из исходников
+
+Нужны:
+
+- [Android Studio](https://developer.android.com/studio) со встроенным JDK (`jbr`);
+- Android SDK Platform 37 и Platform Tools (ставятся через SDK Manager).
+
+Gradle 9.8.0 скачивается обёрткой `gradlew` сам; JDK 25 для демона Gradle подбирается автоматически ([gradle/gradle-daemon-jvm.properties](gradle/gradle-daemon-jvm.properties)). Плагин Android Gradle 9.4.1, Kotlin встроен в него. Все зависимости закреплены в [gradle/libs.versions.toml](gradle/libs.versions.toml): это только AndroidX, Material Components и kotlinx-coroutines.
+
+**В Android Studio:** File → Open → папка проекта, дождитесь Gradle Sync, выберите конфигурацию `app` и нажмите Run.
+
+**Из командной строки** (в корне проекта):
+
+```powershell
+$env:JAVA_HOME = 'C:\Program Files\Android\Android Studio\jbr'
+.\gradlew.bat :app:assembleDebug
+```
+
+```bash
+export JAVA_HOME="/opt/android-studio/jbr"   # путь к jbr вашей установки
+./gradlew :app:assembleDebug
+```
+
+Результаты сборки:
+
+| Задача | Файл | Подпись |
+|---|---|---|
+| `:app:assembleDebug` | `app/build/outputs/apk/debug/app-debug.apk` | отладочный ключ |
+| `:app:assembleRelease` | `app/build/outputs/apk/release/app-release.apk` | ключ из `keystore.properties`, без него APK не подписан |
+| `:app:bundleRelease` | `app/build/outputs/bundle/release/app-release.aab` | то же, для Google Play |
+| `:app:assembleQa` | `app/build/outputs/apk/qa/app-qa.apk` | release-сборка с R8 на отладочном ключе: ставится поверх debug и сохраняет данные |
+
+**Подпись release.** Создайте рядом с `settings.gradle.kts` файл `keystore.properties` (он в `.gitignore` и в репозиторий не попадает):
+
+```properties
+storeFile=C:/путь/к/release.jks
+storePassword=...
+keyAlias=...
+keyPassword=...
+```
+
+Release собирается с R8 (сокращение кода и ресурсов); правила лежат в [app/src/main/keepRules](app/src/main/keepRules).
+
+## Проверки
+
+```powershell
+.\gradlew.bat :app:testDebugUnitTest :app:lintDebug
+```
+
+Для инструментальных тестов нужен запущенный эмулятор или телефон. Тесты работают с локальными синтетическими страницами и ничего не отправляют на Univer:
+
+```powershell
+.\gradlew.bat :app:connectedDebugAndroidTest
+# один класс:
+.\gradlew.bat :app:connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.class=com.univerflow.kaznu.NoticesAndTablesQaTest"
+```
+
+Проверка TLS живого сайта включается только явно: аргумент `-Pandroid.testInstrumentationRunnerArguments.univer.liveTls=true` для `NetworkSecurityConfigTest`. Тест больших презентаций пропускается, если файлов `deck-photos.*` нет в `app/src/androidTest/assets/documents` (16 МБ, в репозиторий не входят).
+
+## Как устроен код
+
+Приложение показывает настоящий сайт: страницы не копируются и не подменяются. Мобильный вид собирается поверх DOM сайта и полностью снимается переключателем «Оригинал».
+
+| Путь | Что там |
+|---|---|
+| [MainActivity.kt](app/src/main/java/com/univerflow/kaznu/MainActivity.kt) | WebView сайта, навигация «Назад», связь экрана с сессией и автоматизацией |
+| [UniverViewModel.kt](app/src/main/java/com/univerflow/kaznu/UniverViewModel.kt) | состояние приложения (StateFlow), выход, смена аккаунта, блокировка |
+| [domain/](app/src/main/java/com/univerflow/kaznu/domain) | чистый Kotlin без Android: правила PIN, уведомлений, загрузок, плиток главной |
+| [data/](app/src/main/java/com/univerflow/kaznu/data) | хранение: Keystore-шифрование ([CredentialVault.kt](app/src/main/java/com/univerflow/kaznu/data/CredentialVault.kt)), PIN ([LockVault.kt](app/src/main/java/com/univerflow/kaznu/data/LockVault.kt), [LockCrypto.kt](app/src/main/java/com/univerflow/kaznu/data/LockCrypto.kt)), настройки |
+| [web/](app/src/main/java/com/univerflow/kaznu/web) | политика адресов ([SitePolicy.kt](app/src/main/java/com/univerflow/kaznu/web/SitePolicy.kt)), настройки WebView ([SecureWebSettings.kt](app/src/main/java/com/univerflow/kaznu/web/SecureWebSettings.kt)), автоматизация входа и её лимиты ([AutomationController.kt](app/src/main/java/com/univerflow/kaznu/web/AutomationController.kt), [SessionGuard.kt](app/src/main/java/com/univerflow/kaznu/web/SessionGuard.kt)), мобильный вид |
+| [download/](app/src/main/java/com/univerflow/kaznu/download) | скачивание в «Загрузки» телефона с проверкой ответа сервера |
+| [preview/](app/src/main/java/com/univerflow/kaznu/preview) | собственные читатели документов: PDF, Word, Excel, PowerPoint, OpenDocument, HTML |
+| [ui/](app/src/main/java/com/univerflow/kaznu/ui), [main/](app/src/main/java/com/univerflow/kaznu/main) | нативные экраны: «Загрузки», просмотр файлов, PIN, настройки, уведомления |
+| [assets/](app/src/main/assets) | JavaScript для страниц сайта: вход ([univer-automation.js](app/src/main/assets/univer-automation.js)), мобильный вид, уведомления ([univer-notices.js](app/src/main/assets/univer-notices.js)) |
+| [res/xml/network_security_config.xml](app/src/main/res/xml/network_security_config.xml) | доверенные сертификаты: системные плюс Sectigo R46 только для `univer.kaznu.kz` |
+| [app/src/test](app/src/test), [app/src/androidTest](app/src/androidTest) | юнит-тесты и тесты на эмуляторе с синтетическими страницами |
+
+Вход идёт через форму самого сайта: скрипт заполняет видимые поля `#login_frm` и нажимает его кнопку, поэтому шифрование пароля и обработчики сайта не обходятся. Число попыток ограничено; если сайт отклонил пароль, приложение останавливается и ждёт, пока его исправят в настройках или нажмут «Повторить».
+
+## Ограничения
+
+- Если сайт введёт CAPTCHA или двухфакторную проверку, их нужно проходить вручную.
+- При заметном изменении HTML сайта мобильный вид или автоматический вход могут перестать работать до обновления приложения.
+- На очень старом WebView (ниже Chromium 80) сайт откроется, но мобильный вид и автоматизация могут не работать.
+
+## Лицензия
+
+Copyright (C) 2026 авторы Univer · КазНУ.
+
+Код распространяется по [GNU General Public License](LICENSE) версии 3 или, на ваш выбор, любой более поздней версии (GPL-3.0-or-later). Его можно использовать, изменять и распространять, но изменённую версию приложения нужно выпускать под той же лицензией вместе с исходным кодом.
+
+Название, логотип и материалы КазНУ им. аль-Фараби лицензией не охватываются и принадлежат университету.

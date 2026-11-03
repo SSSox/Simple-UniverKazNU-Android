@@ -1,0 +1,7 @@
+<!-- The Moodle mark used on the Windows tile: a mortarboard over two arches, drawn as a 2dp stroke. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24" android:tint="?attr/colorControlNormal">
+    <path android:strokeColor="@android:color/white" android:strokeWidth="2" android:strokeLineCap="round"
+        android:strokeLineJoin="round" android:fillColor="#00000000"
+        android:pathData="M5.5,18v-5a2.7,2.7 0,0 1,5.4 0v5M10.9,13a2.7,2.7 0,0 1,5.4 0v5M8,7.5l6,-2.5 6,2.5 -6,2.5zM20,7.5v3.5" />
+</vector>

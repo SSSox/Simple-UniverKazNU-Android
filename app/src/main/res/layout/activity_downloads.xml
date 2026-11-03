@@ -1,0 +1,55 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/downloads_root" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical">
+    <com.google.android.material.appbar.AppBarLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:background="?attr/colorSurface" app:liftOnScroll="false">
+        <com.google.android.material.appbar.MaterialToolbar android:id="@+id/downloads_toolbar"
+            android:layout_width="match_parent" android:layout_height="56dp"
+            app:navigationIcon="@drawable/ic_back" app:menu="@menu/downloads" />
+    </com.google.android.material.appbar.AppBarLayout>
+    <!-- Opened with the search icon: the query, and whether it also looks inside the files' text. -->
+    <com.google.android.material.textfield.TextInputLayout android:id="@+id/downloads_search_layout"
+        style="@style/Widget.Material3.TextInputLayout.OutlinedBox" android:layout_width="match_parent"
+        android:layout_height="wrap_content" android:layout_marginHorizontal="16dp" android:visibility="gone"
+        app:boxCornerRadiusBottomEnd="28dp" app:boxCornerRadiusBottomStart="28dp"
+        app:boxCornerRadiusTopEnd="28dp" app:boxCornerRadiusTopStart="28dp"
+        app:endIconMode="clear_text" app:hintEnabled="false" app:startIconDrawable="@drawable/ic_search">
+        <com.google.android.material.textfield.TextInputEditText android:id="@+id/downloads_search"
+            android:layout_width="match_parent" android:layout_height="wrap_content" android:imeOptions="actionSearch"
+            android:importantForAutofill="no" android:inputType="text" android:maxLength="200" android:singleLine="true" />
+    </com.google.android.material.textfield.TextInputLayout>
+    <com.google.android.material.chip.Chip android:id="@+id/downloads_text_search" style="@style/Widget.Material3.Chip.Filter"
+        android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginHorizontal="16dp"
+        android:layout_marginTop="4dp" android:visibility="gone" />
+    <HorizontalScrollView android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:clipToPadding="false" android:paddingHorizontal="16dp" android:scrollbars="none">
+        <com.google.android.material.chip.ChipGroup android:id="@+id/downloads_filters"
+            android:layout_width="wrap_content" android:layout_height="wrap_content" android:paddingTop="8dp"
+            app:selectionRequired="true" app:singleLine="true" app:singleSelection="true" />
+    </HorizontalScrollView>
+    <!-- One chip per course the files came from. -->
+    <HorizontalScrollView android:id="@+id/downloads_subjects_scroll" android:layout_width="match_parent"
+        android:layout_height="wrap_content" android:clipToPadding="false" android:paddingHorizontal="16dp"
+        android:scrollbars="none" android:visibility="gone">
+        <com.google.android.material.chip.ChipGroup android:id="@+id/downloads_subjects"
+            android:layout_width="wrap_content" android:layout_height="wrap_content" android:paddingBottom="8dp"
+            app:selectionRequired="true" app:singleLine="true" app:singleSelection="true" />
+    </HorizontalScrollView>
+    <FrameLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1">
+        <androidx.recyclerview.widget.RecyclerView android:id="@+id/downloads_list"
+            android:layout_width="match_parent" android:layout_height="match_parent" android:clipToPadding="false"
+            android:paddingHorizontal="16dp" android:paddingBottom="24dp" />
+        <LinearLayout xmlns:tools="http://schemas.android.com/tools" tools:ignore="UseCompoundDrawables"
+            android:id="@+id/downloads_empty" android:layout_width="match_parent"
+            android:layout_height="match_parent" android:gravity="center" android:orientation="vertical"
+            android:padding="32dp" android:visibility="gone">
+            <ImageView android:layout_width="72dp" android:layout_height="72dp" android:background="@drawable/icon_circle"
+                android:backgroundTint="?attr/colorSecondaryContainer" android:importantForAccessibility="no"
+                android:padding="20dp" android:src="@drawable/ic_downloads" app:tint="?attr/colorOnSecondaryContainer" />
+            <TextView android:id="@+id/downloads_empty_text" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:layout_marginTop="20dp" android:gravity="center"
+                android:maxWidth="420dp" android:accessibilityLiveRegion="polite"
+                android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurfaceVariant" />
+        </LinearLayout>
+    </FrameLayout>
+</LinearLayout>

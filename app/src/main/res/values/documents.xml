@@ -1,0 +1,11 @@
+<resources>
+    <string name="document_error_message">Не удалось загрузить документ. Проверьте подключение и повторите. Можно вернуться к предыдущему разделу.</string>
+    <string name="document_transcript">Транскрипт</string>
+    <string name="document_recordbook">Зачётная книжка</string>
+    <string name="document_iup">Учебный план</string>
+    <string name="document_syllabus">Силлабус</string>
+    <string name="document_title">Документ</string>
+    <string name="document_back">Назад к разделу</string>
+    <string name="document_original">Оригинал</string>
+    <string name="document_read">Читать</string>
+</resources>

@@ -1,0 +1,31 @@
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto" android:id="@+id/download_card"
+    android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginBottom="8dp"
+    android:clickable="true" android:focusable="true">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:gravity="center_vertical" android:minHeight="72dp" android:orientation="horizontal"
+        android:paddingVertical="12dp" android:paddingStart="16dp" android:paddingEnd="4dp">
+        <TextView android:id="@+id/download_badge" android:layout_width="48dp" android:layout_height="48dp"
+            android:background="@drawable/kind_badge" android:gravity="center" android:importantForAccessibility="no"
+            android:textSize="12sp" android:textStyle="bold" />
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+            android:layout_marginStart="16dp" android:orientation="vertical">
+            <TextView android:id="@+id/download_name" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:ellipsize="middle" android:maxLines="2" android:textAppearance="?attr/textAppearanceTitleSmall"
+                android:textColor="?attr/colorOnSurface" />
+            <TextView android:id="@+id/download_meta" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="2dp" android:maxLines="3" android:ellipsize="end"
+                android:textAppearance="?attr/textAppearanceBodySmall" android:textColor="?attr/colorOnSurfaceVariant" />
+            <!-- The words found inside the file, in context. -->
+            <TextView android:id="@+id/download_snippet" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="6dp" android:maxLines="3" android:ellipsize="end" android:visibility="gone"
+                android:textAppearance="?attr/textAppearanceBodySmall" android:textColor="?attr/colorOnSurface" />
+            <com.google.android.material.progressindicator.LinearProgressIndicator android:id="@+id/download_progress"
+                android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp"
+                android:importantForAccessibility="no" android:visibility="gone" app:trackCornerRadius="2dp" app:trackThickness="4dp" />
+        </LinearLayout>
+        <com.google.android.material.button.MaterialButton android:id="@+id/download_action"
+            style="@style/Widget.Material3.Button.IconButton" android:layout_width="48dp" android:layout_height="48dp"
+            app:icon="@drawable/ic_more" app:iconTint="?attr/colorOnSurfaceVariant" />
+    </LinearLayout>
+</com.google.android.material.card.MaterialCardView>

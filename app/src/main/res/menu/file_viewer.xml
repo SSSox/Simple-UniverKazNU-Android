@@ -1,0 +1,14 @@
+<menu xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto">
+    <!-- Not "viewer_find": that id belongs to the find field, and a menu item view with the same id would shadow it. -->
+    <item android:id="@+id/viewer_find_toggle" android:icon="@drawable/ic_search" android:title="@string/find_in_file"
+        app:showAsAction="ifRoom" />
+    <item android:id="@+id/viewer_share" android:icon="@drawable/ic_share" android:title="@string/share"
+        app:showAsAction="ifRoom" />
+    <item android:id="@+id/viewer_external" android:icon="@drawable/ic_open_in_new" android:title="@string/open_external"
+        app:showAsAction="ifRoom" />
+    <item android:id="@+id/viewer_print" android:icon="@drawable/ic_print" android:title="@string/print"
+        app:showAsAction="never" />
+    <item android:id="@+id/viewer_zoom_in" android:title="@string/preview_zoom_in" app:showAsAction="never" />
+    <item android:id="@+id/viewer_zoom_out" android:title="@string/preview_zoom_out" app:showAsAction="never" />
+    <item android:id="@+id/viewer_page_a4" android:title="@string/preview_page_a4" android:checkable="true" app:showAsAction="never" />
+</menu>

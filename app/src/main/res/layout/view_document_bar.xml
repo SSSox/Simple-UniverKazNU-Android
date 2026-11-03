@@ -1,0 +1,23 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent" android:layout_height="64dp"
+    android:gravity="center_vertical" android:orientation="horizontal" android:paddingStart="4dp" android:paddingEnd="8dp">
+    <com.google.android.material.button.MaterialButton android:id="@+id/document_back"
+        style="@style/Widget.Material3.Button.IconButton" android:layout_width="48dp" android:layout_height="48dp"
+        app:icon="@drawable/ic_back" app:iconTint="?attr/colorOnSurfaceVariant" />
+    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+        android:layout_marginStart="4dp" android:orientation="vertical">
+        <TextView android:id="@+id/document_title" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:ellipsize="end" android:maxLines="1" android:textAppearance="@style/Univer.TextAppearance.ToolbarTitle"
+            android:textColor="?attr/colorOnSurface" />
+        <TextView android:id="@+id/document_subtitle" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:ellipsize="end" android:maxLines="1" android:textAppearance="?attr/textAppearanceBodySmall"
+            android:textColor="?attr/colorOnSurfaceVariant" />
+    </LinearLayout>
+    <com.google.android.material.button.MaterialButton android:id="@+id/document_print"
+        style="@style/Widget.Material3.Button.IconButton" android:layout_width="48dp" android:layout_height="48dp"
+        app:icon="@drawable/ic_print" app:iconTint="?attr/colorOnSurfaceVariant" />
+    <com.google.android.material.button.MaterialButton android:id="@+id/document_mode"
+        style="@style/Widget.Material3.Button.TonalButton" android:layout_width="wrap_content"
+        android:layout_height="wrap_content" android:layout_marginStart="4dp" android:maxWidth="140dp" android:maxLines="2"
+        android:minHeight="48dp" android:paddingHorizontal="16dp" app:icon="@drawable/ic_reader" />
+</LinearLayout>

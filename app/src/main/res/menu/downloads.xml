@@ -1,0 +1,12 @@
+<menu xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto">
+    <!-- Not "downloads_search": that id belongs to the search field, and a menu item view with the same id would shadow it. -->
+    <item android:id="@+id/downloads_search_toggle" android:icon="@drawable/ic_search" android:title="@string/search"
+        app:showAsAction="always" />
+    <item android:id="@+id/downloads_folder" android:icon="@drawable/ic_folder" android:title="@string/open_folder"
+        app:showAsAction="ifRoom" />
+    <group android:id="@+id/downloads_sort" android:checkableBehavior="single">
+        <item android:id="@+id/downloads_sort_date" android:title="@string/sort_date" app:showAsAction="never" />
+        <item android:id="@+id/downloads_sort_name" android:title="@string/sort_name" app:showAsAction="never" />
+        <item android:id="@+id/downloads_sort_size" android:title="@string/sort_size" app:showAsAction="never" />
+    </group>
+</menu>

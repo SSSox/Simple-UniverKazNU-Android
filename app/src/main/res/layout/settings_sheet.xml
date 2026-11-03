@@ -1,0 +1,208 @@
+<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent" android:layout_height="wrap_content" android:fillViewport="true">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="vertical" android:paddingHorizontal="16dp" android:paddingTop="0dp" android:paddingBottom="16dp">
+        <com.google.android.material.bottomsheet.BottomSheetDragHandleView android:id="@+id/handle"
+            android:layout_width="match_parent" android:layout_height="wrap_content" />
+        <TextView android:id="@+id/brand_badge" android:layout_width="64dp" android:layout_height="64dp"
+            android:layout_marginTop="32dp" android:layout_marginBottom="24dp"
+            android:background="@drawable/monogram_background" android:gravity="center" android:text="@string/brand_monogram"
+            android:textSize="32sp" android:textStyle="bold" android:textColor="?attr/colorOnPrimary"
+            android:importantForAccessibility="no" />
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:gravity="center_vertical">
+            <TextView android:id="@+id/title" android:layout_width="0dp" android:layout_weight="1"
+                android:layout_height="wrap_content" android:text="@string/settings"
+                android:textAppearance="?attr/textAppearanceHeadlineSmall" android:textColor="?attr/colorOnSurface" />
+            <com.google.android.material.button.MaterialButton android:id="@+id/close_settings"
+                style="@style/Widget.Material3.Button.TextButton" android:layout_width="wrap_content"
+                android:layout_height="wrap_content" android:minHeight="48dp" android:text="@string/done" />
+        </LinearLayout>
+        <TextView android:id="@+id/subtitle" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="8dp" android:text="@string/secure_hint"
+            android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant" />
+
+        <com.google.android.material.card.MaterialCardView android:id="@+id/account_card"
+            android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="16dp">
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="vertical" android:padding="16dp">
+                <LinearLayout android:id="@+id/account_summary" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:gravity="center_vertical" android:orientation="horizontal">
+                    <ImageView android:layout_width="40dp" android:layout_height="40dp"
+                        android:background="@drawable/icon_circle" android:backgroundTint="?attr/colorPrimaryContainer"
+                        android:importantForAccessibility="no" android:padding="8dp" android:src="@drawable/ic_account"
+                        app:tint="?attr/colorOnPrimaryContainer" />
+                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+                        android:layout_marginStart="16dp" android:orientation="vertical">
+                        <TextView android:id="@+id/account_title" android:layout_width="match_parent"
+                            android:layout_height="wrap_content" android:text="@string/account"
+                            android:textAppearance="?attr/textAppearanceTitleMedium" android:textColor="?attr/colorOnSurface" />
+                        <TextView android:id="@+id/account_status" android:layout_width="match_parent"
+                            android:layout_height="wrap_content" android:textAppearance="?attr/textAppearanceBodyMedium"
+                            android:textColor="?attr/colorOnSurfaceVariant" />
+                    </LinearLayout>
+                </LinearLayout>
+                <com.google.android.material.button.MaterialButton android:id="@+id/edit_account"
+                    style="@style/Widget.Material3.Button.TonalButton" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:layout_marginTop="12dp" android:minHeight="48dp"
+                    android:text="@string/edit_account" app:icon="@drawable/ic_lock" />
+                <LinearLayout android:id="@+id/credentials" android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:orientation="vertical" android:layout_marginTop="12dp">
+                    <com.google.android.material.textfield.TextInputLayout android:id="@+id/login_layout"
+                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox" android:layout_width="match_parent"
+                        android:layout_height="wrap_content" android:hint="@string/login" app:startIconDrawable="@drawable/ic_account">
+                        <com.google.android.material.textfield.TextInputEditText android:id="@+id/login"
+                            android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="textNoSuggestions"
+                            android:singleLine="true" android:saveEnabled="false" android:importantForAutofill="noExcludeDescendants"
+                            android:imeOptions="actionNext" />
+                    </com.google.android.material.textfield.TextInputLayout>
+                    <com.google.android.material.textfield.TextInputLayout android:id="@+id/password_layout"
+                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox" android:layout_width="match_parent"
+                        android:layout_height="wrap_content" android:layout_marginTop="12dp" android:hint="@string/password"
+                        app:startIconDrawable="@drawable/ic_lock" app:endIconMode="password_toggle"
+                        app:endIconContentDescription="@string/show_password">
+                        <com.google.android.material.textfield.TextInputEditText android:id="@+id/password"
+                            android:layout_width="match_parent" android:layout_height="wrap_content" android:inputType="textPassword"
+                            android:singleLine="true" android:saveEnabled="false" android:importantForAutofill="noExcludeDescendants"
+                            android:imeOptions="actionDone" />
+                    </com.google.android.material.textfield.TextInputLayout>
+                    <TextView android:id="@+id/credentials_note" android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp" android:text="@string/password_not_shown" android:visibility="gone"
+                        android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant" />
+                    <TextView android:id="@+id/feedback" android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp" android:textAppearance="?attr/textAppearanceBodyMedium"
+                        android:textColor="?attr/colorError" android:visibility="gone" android:accessibilityLiveRegion="polite" />
+                    <com.google.android.material.button.MaterialButton android:id="@+id/save"
+                        android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="56dp"
+                        android:layout_marginTop="16dp" android:text="@string/save" />
+                </LinearLayout>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
+        <LinearLayout android:id="@+id/security_section" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="vertical">
+            <TextView android:id="@+id/security_label" style="@style/Univer.SectionTitle"
+                android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/security_title" />
+            <com.google.android.material.card.MaterialCardView android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:orientation="vertical" android:paddingHorizontal="16dp" android:paddingVertical="12dp">
+                    <TextView android:id="@+id/security_status" android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:drawablePadding="12dp" android:gravity="center_vertical" android:minHeight="40dp"
+                        android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface"
+                        app:drawableStartCompat="@drawable/ic_lock" app:drawableTint="?attr/colorPrimary"
+                        android:accessibilityLiveRegion="polite" />
+                    <com.google.android.material.button.MaterialButton android:id="@+id/security_pin_action"
+                        style="@style/Widget.Material3.Button.TonalButton" android:layout_width="match_parent"
+                        android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp"
+                        android:text="@string/security_pin_set" />
+                    <com.google.android.material.button.MaterialButton android:id="@+id/security_pin_disable"
+                        style="@style/Widget.Material3.Button.TextButton" android:layout_width="match_parent"
+                        android:layout_height="wrap_content" android:minHeight="48dp" android:text="@string/security_pin_disable" />
+                    <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/security_biometric"
+                        android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="56dp"
+                        android:text="@string/security_biometric" android:textAppearance="?attr/textAppearanceBodyLarge" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+        </LinearLayout>
+
+        <com.google.android.material.button.MaterialButton android:id="@+id/more_options"
+            style="@style/Widget.Material3.Button.TextButton" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp"
+            android:text="@string/more_options" app:icon="@drawable/ic_language" />
+        <LinearLayout android:id="@+id/preferences" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="vertical">
+            <TextView android:id="@+id/language_label" style="@style/Univer.SectionTitle"
+                android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/language" />
+            <com.google.android.material.card.MaterialCardView android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+                <RadioGroup android:id="@+id/languages" android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:orientation="vertical" android:paddingHorizontal="8dp" android:paddingVertical="4dp">
+                    <com.google.android.material.radiobutton.MaterialRadioButton android:id="@+id/russian"
+                        android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp"
+                        android:text="@string/language_ru" />
+                    <com.google.android.material.radiobutton.MaterialRadioButton android:id="@+id/kazakh"
+                        android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp"
+                        android:text="@string/language_kk" />
+                    <com.google.android.material.radiobutton.MaterialRadioButton android:id="@+id/english"
+                        android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="48dp"
+                        android:text="@string/language_en" />
+                </RadioGroup>
+            </com.google.android.material.card.MaterialCardView>
+            <TextView android:id="@+id/theme_label" style="@style/Univer.SectionTitle"
+                android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/theme" />
+            <com.google.android.material.card.MaterialCardView android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:orientation="vertical" android:paddingHorizontal="16dp" android:paddingVertical="12dp">
+                    <com.google.android.material.button.MaterialButtonToggleGroup android:id="@+id/themes"
+                        android:layout_width="match_parent" android:layout_height="wrap_content"
+                        app:singleSelection="true" app:selectionRequired="true">
+                        <com.google.android.material.button.MaterialButton android:id="@+id/theme_system"
+                            style="?attr/materialButtonOutlinedStyle" android:layout_width="0dp" android:layout_weight="1"
+                            android:layout_height="wrap_content" android:minHeight="48dp" android:maxLines="2"
+                            android:paddingHorizontal="4dp" android:text="@string/theme_system" />
+                        <com.google.android.material.button.MaterialButton android:id="@+id/theme_light"
+                            style="?attr/materialButtonOutlinedStyle" android:layout_width="0dp" android:layout_weight="1"
+                            android:layout_height="wrap_content" android:minHeight="48dp" android:maxLines="2"
+                            android:paddingHorizontal="4dp" android:text="@string/theme_light" />
+                        <com.google.android.material.button.MaterialButton android:id="@+id/theme_dark"
+                            style="?attr/materialButtonOutlinedStyle" android:layout_width="0dp" android:layout_weight="1"
+                            android:layout_height="wrap_content" android:minHeight="48dp" android:maxLines="2"
+                            android:paddingHorizontal="4dp" android:text="@string/theme_dark" />
+                    </com.google.android.material.button.MaterialButtonToggleGroup>
+                    <TextView android:id="@+id/theme_hint" android:layout_width="match_parent" android:layout_height="wrap_content" android:visibility="gone"
+                        android:layout_marginTop="8dp" android:text="@string/theme_hint"
+                        android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+            <TextView android:id="@+id/view_label" style="@style/Univer.SectionTitle"
+                android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/view_section" />
+            <com.google.android.material.card.MaterialCardView android:layout_width="match_parent"
+                android:layout_height="wrap_content">
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:orientation="vertical" android:paddingHorizontal="16dp" android:paddingVertical="8dp">
+                    <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/mobile_layout"
+                        android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="56dp"
+                        android:text="@string/mobile_layout" android:textAppearance="?attr/textAppearanceBodyLarge"
+                        android:checked="true" />
+                    <TextView android:id="@+id/mobile_hint" android:layout_width="match_parent" android:layout_height="wrap_content" android:visibility="gone"
+                        android:text="@string/mobile_hint" android:textAppearance="?attr/textAppearanceBodyMedium"
+                        android:textColor="?attr/colorOnSurfaceVariant" />
+                    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp" android:gravity="center_vertical" android:orientation="horizontal">
+                        <TextView android:id="@+id/text_size_label" android:layout_width="0dp" android:layout_height="wrap_content"
+                            android:layout_weight="1" android:text="@string/text_size"
+                            android:textAppearance="?attr/textAppearanceBodyLarge" android:textColor="?attr/colorOnSurface" />
+                        <TextView android:id="@+id/text_size_value" android:layout_width="wrap_content"
+                            android:layout_height="wrap_content" android:textAppearance="?attr/textAppearanceLabelLarge"
+                            android:textColor="?attr/colorPrimary" />
+                    </LinearLayout>
+                    <com.google.android.material.slider.Slider android:id="@+id/text_size"
+                        android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:stepSize="10" android:value="100" android:valueFrom="60" android:valueTo="160" />
+                    <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/animations"
+                        android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="56dp"
+                        android:layout_marginTop="8dp" android:text="@string/animations"
+                        android:textAppearance="?attr/textAppearanceBodyLarge" android:checked="true" />
+                    <TextView android:id="@+id/animations_hint" android:layout_width="match_parent" android:layout_height="wrap_content" android:visibility="gone"
+                        android:text="@string/animations_hint" android:textAppearance="?attr/textAppearanceBodyMedium"
+                        android:textColor="?attr/colorOnSurfaceVariant" />
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+        </LinearLayout>
+        <com.google.android.material.button.MaterialButton android:id="@+id/downloads"
+            style="@style/Widget.Material3.Button.TonalButton" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:layout_marginTop="16dp" android:minHeight="48dp"
+            android:text="@string/downloads" app:icon="@drawable/ic_downloads" />
+        <com.google.android.material.button.MaterialButton android:id="@+id/logout"
+            style="@style/Widget.Material3.Button.OutlinedButton" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:layout_marginTop="8dp" android:minHeight="48dp"
+            android:text="@string/logout" app:icon="@drawable/ic_logout" />
+        <com.google.android.material.button.MaterialButton android:id="@+id/delete"
+            style="@style/Widget.Material3.Button.TextButton" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:layout_marginTop="4dp" android:minHeight="48dp"
+            android:textColor="?attr/colorError" android:text="@string/delete_credentials"
+            app:icon="@drawable/ic_delete" app:iconTint="?attr/colorError" />
+    </LinearLayout>
+</androidx.core.widget.NestedScrollView>

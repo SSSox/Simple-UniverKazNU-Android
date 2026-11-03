@@ -1,0 +1,89 @@
+<androidx.drawerlayout.widget.DrawerLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto" android:id="@+id/drawer"
+    android:layout_width="match_parent" android:layout_height="match_parent">
+    <!-- System bar and keyboard insets are applied to this content frame. The print-document
+         viewer is added here too, so it covers the app bar while the source page stays intact. -->
+    <FrameLayout android:id="@+id/content" android:layout_width="match_parent" android:layout_height="match_parent"
+        android:background="@color/app_bar">
+        <LinearLayout android:id="@+id/main_column" android:layout_width="match_parent"
+            android:layout_height="match_parent" android:orientation="vertical">
+            <com.google.android.material.appbar.AppBarLayout android:id="@+id/app_bar"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:background="@color/app_bar" app:liftOnScroll="false">
+                <com.google.android.material.appbar.MaterialToolbar android:id="@+id/toolbar"
+                    android:layout_width="match_parent" android:layout_height="56dp"
+                    app:navigationIcon="@drawable/ic_menu" app:menu="@menu/main_toolbar"
+                    app:titleMarginStart="8dp" />
+                <View android:layout_width="match_parent" android:layout_height="1dp" android:background="@color/app_bar_line"
+                    android:importantForAccessibility="no" />
+            </com.google.android.material.appbar.AppBarLayout>
+            <LinearLayout android:id="@+id/status_bar" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:layout_marginHorizontal="12dp"
+                android:layout_marginBottom="8dp" android:background="@drawable/banner_background"
+                android:backgroundTint="?attr/colorSecondaryContainer" android:gravity="center_vertical"
+                android:minHeight="56dp" android:orientation="horizontal" android:paddingStart="16dp"
+                android:paddingEnd="8dp" android:visibility="gone" android:accessibilityLiveRegion="polite">
+                <ImageView android:id="@+id/status_icon" android:layout_width="24dp" android:layout_height="24dp"
+                    android:importantForAccessibility="no" android:src="@drawable/ic_info"
+                    app:tint="?attr/colorOnSecondaryContainer" />
+                <TextView android:id="@+id/status_text" android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:layout_marginStart="12dp" android:paddingVertical="10dp"
+                    android:textAppearance="?attr/textAppearanceBodyMedium"
+                    android:textColor="?attr/colorOnSecondaryContainer" />
+                <com.google.android.material.button.MaterialButton android:id="@+id/status_action"
+                    style="@style/Widget.Material3.Button.TextButton" android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" android:minHeight="48dp" android:text="@string/retry" />
+            </LinearLayout>
+            <FrameLayout android:id="@+id/web_container" android:layout_width="match_parent"
+                android:layout_height="0dp" android:layout_weight="1">
+                <WebView android:id="@+id/web_view" android:layout_width="match_parent" android:layout_height="match_parent" />
+                <LinearLayout android:id="@+id/notice_loading_overlay" android:layout_width="match_parent"
+                    android:layout_height="match_parent" android:background="?attr/colorSurface" android:gravity="center"
+                    android:orientation="vertical" android:padding="24dp" android:clickable="true"
+                    android:focusable="true" android:visibility="gone">
+                    <com.google.android.material.progressindicator.CircularProgressIndicator
+                        android:layout_width="wrap_content" android:layout_height="wrap_content" android:indeterminate="true"
+                        android:importantForAccessibility="no" app:indicatorSize="40dp" app:trackThickness="4dp"
+                        app:trackCornerRadius="2dp" />
+                    <TextView android:id="@+id/notice_loading_text" android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" android:layout_marginTop="20dp"
+                        android:text="@string/preparing_page" android:textAppearance="?attr/textAppearanceTitleMedium"
+                        android:textColor="?attr/colorOnSurface" android:gravity="center"
+                        android:accessibilityLiveRegion="polite" />
+                </LinearLayout>
+                <ScrollView android:id="@+id/error_overlay" android:layout_width="match_parent"
+                    android:layout_height="match_parent" android:background="?attr/colorSurface"
+                    android:fillViewport="true" android:visibility="gone">
+                    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:gravity="center" android:orientation="vertical" android:padding="32dp">
+                        <ImageView android:id="@+id/error_icon" android:layout_width="72dp" android:layout_height="72dp"
+                            android:background="@drawable/icon_circle" android:backgroundTint="?attr/colorSecondaryContainer"
+                            android:importantForAccessibility="no" android:padding="20dp" android:src="@drawable/ic_cloud_off"
+                            app:tint="?attr/colorOnSecondaryContainer" />
+                        <TextView android:id="@+id/error_message" android:layout_width="match_parent"
+                            android:layout_height="wrap_content" android:layout_marginTop="24dp" android:maxWidth="480dp"
+                            android:gravity="center" android:text="@string/network_error"
+                            android:textAppearance="?attr/textAppearanceTitleMedium" android:textColor="?attr/colorOnSurface"
+                            android:accessibilityLiveRegion="polite" />
+                        <com.google.android.material.button.MaterialButton android:id="@+id/error_retry"
+                            android:layout_width="wrap_content" android:layout_height="wrap_content"
+                            android:layout_marginTop="24dp" android:minHeight="48dp" android:text="@string/retry"
+                            app:icon="@drawable/ic_refresh" />
+                        <com.google.android.material.button.MaterialButton android:id="@+id/error_back"
+                            style="@style/Widget.Material3.Button.TextButton" android:layout_width="wrap_content"
+                            android:layout_height="wrap_content" android:layout_marginTop="4dp" android:minHeight="48dp"
+                            android:text="@string/return_to_site" />
+                    </LinearLayout>
+                </ScrollView>
+                <com.google.android.material.progressindicator.LinearProgressIndicator android:id="@+id/loading"
+                    android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_gravity="top"
+                    android:indeterminate="true" app:trackThickness="3dp" />
+            </FrameLayout>
+        </LinearLayout>
+        <FrameLayout android:id="@+id/setup_container" android:layout_width="match_parent"
+            android:layout_height="match_parent" android:background="?attr/colorSurface" android:visibility="gone" />
+    </FrameLayout>
+    <com.google.android.material.navigation.NavigationView android:id="@+id/navigation"
+        android:layout_width="wrap_content" android:layout_height="match_parent" android:layout_gravity="start"
+        app:headerLayout="@layout/drawer_header" app:menu="@menu/drawer" />
+</androidx.drawerlayout.widget.DrawerLayout>

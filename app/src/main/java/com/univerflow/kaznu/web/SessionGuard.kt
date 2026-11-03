@@ -1,0 +1,227 @@
+package com.univerflow.kaznu.web
+
+/**
+ * Attempt budgets that survive Activity recreation through the ViewModel (no secrets). [loginTimeout] and
+ * [reauthenticationTimeout] bound the wait for a submitted login and for the AJAX /user/ajl answer.
+ */
+class SessionGuard(val loginTimeout: Long = 25_000, private val reauthenticationTimeout: Long = 25_000) {
+    var retryVersion = 0
+        private set
+    var blocked = false
+        private set
+    var pendingDocument: String? = null
+        private set
+    var pendingReauthentication: String? = null
+        private set
+    /** A challenge whose answer did not arrive in time: its result may still come and is then honoured. */
+    var lateReauthentication: String? = null
+        private set
+    private var lastLogin: Long? = null
+    private var lastReauthentication: Long? = null
+    private val logins = ArrayDeque<Long>()
+    private val reauthenticationAttempts = ArrayDeque<Long>()
+    private val completedReauthentications = linkedSetOf<String>()
+    private val notices = ConfirmationBudget()
+    private val agreements = ConfirmationBudget()
+    // Logout and a dialog bound to another account stop until an explicit Retry. A lost renderer only
+    // detaches the attempt in flight: the recreated screen continues by itself.
+    private var stopped = false
+    // A timeout proves nothing about the password: a later document may try again within the budget.
+    private var ambiguous = false
+    private var blockedDocument: String? = null
+    private var reauthenticationDocument: String? = null
+    private val recovery = RecoveryBackoff()
+    private var refusedChallenges = 0
+
+    /**
+     * A stop that a fresh page of the site ends by itself: a stalled or refused attempt, not the login form's
+     * rejection of the password or an explicit stop. The automation reloads the page for it.
+     */
+    val recoverable get() = blocked && ambiguous && !stopped
+
+    /** The wait before the next automatic reload of a page whose automation could not finish. */
+    fun recoveryDelay(now: Long) = recovery.delay(now)
+    fun recovering(now: Long) = recovery.spend(now)
+    val recoveries get() = recovery.attempts
+    /** A signed-in page without pending forms: the next failure is recovered quickly again. */
+    fun recovered() = recovery.reset()
+
+    private fun block(document: String?, timeout: Boolean) {
+        blocked = true
+        ambiguous = timeout
+        blockedDocument = document
+    }
+
+    /**
+     * The site refused an AJAX challenge. A stale dialog key is refused even for a correct password, so automation stops
+     * but the full-page form may still sign in once; earlier full-page failures and stops stay as they are.
+     */
+    private fun rejectChallenge(document: String?) {
+        if (blocked && !ambiguous) return
+        if (!blocked) refusedChallenges++
+        // Refused again with no sign-in in between that proved the password: that is the password's rejection.
+        block(document, timeout = refusedChallenges < 2)
+    }
+
+    fun reauthenticationRejected(document: String) {
+        pendingReauthentication = null
+        lateReauthentication = null
+        rejectChallenge(document)
+    }
+
+    private fun loginBudget(now: Long): Boolean {
+        while (logins.isNotEmpty() && now - logins.first() >= 600_000) logins.removeFirst()
+        return logins.size < 3 && logins.lastOrNull()?.let { now - it < 60_000 } != true
+    }
+
+    /** Three full-page logins per ten minutes, a minute apart. A full budget is a wait, not a failure. */
+    fun loginBudgetExhausted(now: Long): Boolean {
+        while (logins.isNotEmpty() && now - logins.first() >= 600_000) logins.removeFirst()
+        return logins.size >= 3
+    }
+
+    private fun liftable(document: String) = blocked && ambiguous && !stopped && document != blockedDocument
+
+    fun tryLogin(document: String, now: Long): Boolean {
+        if (liftable(document) && loginBudget(now)) { blocked = false; ambiguous = false; blockedDocument = null }
+        if (blocked || pendingDocument != null || pendingReauthentication != null) return false
+        // A session that ends again soon after a successful login waits for the budget instead of
+        // stopping for good: only a confirmed failure (below) needs the user's Retry.
+        if (!loginBudget(now)) return false
+        pendingDocument = document
+        lastLogin = now
+        logins.addLast(now)
+        // A notice or agreement sent in the ended session (its POST redirected to this form) did not count:
+        // shown again after this login, it is a new appearance. Their attempt budgets stay.
+        notices.release(); agreements.release()
+        return true
+    }
+
+    fun loginStillVisible(document: String, now: Long): Boolean {
+        if (pendingDocument != null) {
+            // A new login document after the submit is the site's rejection; the same one is a stall.
+            if (pendingDocument != document) { block(document, timeout = false); pendingDocument = null }
+            else if (now - (lastLogin ?: now) > loginTimeout) { block(document, timeout = true); pendingDocument = null }
+        }
+        return blocked && !liftable(document)
+    }
+
+    fun authenticated() {
+        if (pendingDocument != null) refusedChallenges = 0
+        pendingDocument = null
+    }
+
+    /**
+     * A newly loaded page of a signed-in account proves the session works again, e.g. after a slow
+     * submit that finished late or a manual login. Lifts every block except an explicit stop.
+     */
+    fun authenticatedPage(document: String): Boolean {
+        if (!blocked || stopped || document == blockedDocument) return false
+        blocked = false; ambiguous = false; blockedDocument = null
+        return true
+    }
+
+    fun tryReauthenticate(challenge: String, now: Long, document: String = challenge): Boolean {
+        if (blocked || pendingReauthentication != null) return false
+        if (challenge in completedReauthentications) return false
+        while (reauthenticationAttempts.isNotEmpty() && now - reauthenticationAttempts.first() >= 60_000)
+            reauthenticationAttempts.removeFirst()
+        // Verified successes may be followed by another real challenge. Bound request storms
+        // without turning a temporary rate limit into a demand to enter credentials again.
+        if (reauthenticationAttempts.size >= 3) return false
+        pendingReauthentication = challenge
+        lateReauthentication = null
+        reauthenticationDocument = document
+        lastReauthentication = now
+        reauthenticationAttempts.addLast(now)
+        return true
+    }
+
+    /** True when this result lifted a stop that an unanswered (late) request had caused. */
+    fun reauthenticationResult(challenge: String, success: Boolean): Boolean {
+        val late = lateReauthentication == challenge
+        if (pendingReauthentication != challenge && !late) return false
+        pendingReauthentication = null
+        lateReauthentication = null
+        if (!success) { rejectChallenge(reauthenticationDocument); return false }
+        refusedChallenges = 0
+        completedReauthentications.add(challenge)
+        if (completedReauthentications.size > 64) completedReauthentications.remove(completedReauthentications.first())
+        // A slow but verified answer proves the password: only the timeout's own stop is lifted.
+        if (late && blocked && ambiguous && !stopped) {
+            blocked = false; ambiguous = false; blockedDocument = null
+            return true
+        }
+        return false
+    }
+
+    fun reauthenticationTimedOut(now: Long): Boolean {
+        if (pendingReauthentication != null && now - (lastReauthentication ?: now) > reauthenticationTimeout) {
+            lateReauthentication = pendingReauthentication
+            pendingReauthentication = null
+            block(reauthenticationDocument, timeout = true)
+        }
+        return blocked
+    }
+
+    /**
+     * The WebView of an unfinished attempt is gone (rotation, closed window): only the in-flight state is dropped and
+     * the budget stays, since a fresh form in its replacement is not a rejection of the password.
+     */
+    fun detach() {
+        pendingDocument = null
+        pendingReauthentication = null
+        lateReauthentication = null
+    }
+
+
+    fun canSubmitNotice(key: String, now: Long = 0) = notices.canSubmit(key, now)
+    fun noticeSubmitted(key: String, now: Long = 0) = notices.submitted(key, now)
+    fun observeNotices(present: Boolean, now: Long) = notices.observe(present, now)
+    fun canSubmitAgreement(key: String, now: Long) = agreements.canSubmit(key, now)
+    fun agreementSubmitted(key: String, now: Long) = agreements.submitted(key, now)
+    fun observeAgreements(present: Boolean, now: Long) = agreements.observe(present, now)
+
+    fun retry() {
+        retryVersion++
+        blocked = false; pendingDocument = null; pendingReauthentication = null; lateReauthentication = null
+        lastLogin = null; lastReauthentication = null
+        stopped = false; ambiguous = false; blockedDocument = null; reauthenticationDocument = null; refusedChallenges = 0
+        logins.clear(); reauthenticationAttempts.clear(); completedReauthentications.clear()
+        notices.reset(); agreements.reset(); recovery.reset()
+    }
+    fun stop() { blocked = true; stopped = true; pendingDocument = null; pendingReauthentication = null; lateReauthentication = null }
+
+    /**
+     * One submission per appearance; one still shown 20 s after sending is resent, at most three times per ten minutes.
+     * A stable absence releases it for a later, genuine appearance.
+     */
+    private class ConfirmationBudget {
+        private class Sent(val first: Long, var last: Long, var count: Int)
+        private val reserved = linkedMapOf<String, Sent>()
+        private val attempts = ArrayDeque<Long>()
+        private var absentSince: Long? = null
+        fun canSubmit(key: String, now: Long): Boolean {
+            while (attempts.isNotEmpty() && now - attempts.first() >= 60_000) attempts.removeFirst()
+            if (attempts.size >= 3) return false
+            val sent = reserved[key] ?: return reserved.size < 20
+            return now - sent.last >= 20_000 && (sent.count < 3 || now - sent.first >= 600_000)
+        }
+        fun submitted(key: String, now: Long) {
+            val sent = reserved[key]
+            if (sent == null || now - sent.first >= 600_000) reserved[key] = Sent(now, now, 1)
+            else { sent.last = now; sent.count++ }
+            attempts.addLast(now); absentSince = null
+        }
+        fun observe(present: Boolean, now: Long) {
+            if (present) absentSince = null
+            else {
+                if (absentSince == null) absentSince = now
+                // A normal page must remain visible, not just a transient AJAX loading frame.
+                if (now - (absentSince ?: now) >= 2_000) reserved.clear()
+            }
+        }
+        fun release() { reserved.clear(); absentSince = null }
+        fun reset() { reserved.clear(); attempts.clear(); absentSince = null }
+    }
+}

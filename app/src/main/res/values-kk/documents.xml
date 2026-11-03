@@ -1,0 +1,11 @@
+<resources>
+    <string name="document_error_message">Құжат жүктелмеді. Байланысты тексеріп, қайталаңыз немесе алдыңғы бөлімге оралыңыз.</string>
+    <string name="document_transcript">Транскрипт</string>
+    <string name="document_recordbook">Сынақ кітапшасы</string>
+    <string name="document_iup">Оқу жоспары</string>
+    <string name="document_syllabus">Силлабус</string>
+    <string name="document_title">Құжат</string>
+    <string name="document_back">Бөлімге оралу</string>
+    <string name="document_original">Түпнұсқа</string>
+    <string name="document_read">Оқу</string>
+</resources>

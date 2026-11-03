@@ -1,0 +1,4 @@
+<resources>
+    <item name="document_web" type="id" />
+    <item name="viewer_table_web" type="id" />
+</resources>
