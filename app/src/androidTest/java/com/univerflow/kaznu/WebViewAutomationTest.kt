@@ -544,6 +544,8 @@ class WebViewAutomationTest {
         load(studyPanel("""<table class="schedule"><tr><th></th><th>ПН</th><th>ВТ</th></tr>
             <tr><td>09:00–09:50</td><td><div class="groups"><div id="periodSource" title="Период: 01.09.2026 – 12.12.2026"><p>First subject</p><p>Teacher</p></div></div></td>
             <td><div class="groups"><div title="01.09.2026 – 12.12.2026"><p>Second subject</p><p>Период: 01.09.2026 – 12.12.2026</p></div></div></td></tr></table>"""), "", "https://univer.kaznu.kz/student/myschedule/")
+        // Captured before the mobile layout: on Mondays and Tuesdays it marks a header cell of this table as today.
+        eval("window.source=document.querySelector('table.schedule');window.sourceHtml=window.source.innerHTML")
         phoneWidth(320); mobile()
         assertEquals("One period per class", "2", eval("document.querySelectorAll('.univer-app-lesson-period').length"))
         assertEquals("Period stays in detailed mode", "true", eval("Array.from(document.querySelectorAll('.univer-app-lesson-period')).every(p=>getComputedStyle(p).display==='none')"))
@@ -556,9 +558,11 @@ class WebViewAutomationTest {
         assertEquals("English period label", "true", eval("document.querySelector('.univer-app-lesson-period').textContent.startsWith('Course dates:')"))
         eval("window.__univerMobileV1.setEnabled(true,'kz')")
         assertEquals("Kazakh period label", "true", eval("document.querySelector('.univer-app-lesson-period').textContent.startsWith('Курс мерзімі:')"))
-        eval("window.source=document.querySelector('table.schedule');window.sourceHtml=window.source.innerHTML")
         mobile(false)
-        assertEquals("Original DOM and hover text remain intact", "true", eval("window.source.innerHTML===window.sourceHtml&&!document.querySelector('.univer-app-lesson-period')&&document.getElementById('periodSource').title.includes('19.12.2026')"))
+        assertEquals("No period label is left behind", "true", eval("!document.querySelector('.univer-app-lesson-period')"))
+        assertEquals("The hover text keeps the late update", "true", eval("document.getElementById('periodSource').title.includes('19.12.2026')"))
+        eval("document.getElementById('periodSource').title='Период: 01.09.2026 – 12.12.2026'")
+        assertEquals("Apart from the site's own late update, the original DOM is intact", "true", eval("window.source.innerHTML===window.sourceHtml"))
     }
 
     @Test fun mobileScheduleRefreshesLateDataWithoutDuplicateCardsOrResettingDay() {

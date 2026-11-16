@@ -57,6 +57,38 @@ class SessionGuardTest {
         guard.reset()
         assertTrue("New credentials start afresh", guard.tryLogin("g", 600_002))
     }
+    @Test fun aMoodleRenewalSignsInAtOnceButKeepsTheTenMinuteBudget() {
+        val guard = SessionGuard()
+        assertTrue(guard.tryLogin("entry-1", 0)); guard.authenticated()
+        guard.retry()
+        assertFalse("A plain Retry still keeps a minute between logins", guard.tryLogin("entry-2", 5_000))
+        guard.renewal()
+        assertTrue("The Moodle window gives up after 90 s, so its renewal does not wait", guard.tryLogin("entry-2", 5_000))
+        guard.authenticated()
+        assertFalse("One renewal waives the minute once", guard.tryLogin("entry-3", 6_000))
+        guard.renewal()
+        assertTrue(guard.tryLogin("entry-3", 6_000))
+        guard.releaseLogin("entry-3")
+        assertTrue("A login that was never clicked gives the waiver back", guard.tryLogin("entry-3", 6_500))
+        guard.authenticated()
+        guard.renewal()
+        assertFalse("Three logins in ten minutes stay the limit", guard.tryLogin("entry-4", 7_000))
+    }
+    @Test fun aWrongPasswordInTheMoodleWindowStillStopsAtThreeLoginsAndTheWaiverDoesNotLinger() {
+        val guard = SessionGuard()
+        assertTrue(guard.tryLogin("a", 0)); assertTrue("First refusal", guard.loginStillVisible("b", 10_000))
+        guard.renewal(); assertTrue(guard.tryLogin("b", 12_000))
+        assertTrue("Second refusal stops", guard.loginStillVisible("c", 14_000)); assertFalse(guard.recoverable)
+        guard.renewal(); assertTrue("Retry in the window tries once more", guard.tryLogin("c", 22_000))
+        guard.renewal(); assertFalse("Never a fourth login within ten minutes", guard.tryLogin("d", 30_000))
+        guard.reset()
+        assertTrue(guard.tryLogin("e", 40_000))
+        guard.renewal(); guard.authenticated()
+        guard.retry()
+        assertFalse("A renewal that needed no login leaves no waiver behind", guard.tryLogin("f", 50_000))
+        guard.renewal(); guard.stop(); guard.retry()
+        assertFalse("A stop clears the waiver as well", guard.tryLogin("f", 55_000))
+    }
     @Test fun stalledSubmissionStopsAndSuccessfulSessionCanExpireLater() {
         val guard = SessionGuard()
         guard.tryLogin("one", 0)

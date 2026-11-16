@@ -71,8 +71,14 @@ class SessionGuard(val loginTimeout: Long = 25_000, private val reauthentication
 
     private fun loginBudget(now: Long): Boolean {
         while (logins.isNotEmpty() && now - logins.first() >= 600_000) logins.removeFirst()
-        return logins.size < 3 && logins.lastOrNull()?.let { now - it < 60_000 } != true
+        return logins.size < 3 && (spacingWaived || logins.lastOrNull()?.let { now - it < 60_000 } != true)
     }
+
+    // A renewal the Moodle window asked for (its session ended, or the student's Retry or link there) skips the minute
+    // between logins once, because that window gives up after 90 s. The three logins per ten minutes still apply.
+    private var spacingWaived = false
+    private var waivedLogin: String? = null
+    fun renewal() { retry(); spacingWaived = true }
 
     /** Three full-page logins per ten minutes, a minute apart. A full budget is a wait, not a failure. */
     fun loginBudgetExhausted(now: Long): Boolean {
@@ -96,6 +102,7 @@ class SessionGuard(val loginTimeout: Long = 25_000, private val reauthentication
         pendingDocument = document
         lastLogin = now
         logins.addLast(now)
+        waivedLogin = document.takeIf { spacingWaived }; spacingWaived = false
         // A notice or agreement sent in the ended session (its POST redirected to this form) did not count:
         // shown again after this login, it is a new appearance. Their attempt budgets stay.
         notices.release(); agreements.release()
@@ -118,6 +125,7 @@ class SessionGuard(val loginTimeout: Long = 25_000, private val reauthentication
     fun authenticated() {
         loginRefusals = 0
         pendingDocument = null
+        spacingWaived = false // A renewal that needed no login does not carry its waiver to a later one.
     }
 
     /** The script verified that the form was no longer ready and no click took place. */
@@ -125,6 +133,8 @@ class SessionGuard(val loginTimeout: Long = 25_000, private val reauthentication
         if (pendingDocument != document) return
         pendingDocument = null; lastLogin = null
         if (logins.isNotEmpty()) logins.removeLast()
+        if (waivedLogin == document) spacingWaived = true
+        waivedLogin = null
     }
 
     fun releaseReauthentication(challenge: String) {
@@ -220,9 +230,9 @@ class SessionGuard(val loginTimeout: Long = 25_000, private val reauthentication
     /** Another login or password was saved: nothing the old credentials did counts against the new ones. */
     fun reset() {
         retry()
-        loginRefusals = 0; logins.clear(); reauthenticationAttempts.clear()
+        loginRefusals = 0; logins.clear(); reauthenticationAttempts.clear(); spacingWaived = false; waivedLogin = null
     }
-    fun stop() { blocked = true; stopped = true; pendingDocument = null; pendingReauthentication = null; lateReauthentication = null }
+    fun stop() { blocked = true; stopped = true; pendingDocument = null; pendingReauthentication = null; lateReauthentication = null; spacingWaived = false }
 
     /**
      * One submission per appearance; one still shown 20 s after sending is resent, at most three times per ten minutes.

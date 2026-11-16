@@ -157,7 +157,8 @@ class AutomaticFlowTest {
             awaitCondition { eval("!!document.getElementById('inside')") == "true" }
 
             // An ended session on a section page: sign in, confirm the notice, then return to that page.
-            instrumentation.runOnMainSync { model.guard.retry() }
+            // Retry keeps a minute between logins (SessionGuardTest); a fresh budget keeps this scenario off that wait.
+            instrumentation.runOnMainSync { model.guard.reset() }
             eval("document.cookie='fixture_session=; Max-Age=0; path=/; Secure'")
             instrumentation.runOnMainSync {
                 controller.resumeAfterLogin("https://univer.kaznu.kz/student/umkd/")
@@ -168,7 +169,7 @@ class AutomaticFlowTest {
             awaitCondition { status == AutomationStatus.IDLE }
 
             // A rejected password stops; a signed-in page opened later (a manual login) lifts the stop.
-            instrumentation.runOnMainSync { model.guard.retry() }
+            instrumentation.runOnMainSync { model.guard.reset() }
             eval("localStorage.setItem('fixture-reject','1');document.cookie='fixture_session=; Max-Age=0; path=/; Secure'")
             instrumentation.runOnMainSync { web.loadUrl("https://univer.kaznu.kz/user/login") }
             awaitCondition { model.guard.blocked }

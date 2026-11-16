@@ -75,7 +75,7 @@ class DocumentViewer(
         // here would push a 20-30 s answer past the window's 90 s limit.
         serviceRetry()
         failed = false; panel?.hideError()
-        automation?.retry()
+        automation?.renew()
         startServiceTimeout(web)
         web.loadUrl(serviceEntry)
     }
@@ -153,7 +153,8 @@ class DocumentViewer(
             ?.takeIf { service && SingleSignOnPolicy.moodleResumable(it) }
         serviceLastPage = null; serviceArrived = false; serviceLoggedOut = false
         serviceDetours = 0; serviceDetourEpoch = -1L
-        // Opening the service is an explicit user action: it starts with a fresh sign-in budget.
+        // Opening the service is an explicit user action: its sign-in skips the minute between logins once
+        // (the window gives up after 90 s); the three logins per ten minutes still apply.
         if (service && saved == null) serviceRetry()
         this.language = language
         requestedUrl = url
@@ -237,7 +238,7 @@ class DocumentViewer(
                 // Return false preserves the site's GET or POST and its hidden fields.
                 if (SingleSignOnPolicy.allowed(destination)) {
                     // Moodle's "sign in via Univer" link is a user request for a new hand-off.
-                    if (SingleSignOnPolicy.entry(destination) && request.hasGesture()) { serviceRetry(); automation?.retry() }
+                    if (SingleSignOnPolicy.entry(destination) && request.hasGesture()) { serviceRetry(); automation?.renew() }
                     if (SingleSignOnPolicy.moodleLogout(destination) && request.hasGesture()) serviceLoggedOut = true
                     // Remember the page asked for: an ended session redirects it to Moodle's sign-in.
                     if (!servicePending && !request.isRedirect && request.method.equals("GET", true) &&

@@ -57,6 +57,8 @@ class AutomationController(private val web: WebView, private val model: UniverVi
     // form after the session ended) must not stay blocked by it.
     fun pageStarted() { generation++; watch?.cancel(); agreementFailed = false; pendingAgreement = null; presentation.apply() }
     fun retry() { guard.retry(); resume(replacing = true) }
+    /** The Moodle window signs in again through Univer: like [retry], without the minute between logins. */
+    fun renew() { guard.renewal(); resume(replacing = true) }
     fun handOffCompleted() { guard.authenticated() }
     /** [url] was replaced by the login form; null forgets it (the user went somewhere else). */
     fun resumeAfterLogin(url: String?) { resumeUrl = url; resumePending = false }

@@ -309,7 +309,7 @@ class MainActivity : AppCompatActivity() {
             AutomationController(web, model, lifecycleScope, model.singleSignOnGuard, synchronizeLanguage = false) {
                 documents.automationStatus(it)
             }
-        }, serviceRetry = { model.singleSignOnGuard.retry() }, chooseFiles = fileChooser::show,
+        }, serviceRetry = { model.singleSignOnGuard.renewal() }, chooseFiles = fileChooser::show,
         serviceSignedIn = downloads::signedIn, serviceSignedOut = { message(R.string.service_logged_out) })
 
     private fun bindControls() {

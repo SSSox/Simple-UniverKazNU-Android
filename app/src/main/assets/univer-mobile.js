@@ -4,6 +4,9 @@
     if (location.origin !== 'https://univer.kaznu.kz') return;
     if (window.__univerMobileV1) return;
     var enabled = false, observer = null, queued = false, viewport = null, originalViewport = null;
+    // Site nodes that already had an empty class attribute when the mobile layout started; Original keeps theirs. One the
+    // site empties or inserts later loses it, which looks the same: only [class] selectors could tell.
+    var emptyClassNodes = new WeakSet();
     var madeViewport = false, menuHome = null, menuTitle = 'Все разделы';
     var infoTitles = {contacts:'Контакты и информация КазНУ', links:'Полезные ссылки'};
     var categories = [], searchLabel = 'Найти раздел…', emptyLabel = 'Разделы не найдены';
@@ -1447,6 +1450,7 @@
     }
     function enable() {
         enabled = true;
+        emptyClassNodes = new WeakSet(document.querySelectorAll('[class=""]'));
         document.documentElement.classList.add('univer-mobile');
         viewport = document.querySelector('meta[name=viewport]');
         madeViewport = !viewport;
@@ -1553,6 +1557,8 @@
             } catch (_) { /* External documents are untouched. */ }
         });
         removeClasses(SHELL_CLASSES);
+        // A marker removed or toggled off (today's column after midnight, menu footers, module markers) leaves class="".
+        document.querySelectorAll('[class=""]').forEach(function (node) { if (!emptyClassNodes.has(node)) node.removeAttribute('class'); });
     }
     function setEnabled(value, language) {
         // AJAX is handled by the observer. Repeated native renders need no full DOM/layout traversal.

@@ -273,10 +273,18 @@ class SiteFeaturesTest {
         mobile()
         eval("window.__univerStyleV1.apply(true)")
         waitFor("A list item marks a label, with or without a colon", "document.querySelector('table.univer-app-pairs')")
-        assertEquals("The site's half-width column is gone", "true", eval("document.querySelector('table.univer-app-pairs').getBoundingClientRect().width>document.documentElement.clientWidth*.8"))
-        assertEquals("A row with nothing in it takes no room", "none", eval("getComputedStyle(document.querySelector('table.univer-app-pairs').rows[2]).display").orEmpty().trim('"'))
+        // Page polish (WebView with :has()) shows the pairs as its own list of facts in place of the table. Without
+        // :has() the layout's width and empty-row rules do not apply either, so only the adapter's marks are checked.
+        if (eval("CSS.supports('selector(:has(a))')") == "true") {
+            waitFor("The pairs read as a list of facts", "document.querySelector('.up-facts')")
+            assertEquals("The site's half-width column is gone", "true", eval("document.querySelector('.up-facts').getBoundingClientRect().width>document.documentElement.clientWidth*.8"))
+            assertEquals("A row with nothing in it takes no room", "Страна|Шифр специальности",
+                eval("Array.from(document.querySelectorAll('.up-facts .up-fact-label')).map(function(n){return n.textContent}).join('|')").orEmpty().trim('"'))
+        } else {
+            assertEquals("Both cells of the empty row are marked blank", "2", eval("document.querySelectorAll('table.univer-app-pairs td.univer-app-blank-field').length"))
+        }
         mobile(false)
-        assertEquals("Original layout gets the plain table back", "0", eval("document.querySelectorAll('.univer-app-pairs,.univer-app-blank-field').length"))
+        assertEquals("Original layout gets the plain table back", "0", eval("document.querySelectorAll('.univer-app-pairs,.univer-app-blank-field,.up-facts').length"))
     }
 
     @Test fun onlyTablesOfFactsLeaveTheLinkTableLayout() {
