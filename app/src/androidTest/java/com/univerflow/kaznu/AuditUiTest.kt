@@ -113,10 +113,10 @@ class AuditUiTest {
             eval("window.siteTabs=Array.from(document.querySelectorAll('#l3 a'));document.querySelector('#l3 a:last-child').click();document.querySelector('.univer-app-menu summary').click()")
             assertEquals("Original tab handler and section disclosure work", "true", eval("window.sectionTap==='services'&&document.querySelector('.univer-app-menu').open"))
             eval("document.querySelector('.univer-app-menu summary').click()")
-            assertEquals("Filters start closed", "true", eval("document.querySelector('.univer-app-news-filter-toggle').getAttribute('aria-expanded')==='false'&&document.querySelector('.univer-app-news-advanced').hidden"))
-            eval("window.filterButton=document.querySelector('.univer-app-news-filter-toggle').getBoundingClientRect();document.querySelector('.univer-app-news-filter-toggle').click()")
-            assertEquals("Opening filters keeps the button in place and shows the panel below", "true", eval("var b=document.querySelector('.univer-app-news-filter-toggle').getBoundingClientRect(),p=document.querySelector('.univer-app-news-advanced');Math.abs(b.top-window.filterButton.top)<1&&Math.abs(b.left-window.filterButton.left)<1&&!p.hidden&&p.getBoundingClientRect().top>=b.bottom"))
-            eval("document.querySelector('.univer-app-news-filter-toggle').click()")
+            assertEquals("The period starts closed", "false", eval("document.querySelector('.univer-app-news-period').open"))
+            eval("document.querySelector('.univer-app-news-period>summary').click()")
+            assertEquals("Its ranges open inside the page", "true", eval("var p=document.querySelector('.univer-app-news-period-box').getBoundingClientRect();p.height>0&&p.left>=0&&p.right<=innerWidth+1"))
+            eval("document.querySelector('.univer-app-news-period>summary').click()")
             capture("news-412")
             width(320, 150)
             assertEquals("Large text stays inside the viewport", "true", eval("document.documentElement.scrollWidth<=innerWidth+2"))
@@ -147,10 +147,13 @@ class AuditUiTest {
             assertEquals("Rating and original nodes survive restoration", "true", eval("window.rated===1&&window.originalRating===document.querySelector('tr.file').cells[6].firstChild&&window.originalDescription===document.querySelector('tr.file').cells[2].firstChild"))
             fun course(name: String, id: Int) = """<table class="mt"><tr class="top"><td class="ct">$name ([РК1 + РК2 + Экз] (100)) 01.09.2026 - 12.12.2026</td></tr><tr><td class="ts"><a class="lt" href="/student/attendance/show/$id/2026/1">лекция - Тестовый преподаватель</a></td></tr><tr><td><table class="inner" id="matrix$id"><tr><th rowspan="2">РК1</th><th>01.09</th><th>08.09</th><th>Сумма</th></tr><tr><td>5</td><td>8</td><td>13</td></tr></table></td></tr><tr><td class="ct"><b>РК1 (100): 13 · РК2: —</b></td></tr></table>"""
             load("Успеваемость", "/student/attendance/full/2026/1", course("Социология", 1) + course("Психология", 2))
-            eval("var s=document.querySelector('.univer-app-attendance-courses select');s.selectedIndex=1;s.dispatchEvent(new Event('change'))")
+            // Positions are measured with the style layer the app always applies.
+            eval("window.__univerStyleV1.apply(true);document.querySelectorAll('.univer-app-attendance-courses button')[1].click()")
             // One chosen course opens its class log under the summary; the toggle still collapses it.
-            assertEquals("Summary follows compact course selection", "true", eval("document.querySelector('.univer-app-attendance-summary').getBoundingClientRect().top<innerHeight/2&&!document.getElementById('matrix1').closest('[hidden]')"))
             capture("journal-320-summary")
+            assertEquals("The chosen course opens its class log", "true", eval("!document.getElementById('matrix1').closest('[hidden]')"))
+            // The course chips and class types stay in view, as on the desktop; the whole summary still fits the first screen.
+            assertEquals("The summary fits the first screen under the course controls", "true", eval("document.querySelector('.univer-app-attendance-summary').getBoundingClientRect().bottom<=innerHeight"))
             eval("document.querySelector('.univer-app-attendance-details-toggle[aria-expanded=true]').click()")
             assertEquals("Class log collapses on demand", "true", eval("document.getElementById('matrix1').closest('[hidden]')!==null"))
             eval("document.querySelector('.univer-app-attendance-details-toggle[aria-expanded=false]').click()")

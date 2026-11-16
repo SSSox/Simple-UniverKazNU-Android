@@ -11,14 +11,19 @@
             language === 'kz' ? {region:'Семестрлер', previous:'Алдыңғы', next:'Келесі', spring:'Көктемгі семестр', autumn:'Күзгі семестр', summer:'Жазғы семестр', winter:'Қысқы семестр'} :
             {region:'Семестры', previous:'Предыдущий', next:'Следующий', spring:'Весенний семестр', autumn:'Осенний семестр', summer:'Летний семестр', winter:'Зимний семестр'};
     }
-    // Only the observed semester links: an arrow icon and a "YYYY-YYYY" academic year in the text.
+    // Only the observed semester links: an arrow icon and a "YYYY-YYYY" academic year, or the one year of a UMKD term.
+    function period(link) {
+        var years = clean(link).match(/\b(\d{4})\s*[-–]\s*(\d{4})\b/);
+        if (years) return +years[2] - +years[1] === 1 ? years[1] + '–' + years[2] : '';
+        return link.pathname.match(/^\/student\/umkd\/\d+\/(\d{4})\/[12]\/?$/)?.[1] || '';
+    }
     function term(link) {
-        var icon = link.querySelector('img[src*="tb_left"],img[src*="tb_right"]'), years = clean(link).match(/\b(\d{4})\s*[-–]\s*(\d{4})\b/);
+        var icon = link.querySelector('img[src*="tb_left"],img[src*="tb_right"]'), years = period(link);
         var href = link.getAttribute('href');
         // The copy navigates like the original, so only Univer's own semester addresses qualify.
-        if (!icon || !years || +years[2] - +years[1] !== 1 || !href || href.charAt(0) === '#' || link.origin !== location.origin || link.protocol !== 'https:') return null;
+        if (!icon || !years || !href || href.charAt(0) === '#' || link.origin !== location.origin || link.protocol !== 'https:') return null;
         var season = seasons.find(function (s) { return s[1].test(clean(link)); });
-        return {link:link, years:years[1] + '–' + years[2], season:season ? season[0] : '', next:/tb_right/.test(icon.getAttribute('src'))};
+        return {link:link, years:years, season:season ? season[0] : '', next:/tb_right/.test(icon.getAttribute('src'))};
     }
     function drop(cell) {
         var record = navs.get(cell); if (!record) return;
@@ -32,7 +37,12 @@
             var a = document.createElement('a'); a.href = item.link.href; a.className = 'univer-app-term univer-app-term-' + (item.next ? 'next' : 'prev');
             var caption = document.createElement('span'); caption.className = 'univer-app-term-caption'; caption.textContent = item.next ? text().next : text().previous;
             var value = document.createElement('span'); value.className = 'univer-app-term-value';
-            value.textContent = item.years + (item.season ? ' · ' + text()[item.season] : '');
+            // Year and season sit on their own lines: the separator is for screen readers and never ends a line.
+            (item.season ? [item.years, ' · ', text()[item.season]] : [item.years]).forEach(function (part, index) {
+                var line = document.createElement('span'); line.textContent = part;
+                if (index === 1) line.className = 'univer-app-term-separator';
+                value.appendChild(line);
+            });
             a.append(caption, value); a.setAttribute('aria-label', caption.textContent + ': ' + clean(item.link)); nav.appendChild(a);
         });
         terms[0].link.before(nav);

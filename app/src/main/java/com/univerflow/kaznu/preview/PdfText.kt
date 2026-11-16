@@ -16,6 +16,7 @@ internal object PdfText {
     private const val FORM_DEPTH = 8
     private const val FORM_RUNS = 256
     private const val CMAP_LIMIT = 200_000
+    private const val WIDTH_LIMIT = 65536
     // Bytes all stream decoding of one document may produce: pages can share one huge stream, and each
     // stream alone stays under STREAM_LIMIT, so only a document-wide total bounds the work.
     const val DECODE_BUDGET = 256L * 1024 * 1024
@@ -226,12 +227,20 @@ internal object PdfText {
                 try { page(page) } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { }
                 if (output.isNotEmpty() && output.last() != '\n') output.append('\n')
             }
-            return output.toString().take(TextExtract.LIMIT).replace(Regex("[ \\t]+\n"), "\n").replace(Regex("\n{3,}"), "\n\n").trim()
+            // Blanks before line breaks are cut line by line: a regex would backtrack over a long run of spaces at every position.
+            return output.toString().take(TextExtract.LIMIT).split('\n').joinToString("\n") { it.trimEnd(' ', '\t') }
+                .replace(Regex("\n{3,}"), "\n\n").trim()
         }
 
-        /** Every "N G obj" in the file; a later definition (an incremental update) replaces an earlier one. */
+        /**
+         * Every "N G obj" in the file; a later definition (an incremental update) replaces an earlier one. An object is read
+         * up to the next "endobj" at most, and the search goes on after all it read: a string that never closes is read
+         * once, not again from every "obj" inside it.
+         */
         private fun scan() {
             var at = 0
+            // The first "endobj" after the object being read, found once for all objects before it; the end without one.
+            var endobj = -1
             while (true) {
                 at = indexOf(OBJ, at)
                 if (at < 0) break
@@ -241,11 +250,16 @@ internal object PdfText {
                 at = after
                 if (header != null && boundary) {
                     val number = header.groupValues[1].toIntOrNull()
-                    val value = if (number != null) runCatching { parseObject(after) }.getOrNull() else null
-                    if (number != null && value != null) {
-                        objects[number] = value
-                        // Stream data is not searched for objects: compressed bytes can look like "1 0 obj".
-                        if (value is Stream) at = maxOf(at, value.end)
+                    if (number != null) {
+                        if (endobj < after) endobj = indexOf(ENDOBJ, after).takeIf { it >= 0 } ?: bytes.size
+                        val lexer = Lexer(bytes, after, endobj)
+                        val value = runCatching { parseObject(lexer) }.getOrNull()
+                        at = maxOf(at, lexer.position)
+                        if (value != null) {
+                            objects[number] = value
+                            // Stream data is not searched for objects: compressed bytes can look like "1 0 obj".
+                            if (value is Stream) at = maxOf(at, value.end)
+                        }
                     }
                 }
                 if (++scanned % 1024 == 0) checkActive()
@@ -254,13 +268,12 @@ internal object PdfText {
 
         private var scanned = 0
 
-        private fun parseObject(start: Int): Value {
-            val lexer = Lexer(bytes, start)
+        /** The object at the [lexer]'s position; the lexer is left after all it read, the token after a dictionary included. */
+        private fun parseObject(lexer: Lexer): Value {
             val value = lexer.next() ?: return Null
             if (value !is Dict) return value
-            val saved = lexer.position
             val keyword = lexer.next()
-            if (keyword !is Keyword || keyword.value != "stream") { lexer.position = saved; return value }
+            if (keyword !is Keyword || keyword.value != "stream") return value
             var data = lexer.position
             if (data < bytes.size && bytes[data] == 0x0D.toByte()) data++
             if (data < bytes.size && bytes[data] == 0x0A.toByte()) data++
@@ -354,10 +367,22 @@ internal object PdfText {
                 is Array -> value.items.mapNotNull { resolve(it) as? Stream }
                 else -> emptyList()
             }
-            val joined = ByteArrayOutputStream()
-            contents.forEach { stream -> decode(stream)?.let { joined.write(it); joined.write(0x0A) } }
             formRuns = 0
-            Content(this, page.second, 0).run(joined.toByteArray())
+            Content(this, page.second, 0).run(program(contents))
+        }
+
+        /**
+         * The page's content streams as one program. Together they stay under STREAM_LIMIT: a stream that would pass it
+         * ends the page, so a small file listing one large stream many times cannot fill the heap with a single page.
+         */
+        private fun program(contents: List<Stream>): ByteArray {
+            val joined = ByteArrayOutputStream()
+            for (stream in contents) {
+                val data = decode(stream) ?: continue
+                if (joined.size() + data.size + 1 > STREAM_LIMIT) break
+                joined.write(data); joined.write(0x0A)
+            }
+            return joined.toByteArray()
         }
 
         fun font(resources: Dict?, name: String): FontDecoder? {
@@ -369,6 +394,15 @@ internal object PdfText {
 
         /** Form XObjects run on the current page: a form drawn again and again (or inside itself) has a budget. */
         var formRuns = 0
+
+        /** Decoded programs of the forms now running, one inside another: together they stay under STREAM_LIMIT. */
+        private var heldFormBytes = 0L
+        fun holdForm(size: Int): Boolean {
+            if (heldFormBytes + size > STREAM_LIMIT) return false
+            heldFormBytes += size
+            return true
+        }
+        fun releaseForm(size: Int) { heldFormBytes -= size }
 
         fun form(resources: Dict?, name: String): Stream? {
             if (++formRuns > FORM_RUNS) return null
@@ -399,15 +433,22 @@ internal object PdfText {
             }
             filters.forEachIndexed { index, filter ->
                 val parms = parameters.getOrNull(index)
-                data = when (filter) {
-                    "FlateDecode", "Fl" -> predict(inflate(data), parms)
-                    "LZWDecode", "LZW" -> predict(Filters.lzw(data, (parms?.get("EarlyChange") as? Number)?.value?.toInt() ?: 1), parms)
-                    "ASCIIHexDecode", "AHx" -> Filters.asciiHex(data)
-                    "ASCII85Decode", "A85" -> Filters.ascii85(data)
-                    "RunLengthDecode", "RL" -> Filters.runLength(data)
-                    else -> return null
+                data = try {
+                    when (filter) {
+                        "FlateDecode", "Fl" -> predict(inflate(data), parms)
+                        "LZWDecode", "LZW" -> predict(Filters.lzw(data, (parms?.get("EarlyChange") as? Number)?.value?.toInt() ?: 1, STREAM_LIMIT), parms)
+                        "ASCIIHexDecode", "AHx" -> Filters.asciiHex(data)
+                        "ASCII85Decode", "A85" -> Filters.ascii85(data, STREAM_LIMIT)
+                        "RunLengthDecode", "RL" -> Filters.runLength(data, STREAM_LIMIT)
+                        else -> return null
+                    }.also { if (it.size > STREAM_LIMIT) throw PreviewLimitException() }
+                } catch (exceeded: PreviewLimitException) {
+                    // A limit's worth was decoded before the filter stopped: it counts against the budget, so pages
+                    // sharing such a stream do not decode it again and again.
+                    decoded += STREAM_LIMIT
+                    if (decoded > budget) exhausted = true
+                    throw exceeded
                 }
-                if (data.size > STREAM_LIMIT) throw PreviewLimitException()
                 spend(data)
             }
             return data
@@ -519,13 +560,22 @@ internal object PdfText {
                 val result = HashMap<Int, Double>()
                 val items = (document.resolve(descendant["W"]) as? Array)?.items.orEmpty().map { document.resolve(it) }
                 var index = 0
-                while (index + 1 < items.size && result.size < 65536) {
+                // Codes written, repeats included: "0 65534 500" over and over keeps the map small, not the work.
+                var writes = 0
+                while (index + 1 < items.size && writes < WIDTH_LIMIT) {
                     val start = (items[index] as? Number)?.value?.toInt() ?: break
                     when (val next = items[index + 1]) {
-                        is Array -> { next.items.forEachIndexed { offset, width -> number(document, width)?.let { result[start + offset] = it } }; index += 2 }
+                        is Array -> {
+                            val count = minOf(next.items.size, WIDTH_LIMIT - writes)
+                            for (offset in 0 until count) number(document, next.items[offset])?.let { result[start + offset] = it }
+                            writes += count
+                            index += 2
+                        }
                         is Number -> {
                             val width = (items.getOrNull(index + 2) as? Number)?.value ?: break
-                            for (code in start..minOf(next.value.toInt(), start + 65535)) result[code] = width
+                            val last = minOf(next.value.toInt(), start + 65535, start + (WIDTH_LIMIT - 1 - writes))
+                            for (code in start..last) result[code] = width
+                            if (last >= start) writes += last - start + 1
                             index += 3
                         }
                         else -> break
@@ -567,12 +617,15 @@ internal object PdfText {
             val map = HashMap<Int, String>()
             val lengths = sortedSetOf<Int>()
             val operands = mutableListOf<Value>()
-            while (!lexer.atEnd && map.size < CMAP_LIMIT) {
+            // Entries written, repeats included: the same range written again and again keeps the map small, not the work.
+            var writes = 0
+            while (!lexer.atEnd && writes < CMAP_LIMIT) {
                 val token = lexer.next() ?: break
                 if (token !is Keyword) { operands += token; if (operands.size > 300_000) operands.clear(); continue }
                 when (token.value) {
                     "endcodespacerange" -> operands.chunked(2).forEach { pair -> (pair.firstOrNull() as? Bytes)?.let { lengths += it.value.size.coerceIn(1, 4) } }
                     "endbfchar" -> operands.chunked(2).forEach { pair ->
+                        if (++writes > CMAP_LIMIT) return Result(map, lengths)
                         val source = pair.getOrNull(0) as? Bytes
                         val target = pair.getOrNull(1)
                         if (source != null && source.value.size in 1..4) unicode(target)?.let { map[code(source.value)] = it }
@@ -588,6 +641,7 @@ internal object PdfText {
                             is Bytes -> {
                                 val start = target.value
                                 for (offset in 0..(to - from)) {
+                                    if (++writes > CMAP_LIMIT) return Result(map, lengths)
                                     val shifted = start.copyOf()
                                     if (shifted.isNotEmpty()) {
                                         val last = shifted.size - 1
@@ -598,7 +652,10 @@ internal object PdfText {
                                     map[from + offset] = String(shifted, Charsets.UTF_16BE)
                                 }
                             }
-                            is Array -> target.items.forEachIndexed { offset, item -> unicode(item)?.let { map[from + offset] = it } }
+                            is Array -> target.items.forEachIndexed { offset, item ->
+                                if (++writes > CMAP_LIMIT) return Result(map, lengths)
+                                unicode(item)?.let { map[from + offset] = it }
+                            }
                             else -> Unit
                         }
                     }
@@ -707,8 +764,11 @@ internal object PdfText {
             if (depth >= FORM_DEPTH) return
             val stream = document.form(resources, name) ?: return
             val data = document.decode(stream) ?: return
-            document.appendSeparator(' ')
-            Content(document, document.formResources(stream, resources), depth + 1).run(data)
+            if (!document.holdForm(data.size)) return
+            try {
+                document.appendSeparator(' ')
+                Content(document, document.formResources(stream, resources), depth + 1).run(data)
+            } finally { document.releaseForm(data.size) }
         }
 
         /** BI … ID <binary> EI: the image data is skipped so it is not read as operators. */
@@ -727,10 +787,19 @@ internal object PdfText {
 
     private val OBJ = "obj".toByteArray(Charsets.ISO_8859_1)
     private val ENDSTREAM = "endstream".toByteArray(Charsets.ISO_8859_1)
+    private val ENDOBJ = "endobj".toByteArray(Charsets.ISO_8859_1)
 }
 
-/** Stream filters of PDF besides Flate: LZW, ASCII hex and base-85, run-length, and PNG predictors. */
+/**
+ * Stream filters of PDF besides Flate: LZW, ASCII hex and base-85, run-length, and PNG predictors. The expanding ones stop
+ * at their `limit` of output bytes: a few kilobytes of run-length or LZW data can stand for gigabytes.
+ */
 internal object Filters {
+    /** Throws before [count] more bytes take [out] past [limit]. */
+    private fun room(out: ByteArrayOutputStream, count: Int, limit: Int) {
+        if (count > limit - out.size()) throw PreviewLimitException()
+    }
+
     fun asciiHex(data: ByteArray): ByteArray {
         val out = ByteArrayOutputStream()
         var high = -1
@@ -744,7 +813,7 @@ internal object Filters {
         return out.toByteArray()
     }
 
-    fun ascii85(data: ByteArray): ByteArray {
+    fun ascii85(data: ByteArray, limit: Int = Int.MAX_VALUE): ByteArray {
         val out = ByteArrayOutputStream()
         var tuple = 0L
         var count = 0
@@ -752,10 +821,11 @@ internal object Filters {
             val c = byte.toInt() and 0xFF
             when {
                 c == '~'.code -> break
-                c == 'z'.code && count == 0 -> repeat(4) { out.write(0) }
+                c == 'z'.code && count == 0 -> { room(out, 4, limit); repeat(4) { out.write(0) } }
                 c in '!'.code..'u'.code -> {
                     tuple = tuple * 85 + (c - '!'.code)
                     if (++count == 5) {
+                        room(out, 4, limit)
                         for (shift in 24 downTo 0 step 8) out.write(((tuple shr shift) and 0xFF).toInt())
                         tuple = 0; count = 0
                     }
@@ -763,31 +833,34 @@ internal object Filters {
             }
         }
         if (count > 1) {
+            room(out, count - 1, limit)
             repeat(5 - count) { tuple = tuple * 85 + 84 }
             for (index in 0 until count - 1) out.write(((tuple shr (24 - index * 8)) and 0xFF).toInt())
         }
         return out.toByteArray()
     }
 
-    fun runLength(data: ByteArray): ByteArray {
+    fun runLength(data: ByteArray, limit: Int = Int.MAX_VALUE): ByteArray {
         val out = ByteArrayOutputStream()
         var at = 0
         while (at < data.size) {
             val length = data[at++].toInt() and 0xFF
             when {
                 length == 128 -> break
-                length < 128 -> { val count = minOf(length + 1, data.size - at); out.write(data, at, count); at += count }
-                at < data.size -> { repeat(257 - length) { out.write(data[at].toInt()) }; at++ }
+                length < 128 -> { val count = minOf(length + 1, data.size - at); room(out, count, limit); out.write(data, at, count); at += count }
+                at < data.size -> { room(out, 257 - length, limit); repeat(257 - length) { out.write(data[at].toInt()) }; at++ }
             }
         }
         return out.toByteArray()
     }
 
-    fun lzw(data: ByteArray, earlyChange: Int): ByteArray {
+    fun lzw(data: ByteArray, earlyChange: Int, limit: Int = Int.MAX_VALUE): ByteArray {
         val out = ByteArrayOutputStream()
         val table = ArrayList<ByteArray>(4096)
-        fun reset() { table.clear(); for (index in 0 until 256) table += byteArrayOf(index.toByte()); table += ByteArray(0); table += ByteArray(0) }
-        reset()
+        for (index in 0 until 256) table += byteArrayOf(index.toByte())
+        table += ByteArray(0); table += ByteArray(0)
+        // The 258 first entries never change: a clear code only drops the learned ones, so a stream of clear codes costs nothing.
+        fun reset() { if (table.size > 258) table.subList(258, table.size).clear() }
         var bits = 9
         var buffer = 0L
         var buffered = 0
@@ -807,6 +880,7 @@ internal object Filters {
                             previous != null -> previous + previous[0]
                             else -> return out.toByteArray()
                         }
+                        room(out, entry.size, limit)
                         out.write(entry)
                         if (previous != null && table.size < 4096) table += previous + entry[0]
                         previous = entry

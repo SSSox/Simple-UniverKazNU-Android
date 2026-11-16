@@ -58,18 +58,29 @@
         var color = value.toLowerCase();
         return color.length === 4 ? '#' + color[1] + color[1] + color[2] + color[2] + color[3] + color[3] : color;
     }
-    function shade(value, table) {
-        value = value.replace(/#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b/g, function (color) { return table[hex(color)] || color; })
+    // [ink]: the fill is drawn through a mask, so it is a glyph's colour rather than a surface, and white stays white.
+    function shade(value, table, ink) {
+        var keepWhite = ink && table === FILL;
+        value = value.replace(/#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b/g, function (color) {
+            var key = hex(color);
+            return keepWhite && key === '#ffffff' ? color : table[key] || color;
+        })
             .replace(/rgba\(16,\s*40,\s*70,\s*([\d.]+)\)/g, function (_, alpha) { return 'rgba(0,0,0,' + Math.min(0.6, alpha * 3).toFixed(2) + ')'; })
             .replace(/rgba\(27,\s*95,\s*166,\s*([\d.]+)\)/g, function (_, alpha) { return 'rgba(142,187,240,' + Math.min(0.5, alpha * 1.8).toFixed(2) + ')'; });
+        if (table !== FILL) return value;
         // The phone stylesheet also names white surfaces by keyword; white text on fills stays white.
-        return table === FILL ? value.replace(/\bwhite\b/gi, FILL['#ffffff']).replace(FILL_TOKENS, 'var($1-fill)') : value;
+        return (keepWhite ? value : value.replace(/\bwhite\b/gi, FILL['#ffffff'])).replace(FILL_TOKENS, 'var($1-fill)');
     }
+    // A rule that draws its background through a mask (a white glyph on a coloured plaque); "mask:none" draws none.
+    var MASKED = /[{;]\s*(?:-webkit-)?mask(?:-image)?\s*:(?!\s*none\s*(?:!important\s*)?[;}])/i;
     function darken(css) {
-        // Declarations follow "{" or ";"; selectors (a:hover, td:first-child) carry no colour role and pass unchanged.
-        return css.replace(/([{;]\s*)([a-z-]+)(\s*:\s*)([^;{}]+)/g, function (all, lead, property, colon, value) {
-            var table = role(property.toLowerCase());
-            return table ? lead + property + colon + shade(value, table) : all;
+        // Declarations follow "{" or ";" inside a rule; selectors (a:hover, td:first-child) carry no colour role and pass unchanged.
+        return css.replace(/\{[^{}]*\}/g, function (rule) {
+            var ink = MASKED.test(rule);
+            return rule.replace(/([{;]\s*)([a-z-]+)(\s*:\s*)([^;{}]+)/g, function (all, lead, property, colon, value) {
+                var table = role(property.toLowerCase());
+                return table ? lead + property + colon + shade(value, table, ink) : all;
+            });
         });
     }
     function dark() { return window.__univerDark === true; }

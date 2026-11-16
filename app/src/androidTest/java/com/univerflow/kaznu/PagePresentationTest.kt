@@ -53,6 +53,8 @@ class PagePresentationTest {
         scenario.close()
     }
 
+    private val concealed = java.util.concurrent.CopyOnWriteArrayList<Boolean>()
+
     private fun response(type: String, data: String) = WebResourceResponse(type, "UTF-8", ByteArrayInputStream(data.toByteArray()))
 
     private fun load(documentStart: Boolean = true, mobile: Boolean = true, frame: Boolean = false,
@@ -71,7 +73,7 @@ class PagePresentationTest {
         val frameHtml = """<html><body><table class='wrappertable' style='width:1200px'><tr id='l4'><td>
             Frame fixture<img src='/fixture/presentation/slow.svg'></td></tr></table></body></html>"""
         instrumentation.runOnMainSync {
-            adapter = MobilePageAdapter(web, allowDocumentStart = documentStart, onContentReady = { ready.countDown() })
+            adapter = MobilePageAdapter(web, allowDocumentStart = documentStart, onConcealed = { concealed += it }, onContentReady = { ready.countDown() })
             adapter.apply(mobile, AppLanguage.RUSSIAN)
             web.webViewClient = object : WebViewClient() {
                 override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
@@ -131,6 +133,7 @@ class PagePresentationTest {
         assertFalse(state.getBoolean("pending")); assertEquals(0, state.getInt("rawFrames"))
         assertEquals("width=device-width, initial-scale=1", state.getString("viewport"))
         instrumentation.runOnMainSync { assertEquals(1f, web.alpha, 0f) }
+        assertEquals("What stands over the page follows it", listOf(true, false), listOf(concealed.first(), concealed.last()))
     }
 
     @Test fun fallbackAlsoRevealsTheAdaptedDomBeforeSlowImagesFinish() {

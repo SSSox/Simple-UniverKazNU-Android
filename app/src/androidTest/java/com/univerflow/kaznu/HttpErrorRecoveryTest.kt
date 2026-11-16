@@ -22,11 +22,15 @@ import org.junit.runner.RunWith
 import java.io.ByteArrayInputStream
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 @RunWith(AndroidJUnit4::class)
 class HttpErrorRecoveryTest {
     private val fixtureUrl = SitePolicy.ORIGIN + "/fixture/http-recovery"
+    /** Reserved by RFC 2606: the name never resolves, so the load fails without anything being sent. */
+    private val unreachableUrl = "https://fixture.invalid/"
+    private val failed = CountDownLatch(1)
 
     @Test fun getRetrySurvivesTheLaterStatusProbeAndRecoversWithoutStartupRedirect() = withFixture("GET") { scenario, first, recovered, requests ->
         assertTrue(first.await(15, TimeUnit.SECONDS))
@@ -61,6 +65,44 @@ class HttpErrorRecoveryTest {
         assertEquals("A server failure must not trigger automatic requests", 1, requests.get())
     }
 
+    @Test fun aLinkThatCannotConnectEndsOnTheErrorScreen() = withFixture("GET") { scenario, first, recovered, _ ->
+        assertTrue(first.await(15, TimeUnit.SECONDS))
+        scenario.onActivity { it.findViewById<View>(R.id.error_retry).performClick() }
+        assertTrue(recovered.await(15, TimeUnit.SECONDS))
+        scenario.onActivity { activity ->
+            assertEquals(View.GONE, activity.findViewById<View>(R.id.error_overlay).visibility)
+            // A page's own navigation: unlike loadUrl, it leaves view.url on this page until the error page commits.
+            activity.findViewById<WebView>(R.id.web_view).evaluateJavascript("location.href='$unreachableUrl'", null)
+        }
+        val end = System.nanoTime() + TimeUnit.SECONDS.toNanos(15)
+        var shown = false
+        while (!shown && System.nanoTime() < end) {
+            Thread.sleep(100)
+            scenario.onActivity { shown = it.findViewById<View>(R.id.error_overlay).visibility == View.VISIBLE }
+        }
+        assertTrue("The browser's error page must not stay on screen", shown)
+    }
+
+    @Test fun anAutomaticAttemptThatFailsAgainLeavesTheErrorScreenAlone() = withFixture("GET") { scenario, first, _, _ ->
+        assertTrue(first.await(15, TimeUnit.SECONDS))
+        val steady = AtomicBoolean(true)
+        scenario.onActivity { activity ->
+            val overlay = activity.findViewById<View>(R.id.error_overlay)
+            overlay.removeCallbacks(field("pageRecoveryTask").get(activity) as Runnable) // This test makes the attempt itself.
+        }
+        Thread.sleep(400) // The error screen's own fade.
+        scenario.onActivity { activity ->
+            val overlay = activity.findViewById<View>(R.id.error_overlay)
+            overlay.viewTreeObserver.addOnDrawListener { if (overlay.visibility != View.VISIBLE || overlay.alpha < 1f) steady.set(false) }
+            MainActivity::class.java.getDeclaredMethod("loadPage", String::class.java, Boolean::class.java).apply { isAccessible = true }
+                .invoke(activity, unreachableUrl, true)
+        }
+        assertTrue("The attempt failed", failed.await(15, TimeUnit.SECONDS))
+        Thread.sleep(400)
+        assertTrue(steady.get())
+        scenario.onActivity { assertEquals(View.VISIBLE, it.findViewById<View>(R.id.error_overlay).visibility) }
+    }
+
     /** All fixture traffic stays local; only in-memory UI state changes, never the saved account. */
     private fun withFixture(method: String, verify: (ActivityScenario<MainActivity>, CountDownLatch, CountDownLatch, AtomicInteger) -> Unit) {
         val first = CountDownLatch(1)
@@ -87,19 +129,27 @@ class HttpErrorRecoveryTest {
                 web.stopLoading()
                 val original = web.webViewClient
                 web.webViewClient = object : WebViewClient() {
-                    override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse {
+                    override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+                        if (request.url.toString() == unreachableUrl) return null
                         val main = request.isForMainFrame && request.url.toString() == fixtureUrl
                         val count = if (main) requests.incrementAndGet() else 0
                         return response(if (count == 1) 503 else 200)
                     }
-                    override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest) = original.shouldOverrideUrlLoading(view, request)
+                    override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest) =
+                        request.url.toString() != unreachableUrl && original.shouldOverrideUrlLoading(view, request)
                     override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
+                        // Off the trusted origin the app stops the load, and here it has to fail: it is told of a trusted one.
+                        if (url == unreachableUrl) { original.onPageStarted(view, fixtureUrl, favicon); return }
                         original.onPageStarted(view, url, favicon)
                         // loadUrl is a GET but does not invoke shouldOverrideUrlLoading.
                         if (url == fixtureUrl) field("navigationGetUrl").set(activity, null)
                     }
                     override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, response: WebResourceResponse) {
                         original.onReceivedHttpError(view, request, response)
+                    }
+                    override fun onReceivedError(view: WebView, request: WebResourceRequest, error: android.webkit.WebResourceError) {
+                        original.onReceivedError(view, request, error)
+                        if (request.isForMainFrame) failed.countDown()
                     }
                     override fun onFormResubmission(view: WebView, dontResend: android.os.Message, resend: android.os.Message) =
                         original.onFormResubmission(view, dontResend, resend)

@@ -6,17 +6,13 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
-import android.content.res.ColorStateList
 import android.graphics.Bitmap
-import android.net.ConnectivityManager
-import android.net.Network
 import android.net.Uri
 import android.net.http.SslError
 import android.os.Bundle
 import android.os.Message
 import android.os.SystemClock
 import android.print.PrintManager
-import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
 import android.webkit.CookieManager
@@ -27,11 +23,8 @@ import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
-import android.webkit.WebStorage
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import android.widget.LinearLayout
-import android.widget.TextView
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.net.toUri
@@ -53,61 +46,75 @@ import com.univerflow.kaznu.data.DownloadRepository
 import com.univerflow.kaznu.data.LocalSessionRepository
 import com.univerflow.kaznu.data.LockPreferences
 import com.univerflow.kaznu.data.LockVault
-import com.univerflow.kaznu.ui.context
 import com.univerflow.kaznu.databinding.ActivityMainBinding
 import com.univerflow.kaznu.databinding.SettingsSheetBinding
 import com.univerflow.kaznu.domain.DownloadState
 import com.univerflow.kaznu.domain.HomeShortcuts
 import com.univerflow.kaznu.domain.Notices
-import com.univerflow.kaznu.domain.SiteNotice
 import com.univerflow.kaznu.domain.TextZoom
+import com.univerflow.kaznu.domain.StudyFolders
 import com.univerflow.kaznu.download.DownloadEvent
 import com.univerflow.kaznu.download.DownloadService
 import com.univerflow.kaznu.main.DownloadLauncher
 import com.univerflow.kaznu.main.LockFlow
 import com.univerflow.kaznu.main.MainChrome
-import com.univerflow.kaznu.main.NoticesSheet
+import com.univerflow.kaznu.main.NetworkWatch
+import com.univerflow.kaznu.main.NoticeFlow
 import com.univerflow.kaznu.main.SettingsForms
+import com.univerflow.kaznu.main.SiteData
+import com.univerflow.kaznu.main.StatusBanner
+import com.univerflow.kaznu.main.TextSizeDialog
 import com.univerflow.kaznu.main.UpdateFlow
 import com.univerflow.kaznu.ui.AppLockSession
 import com.univerflow.kaznu.ui.DocumentViewer
 import com.univerflow.kaznu.ui.DownloadsActivity
 import com.univerflow.kaznu.ui.FileChooser
 import com.univerflow.kaznu.ui.FileViewerActivity
+import com.univerflow.kaznu.ui.LanguageResources
+import com.univerflow.kaznu.ui.LinkViewerActivity
 import com.univerflow.kaznu.ui.LockUi
 import com.univerflow.kaznu.ui.Motion
+import com.univerflow.kaznu.ui.paintSystemBands
 import com.univerflow.kaznu.ui.NoticeLoadingOverlay
 import com.univerflow.kaznu.ui.ThemeMode
+import com.univerflow.kaznu.ui.attempt
+import com.univerflow.kaznu.ui.launchCatching
 import com.univerflow.kaznu.update.UpdateManager
 import com.univerflow.kaznu.web.AppSection
 import com.univerflow.kaznu.web.AutomationController
 import com.univerflow.kaznu.web.AutomationStatus
+import com.univerflow.kaznu.web.ChannelGuard
+import com.univerflow.kaznu.web.LinkOpening
+import com.univerflow.kaznu.web.LinkPolicy
+import com.univerflow.kaznu.web.LinkProfile
 import com.univerflow.kaznu.web.LogoutNavigation
 import com.univerflow.kaznu.web.MobilePageAdapter
-import com.univerflow.kaznu.web.NoticeBridge
 import com.univerflow.kaznu.web.NoticePresentation
 import com.univerflow.kaznu.web.PageScripts
+import com.univerflow.kaznu.web.RetiredWebViewClient
 import com.univerflow.kaznu.web.ShortcutBridge
 import com.univerflow.kaznu.web.SingleSignOnPolicy
 import com.univerflow.kaznu.web.SitePolicy
 import com.univerflow.kaznu.web.WebsiteLanguageSync
-import com.univerflow.kaznu.web.configureNavigationCapture
+import com.univerflow.kaznu.web.PageCover
+import com.univerflow.kaznu.web.captureNewWindow
 import com.univerflow.kaznu.web.configureSecureSettings
+import com.univerflow.kaznu.web.evaluate
 import com.univerflow.kaznu.web.httpErrorMessage
 import com.univerflow.kaznu.web.webErrorText
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.google.android.material.slider.Slider
 import com.google.android.material.snackbar.Snackbar
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
-import kotlin.coroutines.resume
+import org.json.JSONObject
+import org.json.JSONTokener
 
 /**
- * The website in a WebView with its automation, session and recovery. Chrome, settings, the app lock and downloads
- * are their own parts ([MainChrome], [SettingsForms], [LockFlow], [DownloadLauncher]); this class wires them.
+ * The website in a WebView with its automation, session and recovery. Chrome, settings, the app lock, downloads and
+ * notifications are their own parts ([MainChrome], [SettingsForms], [LockFlow], [DownloadLauncher], [NoticeFlow]);
+ * this class wires them.
  */
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
@@ -115,19 +122,27 @@ class MainActivity : AppCompatActivity() {
     private lateinit var automation: AutomationController
     private lateinit var mobilePage: MobilePageAdapter
     private lateinit var shortcutBridge: ShortcutBridge
-    private lateinit var noticeBridge: NoticeBridge
-    private lateinit var noticesSheet: NoticesSheet
+    /** Keys the app's own page messages; registered before the first page so every main-frame page has it. */
+    private lateinit var channel: ChannelGuard
+    private lateinit var notices: NoticeFlow
     private lateinit var websiteLanguage: WebsiteLanguageSync
     private lateinit var documents: DocumentViewer
+    /** The link window answers with a Univer or Moodle page the user tapped there. */
+    private val linkWindow = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()) { result ->
+        result.data?.getStringExtra(LinkViewerActivity.RESULT_URL)?.let(::linkReturned)
+    }
+    private var downloadStartedBar: Snackbar? = null
     private lateinit var noticeLoading: NoticeLoadingOverlay
     private lateinit var noticePresentation: NoticePresentation
     private lateinit var lockUi: LockUi
     private lateinit var chrome: MainChrome
+    private lateinit var banner: StatusBanner
     private lateinit var lock: LockFlow
     private lateinit var forms: SettingsForms
     private lateinit var downloads: DownloadLauncher
     private lateinit var updates: UpdateFlow
     private val hosts = Hosts()
+    private val languages = LanguageResources(this)
     private val logoutNavigation = LogoutNavigation { endSession(false) }
     private val fileChooser = FileChooser(this, { text(R.string.choose_file) }, { message(R.string.open_failed) })
     private val transientDialogs = mutableListOf<Dialog>()
@@ -157,6 +172,8 @@ class MainActivity : AppCompatActivity() {
     private var backPending = false
     private var failedPageUrl: String? = null
     private var navigationGetUrl: String? = null
+    /** Until when (elapsed realtime) the online test's redirect may follow the student's tap; main thread only. */
+    private var onlineTestUntil = 0L
     private var pageFailed = false
     private var pageEpoch = 0L
     private var rendererUnavailable = false
@@ -164,9 +181,14 @@ class MainActivity : AppCompatActivity() {
     private var lostPageUrl: String? = null
     private var rendererRecoveryPending = false
     private val pageRecoveryTask = Runnable { recoverFailedPage() }
-    /** While the screen is in front, the site is read for notifications on this interval even without navigation. */
-    private val noticeTicker: Runnable = Runnable { scanNotices(); binding.root.postDelayed(noticeTicker, NOTICE_CHECK_MS) }
-    private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private val cover = PageCover { visible, atOnce ->
+        if (atOnce) Motion.cover(binding.pageSkeleton) else Motion.show(binding.pageSkeleton, visible)
+    }
+    /** The network is back: a page that failed for want of it is loaded again shortly. */
+    private val network = NetworkWatch(this) {
+        if (!isDestroyed && pageFailed && errorHttpStatus == null && errorMessageId == R.string.network_error)
+            schedulePageRecovery(1_000)
+    }
     private var baseTextZoom = 100
     private var pageTitle: String? = null
     private var pageLoading = false
@@ -186,6 +208,7 @@ class MainActivity : AppCompatActivity() {
         AppLockSession.initialize(this)
         lockUi = LockUi(this, ::text)
         chrome = MainChrome(this, binding)
+        banner = StatusBanner(binding)
         lock = LockFlow(this, model, lockUi, hosts)
         forms = SettingsForms(this, model, lock, hosts)
         downloads = DownloadLauncher(this, model, hosts)
@@ -193,7 +216,7 @@ class MainActivity : AppCompatActivity() {
         // Leaving the app for longer than the chosen time locks it: the password leaves memory and the PIN is asked again.
         AppLockSession.track(this) {
             if (model.state.value.lock.enabled) binding.drawer.visibility = View.INVISIBLE
-            lifecycleScope.launch { try { model.lockNow() } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { } }
+            launchCatching { model.lockNow() }
         }
         lock.restore(savedInstanceState)
         downloads.restore(savedInstanceState)
@@ -203,6 +226,7 @@ class MainActivity : AppCompatActivity() {
         WindowCompat.getInsetsController(window, binding.root).apply { isAppearanceLightStatusBars = light; isAppearanceLightNavigationBars = light }
         restoreState(savedInstanceState)
         applyContentInsets()
+        binding.pageSkeleton.isVisible = true
         createPageParts()
         documents = createDocuments()
         bindControls()
@@ -213,6 +237,7 @@ class MainActivity : AppCompatActivity() {
         restoredWebState = savedInstanceState?.getBundle("web_state")
         lostPageUrl = savedInstanceState?.getString("lost_page")
         reopenSettings = savedInstanceState?.getBoolean("settings_open") == true
+        forms.tab = savedInstanceState?.getInt("settings_tab") ?: 0
         handledDownloadEvent = savedInstanceState?.getString("download_event")
         sessionEpoch = savedInstanceState?.getInt("session_epoch", 0) ?: 0
         restoredDocument = savedInstanceState?.getBundle("document_state")
@@ -225,6 +250,7 @@ class MainActivity : AppCompatActivity() {
         ViewCompat.setOnApplyWindowInsetsListener(binding.content) { view, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.ime())
             view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            view.paintSystemBands(bars.top)
             insets
         }
     }
@@ -245,82 +271,34 @@ class MainActivity : AppCompatActivity() {
             mobilePage.apply(model.state.value.mobileLayout, selected)
         }, { message(R.string.storage_error) })
         configureWebView()
-        mobilePage = MobilePageAdapter(binding.webView, nativeChrome = true, onContentReady = {
+        channel = ChannelGuard(binding.webView)
+        mobilePage = MobilePageAdapter(binding.webView, nativeChrome = true, channel = channel, onConcealed = cover::concealed, onContentReady = {
             if (!rendererUnavailable && !sessionChanging && !pageFailed && SitePolicy.trusted(binding.webView.url)) {
-                binding.loading.isVisible = false
+                Motion.progress(binding.loading, false)
                 noticePresentation.apply()
                 automation.pageFinished()
                 updatePageTitle()
-                scanNotices()
+                notices.scan()
             }
         })
         // Home tile pins and order arrive from page taps; the validated, stored list is sent back to the page.
-        shortcutBridge = ShortcutBridge(binding.webView) { request ->
+        // «Скачать все» only from the course page in view: never from a viewer over it or a changing or locked session.
+        shortcutBridge = ShortcutBridge(binding.webView, channel, onDownloadAll = { batch ->
+            if (!documents.isOpen && !sessionChanging && !rendererUnavailable && !model.state.value.locked) downloads.downloadAll(batch.section, batch.urls)
+        }) { request ->
             lifecycleScope.launch {
-                val accepted = try { model.updateShortcuts(request) }
-                catch (cancelled: CancellationException) { throw cancelled }
-                catch (_: Exception) { false }
-                if (!accepted) message(R.string.pin_failed)
+                if (!attempt(false) { model.updateShortcuts(request) }) message(R.string.pin_failed)
                 shortcutBridge.configure(model.state.value.shortcuts)
             }
         }
-        // The site's own marks (a menu count, a "complete the questionnaire first" message) become notifications.
-        noticeBridge = NoticeBridge(binding.webView, NOTICE_CHECK_MS) { scan, session ->
-            val epoch = sessionEpoch
-            lifecycleScope.launch {
-                val fresh = try { model.applyNoticeScan(scan, session) }
-                catch (cancelled: CancellationException) { throw cancelled }
-                catch (_: Exception) { emptyList() }
-                if (fresh.isNotEmpty() && epoch == sessionEpoch && !noticesSheet.showing && !isDestroyed) announceNotices(fresh)
-            }
-        }
-        noticesSheet = NoticesSheet(this, onOpen = ::openNotice,
-            onRead = { key -> changeNotices { model.markNoticeRead(key) } },
-            onReadAll = { changeNotices { model.markAllNoticesRead() } },
-            onRefresh = { scanNotices(refresh = true) })
-    }
-
-    /** Reads the main page for notifications once it is a signed-in page, not the login form or the read notice. */
-    private fun scanNotices(refresh: Boolean = false) {
-        val state = model.state.value
-        if (rendererUnavailable || sessionChanging || documents.isOpen || !state.hasCredentials || state.paused || state.locked ||
-            automationStatus != AutomationStatus.IDLE) return
-        val url = binding.webView.url
-        if (!SitePolicy.trusted(url) || SitePolicy.loginPage(url) || url?.toUri()?.path?.matches(NOTICE_PATH) == true) return
-        noticeBridge.scan(refresh, model.noticeSession)
-    }
-
-    private fun changeNotices(change: suspend () -> Unit) {
-        lifecycleScope.launch {
-            try { change() } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { message(R.string.storage_error) }
-        }
-    }
-
-    private fun showNotices() {
-        val state = model.state.value
-        if (!state.hasCredentials || state.locked || sessionChanging || noticesSheet.showing) return
-        noticesSheet.show(state)
-    }
-
-    private fun announceNotices(fresh: List<SiteNotice>) {
-        val labels = model.state.value.language.context(this)
-        val text = if (fresh.size == 1) labels.getString(R.string.notices_new_one, fresh[0].title)
-            else labels.getString(R.string.notices_new_many, fresh.size)
-        Snackbar.make(binding.content, text, Snackbar.LENGTH_LONG).setAction(labels.getString(R.string.notices_show)) { showNotices() }.show()
-    }
-
-    /** Opens the page that resolves [notice] (the questionnaire list, the section with the message) and marks it read. */
-    private fun openNotice(notice: SiteNotice) {
-        if (sessionChanging || !SitePolicy.trusted(notice.url)) return
-        changeNotices { model.markNoticeRead(notice.key) }
-        if (rendererUnavailable) { retry(); return }
-        if (documents.isOpen) documents.close()
-        if (!route(notice.url)) loadPage(notice.url)
+        notices = NoticeFlow(this, binding, model, hosts)
     }
 
     /** The document and service (Moodle) window over the page, with its own automation for each kind. */
     private fun createDocuments() = DocumentViewer(this, binding.content, { web ->
-        AutomationController(web, model, lifecycleScope) { automationStatus = it; renderBanner() }
+        AutomationController(web, model, lifecycleScope, recover = { target ->
+            if (!sessionChanging && web === documents.webView) web.loadUrl(target)
+        }) { automationStatus = it; renderBanner() }
     }, { url ->
         if (SitePolicy.trusted(url) && !SitePolicy.documentDownload(url)) {
             documents.close()
@@ -338,11 +316,12 @@ class MainActivity : AppCompatActivity() {
         chrome.configure(canOpenDrawer = { !documents.isOpen }, onToolbar = ::toolbarAction, onNavigation = ::navigationAction)
         binding.errorRetry.setOnClickListener { retryFailedPage() }
         binding.errorBack.setOnClickListener {
-            if (rendererUnavailable) retry()
+            if (model.sessionClearPending) finishInterruptedSessionClear()
+            else if (rendererUnavailable) retry()
             else if (binding.webView.canGoBack()) binding.webView.goBack()
             else binding.webView.loadUrl(SitePolicy.HOME)
         }
-        binding.statusAction.setOnClickListener { retry() }
+        binding.statusAction.setOnClickListener { retry(signIn = true) }
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() = back()
         })
@@ -368,7 +347,9 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun text(id: Int) = model.state.value.language.context(this).getString(id)
+    private fun labels() = languages.of(model.state.value.language)
+
+    private fun text(id: Int) = labels().getString(id)
 
     private fun message(id: Int) { Snackbar.make(binding.content, text(id), Snackbar.LENGTH_LONG).show() }
 
@@ -411,7 +392,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun toolbarAction(id: Int): Boolean {
         when (id) {
-            R.id.action_notifications -> showNotices()
+            R.id.action_notifications -> notices.show()
             R.id.action_downloads -> openDownloads()
             R.id.action_refresh -> refreshPage()
             R.id.action_reading -> setMobileLayout(!model.state.value.mobileLayout)
@@ -434,7 +415,7 @@ class MainActivity : AppCompatActivity() {
             R.id.nav_attestation -> openSection(AppSection.ATTESTATION)
             R.id.nav_distance -> openSection(AppSection.DISTANCE)
             R.id.nav_moodle -> { openMoodle(); return false }
-            R.id.nav_notices -> { showNotices(); return false }
+            R.id.nav_notices -> { notices.show(); return false }
             R.id.nav_downloads -> { openDownloads(); return false }
             R.id.nav_all_sections -> { showSiteSections(); return false }
             R.id.nav_settings -> { forms.show(); return false }
@@ -446,12 +427,19 @@ class MainActivity : AppCompatActivity() {
     private fun downloadEvent(event: DownloadEvent) {
         if (event.id == handledDownloadEvent || sessionChanging) return
         handledDownloadEvent = event.id
-        if (event.loginUrl != null && downloads.signInFor(event.loginUrl)) { message(R.string.download_relogin); return }
+        // A material that is a teacher's link opens like the link it is, once; behind the lock it is dropped, not saved for later.
+        if (event.link != null) {
+            DownloadService.consume(event.id)
+            downloadStartedBar?.dismiss()
+            if (!model.state.value.locked && !AppLockSession.locked) route(event.link)
+            return
+        }
+        if (event.loginUrl != null && downloads.signInFor(event.loginUrl, event.batch)) { message(R.string.download_relogin); return }
         val bar = Snackbar.make(binding.content, text(event.message), Snackbar.LENGTH_LONG)
         if (event.uri != null && event.recordId != null) bar.setAction(text(R.string.open_file)) {
             if (!model.state.value.locked && !AppLockSession.locked)
                 startActivity(FileViewerActivity.intent(this, event.recordId, model.state.value.language))
-        } else if (event.message == R.string.download_login) bar.setAction(text(R.string.sign_in)) { retry() }
+        } else if (event.message == R.string.download_login) bar.setAction(text(R.string.sign_in)) { retry(signIn = true) }
         else bar.setAction(text(R.string.downloads)) { openDownloads() }
         bar.show()
     }
@@ -482,20 +470,20 @@ class MainActivity : AppCompatActivity() {
         lock.releaseUnlockScreen()
         configureNoticePresentation()
         lock.applyWindowSecurity()
-        binding.noticeLoadingText.text = text(R.string.preparing_page)
+        binding.noticeLoadingOverlay.contentDescription = text(R.string.preparing_page)
         renderPageSettings(state)
-        binding.errorMessage.text = state.language.context(this).webErrorText(errorMessageId, errorHttpStatus)
+        binding.errorMessage.text = languages.of(state.language).webErrorText(errorMessageId, errorHttpStatus)
         binding.errorRetry.text = text(R.string.retry)
         binding.errorBack.text = text(R.string.return_to_site)
         val changedLanguage = rendered.language != null && rendered.language != state.language
         rendered = rendered.copy(language = state.language)
         localizeChrome(state)
         if (model.sessionClearPending && !sessionChanging) { finishInterruptedSessionClear(); return }
-        if (state.hasCredentials) renderSession(state, changedLanguage) else renderFirstRun(state)
+        if (state.canBrowse) renderSession(state, changedLanguage) else renderFirstRun(state)
         updateDrawerLock()
-        if (reopenSettings) { reopenSettings = false; if (state.hasCredentials) forms.show() }
+        if (reopenSettings) { reopenSettings = false; if (state.canBrowse) forms.show() }
         // onResume skipped the checks while the lock was up; unlocking in place must start them.
-        if (justUnlocked) { scanNotices(); startNoticeChecks(); updates.entered() }
+        if (justUnlocked) { notices.scan(); notices.startChecks(); updates.entered() }
         updates.refresh()
     }
 
@@ -521,7 +509,7 @@ class MainActivity : AppCompatActivity() {
         binding.setupContainer.isVisible = true
         binding.mainColumn.isVisible = false
         binding.webView.isVisible = false
-        binding.loading.isVisible = false
+        Motion.progress(binding.loading, false)
         binding.errorOverlay.isVisible = false
         binding.statusBar.isVisible = false
         forms.showFirstRun(binding.setupContainer, state.storageError)
@@ -549,6 +537,8 @@ class MainActivity : AppCompatActivity() {
     private fun openWeb() {
         webOpened = true
         automation.resume()
+        binding.pageSkeleton.isVisible = model.state.value.mobileLayout
+        binding.root.postDelayed(pageAbandoned, LEAVE_TIMEOUT_MS)
         val restored = restoredWebState?.let { binding.webView.restoreState(it) }
         restoredWebState = null
         val lost = lostPageUrl?.takeIf(SitePolicy::resumable)
@@ -569,8 +559,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun localizeChrome(state: AppState) {
         chrome.localize(state)
-        chrome.notices(if (state.hasCredentials) Notices.unread(state.notices) else 0, state)
-        noticesSheet.render(state)
+        chrome.notices(if (state.canBrowse) Notices.unread(state.notices) else 0, state)
+        notices.render(state)
         renderHeading()
     }
 
@@ -591,35 +581,74 @@ class MainActivity : AppCompatActivity() {
         if (!SitePolicy.trusted(url)) return
         binding.webView.evaluateJavascript(PageScripts.HEADING) { result ->
             if (isDestroyed || epoch != pageEpoch || url != binding.webView.url) return@evaluateJavascript
-            pageTitle = runCatching { JSONArray(result) }.getOrNull()?.optString(0)?.takeIf { it.isNotBlank() }
+            // The first heading on Бакалавр belongs to the summary panels, not to the page.
+            pageTitle = if (currentUrl().orEmpty().toUri().path?.trimEnd('/').equals("/student/bachelor", ignoreCase = true)) text(R.string.cabinet)
+                else runCatching { JSONArray(result) }.getOrNull()?.optString(0)?.takeIf { it.isNotBlank() }
             pageLoading = false
             renderHeading()
         }
     }
 
-    private fun updateDrawerLock() = chrome.drawerUsable(model.state.value.hasCredentials && !documents.isOpen && !sessionChanging)
+    private fun updateDrawerLock() = chrome.drawerUsable(model.state.value.canBrowse && !documents.isOpen && !sessionChanging)
 
     /** Univer's own Moodle hand-off, the same route as the site's useful link and the home tile. */
     private fun openMoodle() {
-        if (sessionChanging || !model.state.value.hasCredentials || model.state.value.paused) return
+        if (sessionChanging || !model.state.value.canBrowse || model.state.value.paused) return
         if (rendererUnavailable) { retry(); return }
         route(SingleSignOnPolicy.ENTRY)
     }
 
     private fun openSection(section: AppSection) {
-        if (sessionChanging || !model.state.value.hasCredentials) return
+        if (sessionChanging || model.sessionClearPending || !model.state.value.canBrowse) return
         if (rendererUnavailable) { retry(); return }
         if (documents.isOpen) documents.close()
         loadPage(section.url)
     }
 
-    /** A GET of a trusted page with the error cleared and automation running; its address is the page's retry target. */
-    private fun loadPage(url: String) {
+    /**
+     * A GET of a trusted page with the error cleared and automation running; its address is the page's retry target.
+     * [quietly] is an attempt the student did not ask for: the error screen stands until a page commits, so one that
+     * fails again changes nothing on screen.
+     */
+    private fun loadPage(url: String, quietly: Boolean = false) {
         pageFailed = false
-        binding.errorOverlay.isVisible = false
-        automation.resume()
+        // Another document replaces this one: a login still in flight here would read its fresh form as a rejection.
+        automation.resume(replacing = true)
         navigationGetUrl = url
+        if (quietly) awaitPage()
+        else {
+            binding.errorOverlay.isVisible = false
+            leavePage(url)
+        }
         binding.webView.loadUrl(url)
+    }
+
+    /** Answers a tap at once: the shape of the next page fades in over this one, and [pageAbandoned] ends the wait. */
+    private fun leavePage(url: String) {
+        binding.pageSkeleton.show(url)
+        cover.leave(covered = model.state.value.mobileLayout && SitePolicy.trusted(url))
+        chrome.heading(SitePolicy.section(url), pageTitle, true, ::text)
+        Motion.progress(binding.loading, true)
+        awaitPage()
+    }
+
+    private fun awaitPage() {
+        binding.root.removeCallbacks(pageAbandoned)
+        binding.root.postDelayed(pageAbandoned, LEAVE_TIMEOUT_MS)
+    }
+
+    /**
+     * Posted on the root, not the WebView: a lost renderer detaches and destroys the WebView, and removeCallbacks on a
+     * detached view no longer reaches the queue, so the wait would end on a destroyed screen.
+     */
+    private val pageAbandoned = Runnable { if (!isDestroyed) settlePage() }
+
+    /** Back to the page that is on screen: nothing replaced it. */
+    private fun settlePage() {
+        binding.root.removeCallbacks(pageAbandoned)
+        if (cover.abandoned()) { showError(errorMessageId, errorHttpStatus); return }
+        Motion.progress(binding.loading, false)
+        renderHeading()
     }
 
     /** Opens the website's full section list (the adapted #tools menu) on the current page. */
@@ -633,56 +662,25 @@ class MainActivity : AppCompatActivity() {
         if (documents.isOpen) return
         if (rendererUnavailable || pageFailed) { retryFailedPage(); return }
         val url = binding.webView.url?.takeIf(SitePolicy::trusted) ?: run { retry(); return }
-        automation.resume()
+        automation.resume(replacing = true)
         navigationGetUrl = url
         binding.webView.loadUrl(url)
     }
 
     private fun setMobileLayout(enabled: Boolean, form: SettingsSheetBinding? = null) {
         if (enabled == model.state.value.mobileLayout) return
-        lifecycleScope.launch {
-            try { model.setMobileLayout(enabled) }
-            catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) {
-                if (form != null) { forms.feedback(form, R.string.storage_error); forms.update(form, forms.isFirst(form)) } else message(R.string.storage_error)
-            }
-        }
+        launchCatching({
+            if (form != null) { forms.feedback(form, R.string.storage_error); forms.update(form, forms.isFirst(form)) } else message(R.string.storage_error)
+        }) { model.setMobileLayout(enabled) }
     }
 
     private fun setTextZoom(percent: Int) {
         if (TextZoom.clamp(percent) == model.state.value.textZoom) return
-        lifecycleScope.launch {
-            try { model.setTextZoom(percent) }
-            catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { message(R.string.storage_error) }
-        }
+        launchCatching({ message(R.string.storage_error) }) { model.setTextZoom(percent) }
     }
 
     private fun showTextSize() {
-        val labels = model.state.value.language.context(this)
-        val density = resources.displayMetrics.density
-        // Dialogs need the activity's window; only their strings come from the app-language context.
-        val value = TextView(this).apply {
-            setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_TitleMedium)
-            gravity = Gravity.CENTER
-        }
-        val slider = Slider(this).apply {
-            valueFrom = TextZoom.MIN.toFloat(); valueTo = TextZoom.MAX.toFloat(); stepSize = 10f
-            this.value = model.state.value.textZoom.toFloat()
-            setLabelFormatter { getString(R.string.percent_value, it.toInt()) }
-            contentDescription = labels.getString(R.string.text_size)
-        }
-        value.text = getString(R.string.percent_value, slider.value.toInt())
-        slider.addOnChangeListener { _, current, fromUser -> value.text = getString(R.string.percent_value, current.toInt()); if (fromUser) setTextZoom(current.toInt()) }
-        val content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            val side = (24 * density).toInt()
-            setPadding(side, (8 * density).toInt(), side, 0)
-            addView(value); addView(slider)
-        }
-        MaterialAlertDialogBuilder(this).setTitle(labels.getString(R.string.text_size)).setIcon(R.drawable.ic_text_size)
-            .setView(content).setPositiveButton(labels.getString(R.string.done), null)
-            .setNeutralButton(labels.getString(R.string.reset)) { _, _ -> setTextZoom(TextZoom.DEFAULT) }.show().also(::track)
+        track(TextSizeDialog.show(this, labels(), model.state.value.textZoom, ::setTextZoom))
     }
 
     private fun printPage() {
@@ -705,6 +703,18 @@ class MainActivity : AppCompatActivity() {
 
     // Session: save, log out, erase.
 
+    private fun manualLogin(form: SettingsSheetBinding) {
+        if (sessionChanging) return
+        sessionChanging = true
+        form.manualLogin.isEnabled = false
+        lifecycleScope.launch {
+            try { model.startManualLogin(); forms.dismiss() }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Exception) { forms.feedback(form, R.string.storage_error) }
+            finally { sessionChanging = false; if (isActive) { forms.update(form, first = true); render(model.state.value) } }
+        }
+    }
+
     private fun save(form: SettingsSheetBinding, first: Boolean) {
         if (sessionChanging) return
         val login = form.login.text?.toString().orEmpty().trim()
@@ -725,7 +735,7 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             try {
                 model.save(login, password)
-                if (changed) { clearSession(); model.sessionCleared(); webOpened = false; restoredWebState = null }
+                if (changed) clearSession()
                 forms.dismiss()
                 binding.errorOverlay.isVisible = false
                 automationStatus = AutomationStatus.IDLE
@@ -757,9 +767,6 @@ class MainActivity : AppCompatActivity() {
             try {
                 model.endSession(delete)
                 clearSession()
-                model.sessionCleared()
-                webOpened = false
-                restoredWebState = null
                 automationStatus = AutomationStatus.IDLE
                 forms.dismiss()
             } catch (cancelled: CancellationException) { throw cancelled }
@@ -770,19 +777,31 @@ class MainActivity : AppCompatActivity() {
 
     /** A logout or account change was committed but the Activity was recreated before the site session was wiped. */
     private fun finishInterruptedSessionClear() {
+        if (sessionChanging) return
         sessionChanging = true
         lifecycleScope.launch {
-            try { clearSession(); model.sessionCleared(); webOpened = false; restoredWebState = null }
+            var cleared = false
+            try { clearSession(); cleared = true }
             catch (cancelled: CancellationException) { throw cancelled }
-            finally { sessionChanging = false; if (isActive) render(model.state.value) }
+            catch (_: Exception) {
+                binding.setupContainer.isVisible = false
+                binding.mainColumn.isVisible = true
+                binding.webView.isVisible = false
+                showError(R.string.storage_error)
+                binding.errorOverlay.isVisible = true
+            }
+            finally { sessionChanging = false; if (isActive && cleared) render(model.state.value) }
         }
     }
 
+    /**
+     * Ends the site session on this screen: its parts forget it, the site's data is wiped, the model hears that the wipe
+     * is done, and the next render opens the website afresh.
+     */
     private suspend fun clearSession() {
         noticeLoading.dismiss()
         noticePresentation.setEnabled(false)
-        noticesSheet.dismiss()
-        noticeBridge.reset()
+        notices.reset()
         sessionEpoch++
         downloads.reset()
         fileChooser.clear()
@@ -792,56 +811,45 @@ class MainActivity : AppCompatActivity() {
         restoredDocument = null
         automation.pause()
         pageTitle = null
-        if (!rendererUnavailable) {
-            binding.webView.stopLoading()
-            binding.webView.loadUrl("about:blank")
-        }
-        WebStorage.getInstance().deleteAllData()
-        if (!rendererUnavailable) {
-            binding.webView.clearCache(true)
-            binding.webView.clearHistory()
-            binding.webView.clearSslPreferences()
-        }
-        suspendCancellableCoroutine { continuation ->
-            CookieManager.getInstance().removeAllCookies {
-                CookieManager.getInstance().flush()
-                if (continuation.isActive) continuation.resume(Unit)
-            }
-        }
+        SiteData.erase(binding.webView.takeUnless { rendererUnavailable }, this)
+        model.sessionCleared()
+        webOpened = false
+        restoredWebState = null
     }
 
     // Page errors and recovery.
 
-    private fun retry() {
-        if (sessionChanging || !model.state.value.hasCredentials) return
+    /** Opens the site afresh. Only the student's own "Sign in" ([signIn]) ends the pause they chose by signing out. */
+    private fun retry(signIn: Boolean = false) {
+        if (sessionChanging || !model.state.value.canBrowse) return
         documents.close(false)
         documentSourcePosition = null
         failedPageUrl = null
         pageFailed = false
-        lifecycleScope.launch {
-            try {
-                model.resumeAutoLogin()
-                if (rendererUnavailable) { recreate(); return@launch }
-                automationStatus = AutomationStatus.IDLE
-                binding.errorOverlay.isVisible = false
-                noticePresentation.setEnabled(true, retry = true)
-                automation.resume()
-                automation.open()
-                renderBanner()
-            } catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { message(R.string.storage_error) }
+        launchCatching({ message(R.string.storage_error) }) {
+            if (model.state.value.hasCredentials) model.retrySignIn(signIn)
+            if (rendererUnavailable) { recreate(); return@launchCatching }
+            automationStatus = AutomationStatus.IDLE
+            binding.errorOverlay.isVisible = false
+            if (model.state.value.paused) configureNoticePresentation() else noticePresentation.setEnabled(true, retry = true)
+            automation.resume(replacing = true)
+            leavePage(SitePolicy.HOME)
+            automation.open()
+            renderBanner()
         }
     }
 
     private fun retryFailedPage() {
+        if (model.sessionClearPending) { finishInterruptedSessionClear(); return }
         if (rendererUnavailable) { retry(); return }
         val url = failedPageUrl?.takeIf(SitePolicy::trusted)
         if (url == null || model.state.value.paused) { retry(); return }
-        if (sessionChanging || !model.state.value.hasCredentials) return
+        if (sessionChanging || !model.state.value.canBrowse) return
         pageFailed = false
         binding.errorOverlay.isVisible = false
         configureNoticePresentation()
-        automation.resume()
+        automation.resume(replacing = true)
+        leavePage(url)
         binding.webView.loadUrl(url) // Only URLs observed in a GET request can reach this branch.
     }
 
@@ -852,7 +860,7 @@ class MainActivity : AppCompatActivity() {
     /** Schedules [recoverFailedPage] after the page backoff's wait (or [delay]). */
     private fun schedulePageRecovery(delay: Long? = null) {
         binding.root.removeCallbacks(pageRecoveryTask)
-        binding.root.removeCallbacks(noticeTicker)
+        notices.stopChecks()
         if (pageFailed && retryableError())
             binding.root.postDelayed(pageRecoveryTask, delay ?: model.pageRecovery.delay(SystemClock.elapsedRealtime()))
     }
@@ -863,13 +871,13 @@ class MainActivity : AppCompatActivity() {
      */
     private fun recoverFailedPage() {
         val state = model.state.value
-        if (!pageFailed || !retryableError() || sessionChanging || documents.isOpen || !state.hasCredentials ||
+        if (!pageFailed || !retryableError() || sessionChanging || documents.isOpen || !state.canBrowse ||
             state.paused || state.locked || !lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) return
         model.pageRecovery.spend(SystemClock.elapsedRealtime())
         pageFailed = false
         configureNoticePresentation()
-        loadPage(failedPageUrl?.takeIf(SitePolicy::trusted) ?: SitePolicy.HOME)
-        startNoticeChecks()
+        loadPage(failedPageUrl?.takeIf(SitePolicy::trusted) ?: SitePolicy.HOME, quietly = true)
+        notices.startChecks()
     }
 
     /**
@@ -878,7 +886,7 @@ class MainActivity : AppCompatActivity() {
      */
     private fun recoverRenderer() {
         val state = model.state.value
-        if (!rendererUnavailable || rendererRecoveryPending || sessionChanging || !state.hasCredentials || state.paused ||
+        if (!rendererUnavailable || rendererRecoveryPending || sessionChanging || !state.canBrowse || state.paused ||
             state.locked || forms.showing || !lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) return
         rendererRecoveryPending = true
         val now = SystemClock.elapsedRealtime()
@@ -890,28 +898,6 @@ class MainActivity : AppCompatActivity() {
         }, delay)
     }
 
-    /** The network is back: a page that failed for want of it is loaded again shortly. */
-    private fun registerNetworkCallback() {
-        val connectivity = getSystemService(ConnectivityManager::class.java) ?: return
-        val callback = object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) {
-                runOnUiThread {
-                    if (!isDestroyed && pageFailed && errorHttpStatus == null && errorMessageId == R.string.network_error)
-                        schedulePageRecovery(1_000)
-                }
-            }
-        }
-        try { connectivity.registerDefaultNetworkCallback(callback); networkCallback = callback }
-        catch (_: RuntimeException) { /* Too many callbacks or no permission: the backoff alone still retries. */ }
-    }
-
-    private fun unregisterNetworkCallback() {
-        val callback = networkCallback ?: return
-        networkCallback = null
-        try { getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(callback) }
-        catch (_: RuntimeException) { }
-    }
-
     private fun configureNoticePresentation() {
         val state = model.state.value
         noticePresentation.setEnabled(state.hasCredentials && !state.paused && !model.guard.blocked &&
@@ -920,41 +906,24 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun renderBanner() {
-        if (!model.state.value.hasCredentials) { binding.statusBar.isVisible = false; return }
-        val paused = model.state.value.paused
-        val id = when {
-            paused -> R.string.paused
-            automationStatus == AutomationStatus.LOGIN_FAILED -> R.string.login_failed
-            automationStatus == AutomationStatus.NOTICE_FAILED -> R.string.notice_failed
-            automationStatus == AutomationStatus.AGREEMENT_FAILED -> R.string.agreement_failed
-            automationStatus == AutomationStatus.LANGUAGE_FAILED -> R.string.language_failed
-            automationStatus == AutomationStatus.ELEMENTS_MISSING -> R.string.elements_missing
-            else -> null
-        }
-        Motion.show(binding.statusBar, id != null, rise = true)
-        if (id != null) binding.statusText.text = text(id)
-        // A paused session is information; a failed automation step needs the user's attention.
-        val container = if (paused) R.color.md_secondary_container else R.color.warning_container
-        val content = if (paused) R.color.md_on_secondary_container else R.color.on_warning_container
-        binding.statusBar.backgroundTintList = ColorStateList.valueOf(getColor(container))
-        binding.statusText.setTextColor(getColor(content))
-        binding.statusIcon.setImageResource(if (paused) R.drawable.ic_info else R.drawable.ic_warning)
-        binding.statusIcon.imageTintList = ColorStateList.valueOf(getColor(content))
-        binding.statusAction.isVisible = automationStatus != AutomationStatus.SIGNING_IN || paused
-        binding.statusAction.text = text(if (paused) R.string.sign_in else R.string.retry)
-        localizeChrome(model.state.value)
+        val state = model.state.value
+        if (!state.hasCredentials) { banner.hide(); return }
+        banner.render(state.paused, automationStatus, state.language, ::text)
+        localizeChrome(state)
     }
 
     private fun showError(id: Int, httpStatus: Int? = null) {
+        binding.root.removeCallbacks(pageAbandoned)
+        cover.failed()
         noticeLoading.dismiss()
         noticePresentation.setEnabled(false)
         pageFailed = true
         errorMessageId = id
         errorHttpStatus = httpStatus
-        binding.errorMessage.text = model.state.value.language.context(this).webErrorText(id, httpStatus)
+        binding.errorMessage.text = labels().webErrorText(id, httpStatus)
         binding.errorIcon.setImageResource(if (id == R.string.network_error || id == R.string.tls_error) R.drawable.ic_cloud_off else R.drawable.ic_warning)
-        Motion.show(binding.errorOverlay, model.state.value.hasCredentials)
-        binding.loading.isVisible = false
+        Motion.show(binding.errorOverlay, model.state.value.canBrowse)
+        Motion.progress(binding.loading, false)
         pageLoading = false
         renderHeading()
         automation.pause()
@@ -977,46 +946,42 @@ class MainActivity : AppCompatActivity() {
             override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message): Boolean {
                 if (!isUserGesture) return false
                 // A page's new window only tells where it wanted to go; that address is routed like a link.
-                val popup = WebView(this@MainActivity)
-                var retired = false
-                // A window that never navigates leaves the callback without a navigation event, so it is closed by itself.
-                fun retire() {
-                    if (retired) return
-                    retired = true
-                    (popup.parent as? android.view.ViewGroup)?.removeView(popup)
-                    popup.destroy()
-                }
-                popup.configureNavigationCapture()
-                popup.postDelayed(::retire, 3_000)
-                popup.webViewClient = object : WebViewClient() {
-                    override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
-                        retired = true
-                        (view.parent as? android.view.ViewGroup)?.removeView(view)
-                        view.destroy()
-                        return true
-                    }
-                    override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                        val url = request.url.toString()
-                        if (logoutNavigation.onNavigation(request)) { retire(); return true }
+                captureNewWindow(this@MainActivity, resultMsg) { request ->
+                    if (!logoutNavigation.onNavigation(request)) {
                         if (!sessionChanging) websiteLanguage.onNavigation(request)
-                        if (!route(url)) binding.webView.loadUrl(url)
-                        retire()
-                        return true
+                        val url = request.url.toString()
+                        if (!route(url, request.isForMainFrame && !request.isRedirect && request.method.equals("GET", true))) binding.webView.loadUrl(url)
                     }
                 }
-                (resultMsg.obj as WebView.WebViewTransport).webView = popup
-                resultMsg.sendToTarget()
                 return true
             }
         }
-        binding.webView.setDownloadListener { url, agent, disposition, mime, _ -> downloads.download(url, agent, disposition, mime) }
+        binding.webView.setDownloadListener { url, agent, disposition, mime, _ ->
+            settlePage()
+            downloads.download(url, agent, disposition, mime)
+        }
     }
 
     /** Navigation policy, page lifecycle, errors and renderer loss of the website's WebView. */
     private inner class PageClient : WebViewClient() {
+        override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+            // WebView omits shouldOverrideUrlLoading for POST: it must not send a form to another origin.
+            if (request.isForMainFrame && !SitePolicy.trusted(request.url.toString()))
+                return WebResourceResponse("text/plain", "UTF-8", 403, "Blocked", emptyMap(),
+                    java.io.ByteArrayInputStream(byteArrayOf()))
+            return null
+        }
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
             if (!request.isForMainFrame) return !SitePolicy.trusted(request.url.toString())
             if (logoutNavigation.onNavigation(request)) return true
+            // «Онлайн тест»: the student's tap arms the one server redirect to the test portal that answers it; the portal opens
+            // like a tapped link (the link window or the browser), and the page that never left stops showing its cover.
+            val address = request.url.toString()
+            if (SitePolicy.onlineTestExit(address, request.method, request.isRedirect, SystemClock.elapsedRealtime() < onlineTestUntil)) {
+                onlineTestUntil = 0L; settlePage(); openLink(address); return true
+            }
+            if (SitePolicy.onlineTestTap(address, request.method, request.hasGesture(), request.isRedirect)) onlineTestUntil = SystemClock.elapsedRealtime() + ONLINE_TEST_WINDOW_MS
+            else if (request.hasGesture() && !request.isRedirect) onlineTestUntil = 0L
             // The site sends a request of an ended session to its login form: reopen that page after the login.
             if (SitePolicy.loginPage(request.url.toString()) && (request.isRedirect || !request.hasGesture()))
                 navigationGetUrl?.takeIf(SitePolicy::resumable)?.let(automation::resumeAfterLogin)
@@ -1027,23 +992,28 @@ class MainActivity : AppCompatActivity() {
             // through the site's notice route.
             if (!sessionChanging && request.hasGesture() && !request.isRedirect) {
                 SitePolicy.newsShortcut(request.url.toString())?.takeIf { it != request.url.toString() }?.let {
-                    navigationGetUrl = it; view.loadUrl(it); return true
+                    navigationGetUrl = it; leavePage(it); view.loadUrl(it); return true
                 }
             }
-            return route(request.url.toString())
+            return route(request.url.toString(), SitePolicy.externalNavigation(request.url.toString(), request.hasGesture(), request.isRedirect, request.method)).also { routed ->
+                if (!routed && !sessionChanging && request.hasGesture() && !request.isRedirect) leavePage(request.url.toString())
+            }
         }
 
         override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
             pageEpoch++
             navigationGetUrl = navigationGetUrl?.takeIf { it == url }
             automation.pageStarted()
+            binding.root.removeCallbacks(pageAbandoned)
+            cover.started()
+            // A tap already named the page coming; the redirects on the way there must not change its shape.
+            if (!binding.pageSkeleton.isVisible) binding.pageSkeleton.show(url)
             mobilePage.pageStarted(url)
             if (SitePolicy.trusted(url)) {
-                if (url != null && url.toUri().path?.matches(NOTICE_PATH) == true &&
+                if (SitePolicy.readNotice(url) &&
                     model.state.value.hasCredentials && !model.state.value.paused && !model.guard.blocked)
                     noticeLoading.status(AutomationStatus.NOTICE_CONFIRMING)
-                binding.loading.isVisible = true
-                binding.errorOverlay.isVisible = false
+                Motion.progress(binding.loading, true)
                 pageFailed = false
                 pageTitle = null; pageLoading = true
                 renderHeading()
@@ -1053,7 +1023,7 @@ class MainActivity : AppCompatActivity() {
         override fun onPageFinished(view: WebView, url: String?) {
             if (url != view.url) return
             noticePresentation.apply()
-            binding.loading.isVisible = false
+            if (!cover.leaving) Motion.progress(binding.loading, false)
             CookieManager.getInstance().flush()
             mobilePage.apply(model.state.value.mobileLayout, model.state.value.language)
             if (!SitePolicy.trusted(url) || sessionChanging) return
@@ -1068,6 +1038,8 @@ class MainActivity : AppCompatActivity() {
                     failedPageUrl = navigationGetUrl
                     showError(httpErrorMessage(status), status)
                 } else {
+                    pageArrived()
+                    cover.loaded()
                     model.pageRecovery.reset()
                     automation.pageFinished()
                     if (!model.state.value.mobileLayout) updatePageTitle()
@@ -1076,12 +1048,19 @@ class MainActivity : AppCompatActivity() {
         }
 
         override fun onPageCommitVisible(view: WebView, url: String?) {
+            pageArrived()
             noticePresentation.apply()
             mobilePage.apply(model.state.value.mobileLayout, model.state.value.language)
         }
 
+        /** A load that fails starts like any other, so only a committed document takes the error screen away. */
+        private fun pageArrived() {
+            if (!pageFailed) Motion.show(binding.errorOverlay, false)
+        }
+
         override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
-            if (request.isForMainFrame && request.url.toString() == view.url) {
+            // A tapped link still has the old address in view.url here, and the browser's own error page comes next.
+            if (request.isForMainFrame) {
                 failedPageUrl = request.url.toString().takeIf { request.method.equals("GET", true) && SitePolicy.trusted(it) }
                 showError(R.string.network_error)
             }
@@ -1096,7 +1075,8 @@ class MainActivity : AppCompatActivity() {
 
         override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) {
             handler.cancel()
-            if (error.url == view.url) {
+            // A tapped link never commits after this: without the error screen it would just wait for the cover's timeout.
+            if (error.url == view.url || error.url == navigationGetUrl) {
                 failedPageUrl = navigationGetUrl?.takeIf(SitePolicy::trusted)
                 showError(R.string.tls_error)
             }
@@ -1109,7 +1089,8 @@ class MainActivity : AppCompatActivity() {
             noticePresentation.close()
             mobilePage.close()
             shortcutBridge.close()
-            noticeBridge.close()
+            channel.close()
+            notices.rendererGone()
             rendererUnavailable = true
             pageEpoch++
             lostPageUrl = view.url?.takeIf(SitePolicy::resumable)
@@ -1127,20 +1108,43 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** Where a link goes: the document viewer, a download, the website itself, or another app. */
-    private fun route(url: String): Boolean {
-        if (sessionChanging) return true
-        if (SingleSignOnPolicy.opensViewer(url)) { openDocument(url); return true }
+    private fun route(url: String, userGesture: Boolean = true): Boolean {
+        if (sessionChanging || model.sessionClearPending) return true
+        if (SingleSignOnPolicy.opensViewer(url)) {
+            if (SitePolicy.trusted(url) || userGesture) openDocument(url)
+            return true
+        }
         if (SitePolicy.documentDownload(url)) {
             downloads.download(url, binding.webView.settings.userAgentString, null, null)
             return true
         }
         if (SitePolicy.printDocument(url)) { openDocument(url); return true }
         if (SitePolicy.trusted(url)) return false
+        if (!userGesture) return true
         val uri = url.toUri()
         if (uri.scheme == "http" && uri.host.equals(SitePolicy.ORIGIN.toUri().host, true)) {
             binding.webView.loadUrl(uri.buildUpon().scheme("https").build().toString())
-        } else openExternal(url)
+        } else openLink(url)
         return true
+    }
+
+    /** A tapped link to another site: the app's link window, the system (mail, phone, http, or by the user's choice), or nothing. */
+    private fun openLink(url: String) {
+        when (LinkPolicy.open(url, model.state.value.externalLinks, LinkProfile.available())) {
+            LinkOpening.APP -> try { linkWindow.launch(LinkViewerActivity.intent(this, url, model.state.value.language)) }
+                catch (_: ActivityNotFoundException) { openExternal(url) }
+            LinkOpening.BROWSER -> openExternal(url)
+            LinkOpening.BLOCKED -> message(R.string.open_failed)
+        }
+    }
+
+    /** A Univer or Moodle page tapped in the link window opens here, signed in; logout, language and sign-in pages never do. */
+    private fun linkReturned(url: String) {
+        if (sessionChanging || model.sessionClearPending || model.state.value.locked || AppLockSession.locked || !LinkPolicy.handBack(url)) return
+        if (SitePolicy.trusted(url) && !SitePolicy.documentDownload(url)) {
+            if (documents.isOpen) documents.close()
+            binding.webView.loadUrl(url)
+        } else route(url)
     }
 
     private fun openDocument(url: String, saved: Bundle? = null) {
@@ -1157,10 +1161,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openExternal(url: String) {
+        if (!SitePolicy.external(url)) { message(R.string.open_failed); return }
         val uri = url.toUri()
-        if (uri.scheme !in listOf("http", "https", "mailto", "tel")) { message(R.string.open_failed); return }
         try { startActivity(Intent(Intent.ACTION_VIEW, uri).addCategory(Intent.CATEGORY_BROWSABLE)) }
         catch (_: ActivityNotFoundException) { message(R.string.open_failed) }
+        catch (_: SecurityException) { message(R.string.open_failed) }
     }
 
     // Lifecycle.
@@ -1170,6 +1175,7 @@ class MainActivity : AppCompatActivity() {
         lock.save(outState)
         outState.putInt("session_epoch", sessionEpoch)
         outState.putBoolean("settings_open", forms.showing && !sessionChanging)
+        outState.putInt("settings_tab", forms.tab)
         if (!sessionChanging) downloads.save(outState)
         if (!sessionChanging) documents.save()?.let {
             outState.putBundle("document_state", it)
@@ -1181,7 +1187,7 @@ class MainActivity : AppCompatActivity() {
         // A restored login form or read notice may come from the cache of an ended session (an expired key, a
         // confirmation the server never records): the start page asks the site for the current one instead.
         if (webOpened && !sessionChanging && !rendererUnavailable && SitePolicy.trusted(binding.webView.url) &&
-            !SitePolicy.loginPage(binding.webView.url) && binding.webView.url?.toUri()?.path?.matches(NOTICE_PATH) != true) {
+            !SitePolicy.loginPage(binding.webView.url) && !SitePolicy.readNotice(binding.webView.url)) {
             val state = Bundle()
             binding.webView.saveState(state)
             outState.putBundle("web_state", state)
@@ -1192,11 +1198,11 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
-        registerNetworkCallback()
+        network.register()
     }
 
     override fun onStop() {
-        unregisterNetworkCallback()
+        network.unregister()
         super.onStop()
     }
 
@@ -1208,22 +1214,16 @@ class MainActivity : AppCompatActivity() {
         if (rendererUnavailable) { recoverRenderer(); return }
         if (model.state.value.locked) return
         if (pageFailed) schedulePageRecovery()
-        if (documents.isOpen) documents.resume() else { automation.resume(); scanNotices() }
-        startNoticeChecks()
+        if (documents.isOpen) documents.resume() else { automation.resume(); notices.scan() }
+        notices.startChecks()
         updates.entered()
-    }
-
-    /** (Re)starts the periodic notice check; it stops while the app is paused, locked or a page is failed. */
-    private fun startNoticeChecks() {
-        binding.root.removeCallbacks(noticeTicker)
-        if (lock.inForeground) binding.root.postDelayed(noticeTicker, NOTICE_CHECK_MS)
     }
 
     override fun onPause() {
         // With a PIN set the window turns secure before the system takes the recent-apps picture.
         lock.inForeground = false
         lock.applyWindowSecurity()
-        binding.root.removeCallbacks(noticeTicker)
+        notices.stopChecks()
         automation.pause(); CookieManager.getInstance().flush()
         documents.pause()
         if (!rendererUnavailable) binding.webView.onPause()
@@ -1231,15 +1231,18 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        // A view's pending runnables still run after it leaves the window: none may reach a destroyed screen.
         binding.root.removeCallbacks(pageRecoveryTask)
+        notices.stopChecks()
+        binding.root.removeCallbacks(pageAbandoned)
         dismissTransientDialogs()
         lockUi.hide()
         noticeLoading.close()
         noticePresentation.close()
         mobilePage.close()
         shortcutBridge.close()
-        noticeBridge.close()
-        noticesSheet.dismiss()
+        channel.close()
+        notices.close()
         automation.close()
         documents.close(false)
         downloads.reset()
@@ -1248,7 +1251,7 @@ class MainActivity : AppCompatActivity() {
         if (!rendererUnavailable) {
             binding.webView.stopLoading()
             binding.webView.webChromeClient = null
-            binding.webView.webViewClient = WebViewClient()
+            binding.webView.webViewClient = RetiredWebViewClient()
             (binding.webView.parent as? android.view.ViewGroup)?.removeView(binding.webView)
             binding.webView.destroy()
         }
@@ -1256,13 +1259,18 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** What the screen's parts ask of the page and the session. */
-    private inner class Hosts : DownloadLauncher.Host, LockFlow.Host, SettingsForms.Host, UpdateFlow.Host {
+    private inner class Hosts : DownloadLauncher.Host, LockFlow.Host, SettingsForms.Host, UpdateFlow.Host, NoticeFlow.Host {
         override fun text(id: Int) = this@MainActivity.text(id)
+        override fun labels() = this@MainActivity.labels()
         override fun message(id: Int) = this@MainActivity.message(id)
         override fun track(dialog: Dialog) = this@MainActivity.track(dialog)
         override val sessionChanging get() = this@MainActivity.sessionChanging
         override val sessionEpoch get() = this@MainActivity.sessionEpoch
+        override val channel get() = this@MainActivity.channel
         override val rendererUnavailable get() = this@MainActivity.rendererUnavailable
+        override val automationStatus get() = this@MainActivity.automationStatus
+        override val inForeground get() = lock.inForeground
+        override val documentOpen get() = documents.isOpen
         override val serviceOpen get() = documents.isService
         override val pageUrl get() = documents.webView?.url ?: currentUrl()
         override val pageSource get() = when {
@@ -1271,10 +1279,46 @@ class MainActivity : AppCompatActivity() {
             else -> pageTitle.orEmpty()
         }
         override val userAgent: String get() = binding.webView.settings.userAgentString
+        override suspend fun materialFolder(url: String, page: String?): String? {
+            val expectedPage = page ?: return null
+            if (rendererUnavailable || sessionChanging || documents.isOpen || !SitePolicy.materialFile(url) || page != currentUrl()) return null
+            val epoch = pageEpoch
+            val session = sessionEpoch
+            val raw = withTimeoutOrNull(3_000) { binding.webView.evaluate(PageScripts.materialPlace(expectedPage, url)) } ?: return null
+            if (epoch != pageEpoch || session != sessionEpoch || sessionChanging) return null
+            return runCatching {
+                val json = JSONObject(JSONTokener(raw).nextValue() as? String ?: return null)
+                StudyFolders.relative(json.optString("course"), json.optString("section"))
+            }.getOrNull()
+        }
+        override suspend fun materialFolders(urls: List<String>, page: String?): Map<String, String>? {
+            val expectedPage = page ?: return null
+            if (rendererUnavailable || sessionChanging || documents.isOpen || page != currentUrl()) return null
+            val epoch = pageEpoch
+            val session = sessionEpoch
+            val raw = withTimeoutOrNull(5_000) { binding.webView.evaluate(PageScripts.materialPlaces(expectedPage, urls)) } ?: return null
+            if (epoch != pageEpoch || session != sessionEpoch || sessionChanging) return null
+            return runCatching {
+                val json = JSONObject(JSONTokener(raw).nextValue() as? String ?: return null)
+                urls.associateWith { url -> json.optJSONObject(url)?.let { StudyFolders.relative(it.optString("course"), it.optString("section")) } ?: StudyFolders.ROOT }
+            }.getOrNull()
+        }
+        override fun sectionQueued(section: String, started: Int, present: Int) {
+            val name = if (section.length > 60) section.take(59).trimEnd() + "…" else section
+            val message = when {
+                started > 0 && present > 0 -> labels().getString(R.string.download_all_started_present, name, started, present)
+                started > 0 -> labels().getString(R.string.download_all_started, name, started)
+                present > 0 -> labels().getString(R.string.download_all_present, name)
+                else -> text(R.string.download_failed)
+            }
+            downloadStartedBar = Snackbar.make(binding.content, message, Snackbar.LENGTH_LONG)
+                .setAction(text(R.string.downloads)) { openDownloads() }.also { it.show() }
+        }
         override fun openExternal(url: String) = this@MainActivity.openExternal(url)
         override fun openDownloads() = this@MainActivity.openDownloads()
         override fun downloadStarted() {
-            Snackbar.make(binding.content, text(R.string.download_started), Snackbar.LENGTH_LONG).setAction(text(R.string.downloads)) { openDownloads() }.show()
+            downloadStartedBar = Snackbar.make(binding.content, text(R.string.download_started), Snackbar.LENGTH_LONG)
+                .setAction(text(R.string.downloads)) { openDownloads() }.also { it.show() }
         }
         override fun unsupported() {
             Snackbar.make(binding.content, text(R.string.unsupported_download), Snackbar.LENGTH_LONG)
@@ -1286,6 +1330,11 @@ class MainActivity : AppCompatActivity() {
             if (documents.isOpen) documents.close()
             loadPage(binding.webView.url?.takeIf(SitePolicy::trusted) ?: SitePolicy.HOME)
             return true
+        }
+        override fun openNoticePage(url: String) {
+            if (rendererUnavailable) { retry(); return }
+            if (documents.isOpen) documents.close()
+            if (!route(url)) loadPage(url)
         }
         override fun coverPage(covered: Boolean) {
             if (covered) {
@@ -1300,10 +1349,11 @@ class MainActivity : AppCompatActivity() {
                 if (webOpened && !rendererUnavailable) { if (documents.isOpen) documents.resume() else automation.resume() }
             }
         }
-        override fun dismissDialogs() { dismissTransientDialogs(); forms.dismiss(); noticesSheet.dismiss() }
+        override fun dismissDialogs() { dismissTransientDialogs(); forms.dismiss(); notices.dismiss() }
         override fun eraseAccount() = endSession(true)
         override fun save(form: SettingsSheetBinding, first: Boolean) = this@MainActivity.save(form, first)
         override fun endSession(delete: Boolean) = this@MainActivity.endSession(delete)
+        override fun manualLogin(form: SettingsSheetBinding) = this@MainActivity.manualLogin(form)
         override fun setMobileLayout(enabled: Boolean, form: SettingsSheetBinding?) = this@MainActivity.setMobileLayout(enabled, form)
         override fun setTextZoom(percent: Int) = this@MainActivity.setTextZoom(percent)
         override val settingsShowing get() = forms.showing
@@ -1315,8 +1365,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private companion object {
-        val NOTICE_PATH = Regex("/student/attentionStudents/[0-9]+/?")
-        /** The notification check: the open page, and the sections when [NoticeBridge] last fetched them this long ago. */
-        const val NOTICE_CHECK_MS = 10 * 60_000L
+        /** How long a tapped link may take to start a page before the screen goes back to the page it left. */
+        const val LEAVE_TIMEOUT_MS = 15_000L
+        const val ONLINE_TEST_WINDOW_MS = 30_000L
     }
 }

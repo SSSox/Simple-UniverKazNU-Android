@@ -7,20 +7,14 @@ import android.os.Bundle
 import android.os.Message
 import android.os.SystemClock
 import android.print.PrintManager
-import android.view.LayoutInflater
 import android.view.ViewGroup
 import android.webkit.*
 import android.widget.FrameLayout
-import android.widget.LinearLayout
-import android.widget.TextView
 import android.view.View
-import androidx.appcompat.widget.TooltipCompat
-import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.univerflow.kaznu.R
 import com.univerflow.kaznu.domain.AppLanguage
 import com.univerflow.kaznu.domain.TextZoom
 import com.univerflow.kaznu.web.*
-import com.google.android.material.button.MaterialButton
 
 /** A print/service window keeps the source WebView and its scroll position intact. */
 class DocumentViewer(
@@ -41,16 +35,9 @@ class DocumentViewer(
     /** The user signed out of Moodle with its own Log out; the window closes instead of signing in again. */
     private val serviceSignedOut: () -> Unit = {},
 ) {
-    private var panel: LinearLayout? = null
-    private var title: TextView? = null
-    private var subtitle: TextView? = null
-    private var back: MaterialButton? = null
-    private var mode: MaterialButton? = null
-    private var print: MaterialButton? = null
-    private var progress: LinearProgressIndicator? = null
-    private var errorPanel: LinearLayout? = null
-    private var errorMessage: TextView? = null
-    private var retry: MaterialButton? = null
+    /** The open window's frame (bar, loading line, error panel); null while no window is open. */
+    private var panel: DocumentPanel? = null
+    private var paper: PageSkeleton? = null
     private var failed = false
     private var requestedUrl = "about:blank"
     private var failureMessageId = R.string.document_error_message
@@ -87,7 +74,7 @@ class DocumentViewer(
         // Each renewal is bounded by serviceReentries (three per two minutes); a one-minute spacing
         // here would push a 20-30 s answer past the window's 90 s limit.
         serviceRetry()
-        failed = false; errorPanel?.visibility = View.GONE
+        failed = false; panel?.hideError()
         automation?.retry()
         startServiceTimeout(web)
         web.loadUrl(serviceEntry)
@@ -114,10 +101,10 @@ class DocumentViewer(
         web.loadUrl(serviceEntry)
     }
 
-    /** Android Back: earlier Moodle pages first, then the window closes. */
     /** Closes what the page itself has open over its content (a table on its own screen, the site menu); false for none. */
     fun dismissNavigation(callback: (Boolean) -> Unit) = adapter?.dismissNavigation(callback) ?: callback(false)
 
+    /** Android Back: earlier Moodle pages first, then the window closes. */
     fun goBack(): Boolean {
         val web = webView ?: return false
         if (!isService || failed || !web.canGoBack()) return false
@@ -139,17 +126,15 @@ class DocumentViewer(
     fun signInAgain(): Boolean {
         val web = webView ?: return false
         if (!isService || servicePending) return isService
-        val now = SystemClock.elapsedRealtime()
-        while (serviceReentries.firstOrNull()?.let { now - it > 120_000 } == true) serviceReentries.removeFirst()
-        if (serviceReentries.size >= 3) { failure(R.string.service_session_ended); return true }
-        serviceReentries.addLast(now)
-        restartService(web)
+        reenterService(web) // The same budget as a Moodle sign-in page: three renewals in two minutes.
         return true
     }
 
     var webView: WebView? = null
         private set
     private var language = AppLanguage.RUSSIAN
+    /** The app-language strings, built again only when the language changes (every main-screen render updates this window). */
+    private val languages = LanguageResources(context)
     private var readable = true
     private var textZoom = TextZoom.DEFAULT
     private var baseTextZoom = 100
@@ -176,8 +161,11 @@ class DocumentViewer(
         failureMessageId = defaultErrorMessage
         failureHttpStatus = null
         readable = saved?.getBoolean("readable", true) ?: true
-        val container = buildPanel()
-        panel = container
+        // The current language, not the one at opening: the labels must not switch back after a language change.
+        // A closed layer stays on screen while it fades, so its controls check that the window is still open.
+        val frame = DocumentPanel(context, onBack = { close() }, onMode = { if (isOpen) { readable = !readable; update(this@DocumentViewer.language) } },
+            onPrint = ::printDocument, onRetry = { if (isOpen) retryPage() })
+        panel = frame
         val web = WebView(context)
         web.id = R.id.document_web
         webView = web
@@ -187,9 +175,15 @@ class DocumentViewer(
             web.isSaveEnabled = false
         }
         baseTextZoom = web.settings.textZoom
-        adapter = MobilePageAdapter(web, onContentReady = {
+        // Like the main screen's placeholder: it takes taps meant for the page under it, but is no stop for TalkBack.
+        val sheet = PageSkeleton(context).apply {
+            showDocument(); isClickable = true; isFocusable = false
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO; visibility = View.GONE
+        }
+        paper = sheet
+        adapter = MobilePageAdapter(web, onConcealed = { hidden -> if (web === webView) Motion.show(sheet, hidden) }, onContentReady = {
             if (web === webView && !failed) {
-                progress?.visibility = View.GONE
+                panel?.loading(false)
                 automation?.pageFinished()
             }
         })
@@ -198,38 +192,15 @@ class DocumentViewer(
         web.webViewClient = DocumentClient()
         web.webChromeClient = DocumentChrome()
         web.setDownloadListener { link, agent, disposition, mime, _ -> download(link, agent, disposition, mime) }
-        container.addView(web, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
-        host.addView(container, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        val fill = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+        val stage = FrameLayout(context).apply { addView(web, fill); addView(sheet, FrameLayout.LayoutParams(fill)) }
+        frame.addStage(stage)
+        host.addView(frame.root, FrameLayout.LayoutParams(fill))
+        if (saved == null) Motion.enter(frame.root)
         update(language)
         automation?.resume()
         val restored = saved?.getBundle("web")?.let { web.restoreState(it) }
         if (restored == null || !allowed(web.url)) web.loadUrl(url)
-    }
-
-    /** The window above the page: its bar (back, title, reading mode, print), progress and error panel with Retry. */
-    private fun buildPanel(): LinearLayout {
-        val inflater = LayoutInflater.from(context)
-        val container = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(context.getColor(R.color.md_surface))
-            isClickable = true // The source page below must not receive taps while a document is open.
-        }
-        val bar = inflater.inflate(R.layout.view_document_bar, container, false)
-        back = bar.findViewById<MaterialButton>(R.id.document_back).apply { setOnClickListener { close() } }
-        title = bar.findViewById(R.id.document_title)
-        subtitle = bar.findViewById(R.id.document_subtitle)
-        // The current language, not the one at opening: the labels must not switch back after a language change.
-        mode = bar.findViewById<MaterialButton>(R.id.document_mode).apply { setOnClickListener { readable = !readable; update(language) } }
-        print = bar.findViewById<MaterialButton>(R.id.document_print).apply { setOnClickListener { printDocument() } }
-        container.addView(bar)
-        progress = LinearProgressIndicator(context).apply { isIndeterminate = false; trackThickness = (3 * context.resources.displayMetrics.density).toInt() }
-        container.addView(progress, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        val error = inflater.inflate(R.layout.view_document_error, container, false) as LinearLayout
-        errorPanel = error
-        errorMessage = error.findViewById(R.id.document_error_message)
-        retry = error.findViewById<MaterialButton>(R.id.document_retry).apply { setOnClickListener { retryPage() } }
-        container.addView(error)
-        return container
     }
 
     /** Explicit Retry: a fresh GET; a credential or signed POST is never reloaded. */
@@ -240,7 +211,7 @@ class DocumentViewer(
             else webView?.let(::restartService)
         } else if (SitePolicy.trusted(requestedUrl)) {
             if (webView == null) open(requestedUrl, language)
-            else { automation?.resume(); webView?.loadUrl(requestedUrl) }
+            else { automation?.resume(replacing = true); webView?.loadUrl(requestedUrl) }
         }
     }
 
@@ -249,9 +220,9 @@ class DocumentViewer(
         override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
             // Android does not invoke shouldOverrideUrlLoading for POST. Reject an unknown
             // main-frame/form target before a direct request can send a hand-off token.
-            if (isService && (request.isForMainFrame || request.method.equals("POST", true)) &&
-                !SingleSignOnPolicy.allowed(request.url.toString())) {
-                view.post { if (view === webView && isService) failure(R.string.service_navigation_blocked) }
+            if ((request.isForMainFrame || (isService && request.method.equals("POST", true))) &&
+                !allowed(request.url.toString())) {
+                view.post { if (view === webView) failure(if (isService) R.string.service_navigation_blocked else R.string.document_error_message) }
                 return WebResourceResponse("text/plain", "UTF-8", 403, "Blocked", emptyMap(),
                     java.io.ByteArrayInputStream(byteArrayOf()))
             }
@@ -274,14 +245,15 @@ class DocumentViewer(
                         serviceLastPage = destination
                     return false
                 }
-                if (request.hasGesture() && request.method.equals("GET", true)) navigate(destination)
+                if (SitePolicy.externalNavigation(destination, request.hasGesture(), request.isRedirect, request.method)) navigate(destination)
                 else failure(R.string.service_navigation_blocked)
                 return true
             }
             if (SitePolicy.trusted(destination) && request.url.path == "/__univer_document_back__") { close(); return true }
             if (SitePolicy.printDocument(destination) || (SitePolicy.trusted(destination) &&
                     (request.url.path?.startsWith("/lang/change/") == true || request.url.path?.startsWith("/user/") == true))) return false
-            navigate(destination)
+            if (SitePolicy.trusted(destination) || SitePolicy.externalNavigation(destination, request.hasGesture(), request.isRedirect, request.method))
+                navigate(destination)
             return true
         }
         override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
@@ -290,8 +262,8 @@ class DocumentViewer(
             automation?.pageStarted()
             adapter?.pageStarted(url)
             failed = false
-            errorPanel?.visibility = View.GONE
-            progress?.visibility = View.VISIBLE
+            panel?.hideError()
+            panel?.loading(true)
             if (allowed(url)) requestedUrl = url!!
             else if (url != "about:blank") { view.stopLoading(); failure(if (isService) R.string.service_navigation_blocked else R.string.document_error_message) }
         }
@@ -303,7 +275,7 @@ class DocumentViewer(
             if (url != view.url) return
             if (isService) update(this@DocumentViewer.language)
             fitMoodle(view, url)
-            progress?.visibility = View.GONE
+            panel?.loading(false)
             CookieManager.getInstance().flush()
             adapter?.apply(readable, this@DocumentViewer.language)
             if (SitePolicy.trusted(url) && !failed && !isService) {
@@ -377,42 +349,20 @@ class DocumentViewer(
             return chooseFiles(callback, params)
         }
         override fun onProgressChanged(view: WebView, newProgress: Int) {
-            progress?.setProgressCompat(newProgress, true)
-            progress?.visibility = if (failed || newProgress >= 100) View.GONE else View.VISIBLE
+            panel?.progress(newProgress, failed)
         }
         override fun onCloseWindow(window: WebView) { close() }
         override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message): Boolean {
             // Service authentication stays in the same browsing context; no POST is rebuilt.
             if (isService) return false
             if (!isUserGesture) return false
-            val popup = WebView(context)
-            var retired = false
-            // A window that never navigates would otherwise keep a renderer of its own alive for good.
-            fun retire() {
-                if (retired) return
-                retired = true
-                (popup.parent as? ViewGroup)?.removeView(popup)
-                popup.destroy()
-            }
-            popup.configureNavigationCapture()
-            popup.postDelayed(::retire, 3_000)
-            popup.webViewClient = object : WebViewClient() {
-                override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
-                    retired = true
-                    (view.parent as? ViewGroup)?.removeView(view)
-                    view.destroy()
-                    return true
-                }
-                override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                    if (sessionNavigation(request)) { retire(); return true }
+            captureNewWindow(context, resultMsg) { request ->
+                if (!request.isForMainFrame || !request.method.equals("GET", true) || request.isRedirect) return@captureNewWindow
+                if (!sessionNavigation(request)) {
                     val target = request.url.toString()
                     if (SitePolicy.printDocument(target)) this@DocumentViewer.webView?.loadUrl(target) else navigate(target)
-                    retire()
-                    return true
                 }
             }
-            (resultMsg.obj as WebView.WebViewTransport).webView = popup
-            resultMsg.sendToTarget()
             return true
         }
     }
@@ -427,9 +377,8 @@ class DocumentViewer(
         failed = true
         failureMessageId = messageId
         failureHttpStatus = httpStatus
-        progress?.visibility = View.GONE
-        errorPanel?.visibility = View.VISIBLE
-        errorMessage?.text = language.context(context).webErrorText(failureMessageId, failureHttpStatus)
+        paper?.let { Motion.show(it, false) }
+        panel?.showError(languages.of(language).webErrorText(failureMessageId, failureHttpStatus))
         automation?.pause()
     }
 
@@ -437,7 +386,8 @@ class DocumentViewer(
         this.language = language
         this.textZoom = textZoom
         webView?.settings?.textZoom = baseTextZoom * textZoom / 100
-        val localized = language.context(context)
+        val frame = panel ?: return // Nothing on screen to label; the next open() labels its own window.
+        val localized = languages.of(language)
         val titleId = when {
             isService -> R.string.service_moodle
             requestedUrl.contains("/transcript/") -> R.string.document_transcript
@@ -446,17 +396,8 @@ class DocumentViewer(
             requestedUrl.contains("/interactive/syllabus/") -> R.string.document_syllabus
             else -> R.string.document_title
         }
-        title?.text = localized.getString(titleId)
-        subtitle?.text = if (isService) runCatching { java.net.URI(requestedUrl).host }.getOrNull()
-            else localized.getString(R.string.document_subtitle)
-        print?.visibility = if (isService) View.GONE else View.VISIBLE
-        mode?.visibility = if (isService) View.GONE else View.VISIBLE
-        back?.let { it.contentDescription = localized.getString(if (isService) R.string.service_back else R.string.document_back); TooltipCompat.setTooltipText(it, it.contentDescription) }
-        print?.let { it.contentDescription = localized.getString(R.string.print); TooltipCompat.setTooltipText(it, it.contentDescription) }
-        mode?.text = localized.getString(if (readable) R.string.document_original else R.string.document_read)
-        mode?.setIconResource(if (readable) R.drawable.ic_file else R.drawable.ic_reader)
-        retry?.text = localized.getString(R.string.retry)
-        errorMessage?.text = localized.webErrorText(failureMessageId, failureHttpStatus)
+        val subtitle = if (isService) runCatching { java.net.URI(requestedUrl).host }.getOrNull() else localized.getString(R.string.document_subtitle)
+        frame.label(localized, titleId, subtitle, isService, readable, localized.webErrorText(failureMessageId, failureHttpStatus))
         adapter?.apply(readable, language)
     }
 
@@ -464,7 +405,7 @@ class DocumentViewer(
     private fun printDocument() {
         val web = webView ?: return
         val manager = context.getSystemService(Context.PRINT_SERVICE) as? PrintManager ?: return
-        val name = title?.text?.toString()?.ifBlank { null } ?: "Univer"
+        val name = panel?.titleText?.ifBlank { null } ?: "Univer"
         try { manager.print(name, web.createPrintDocumentAdapter(name), null) }
         catch (_: Exception) { /* Without a print service the document simply stays open. */ }
     }
@@ -489,10 +430,18 @@ class DocumentViewer(
         serviceLastPage = null; serviceResume = null; serviceArrived = false; serviceLoggedOut = false
         serviceTimeout?.let { webView?.removeCallbacks(it) }; serviceTimeout = null
         automation?.close(); automation = null; adapter?.close(); adapter = null
-        webView?.apply { stopLoading(); webChromeClient = null; webViewClient = WebViewClient(); (parent as? ViewGroup)?.removeView(this); destroy() }
+        val web = webView?.apply { stopLoading(); webChromeClient = null; webViewClient = RetiredWebViewClient() }
+        val layer = panel?.root
         webView = null
-        panel?.let(host::removeView); panel = null; title = null; subtitle = null; back = null; mode = null; print = null
+        panel = null
+        // The page stays in its layer while it fades; a session that is ending removes both at once.
+        val remove = {
+            web?.apply { (parent as? ViewGroup)?.removeView(this); destroy() }
+            layer?.let(host::removeView)
+            Unit
+        }
+        if (layer != null && notify) Motion.leave(layer, remove) else remove()
         if (hadWindow && notify) onClosed()
-        progress = null; errorPanel = null; errorMessage = null; retry = null
+        paper = null
     }
 }

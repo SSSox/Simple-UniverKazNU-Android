@@ -6,6 +6,7 @@ import java.io.ByteArrayInputStream
 import java.io.InputStream
 import java.util.Locale
 import java.util.zip.ZipInputStream
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Plain text of downloaded files for the search in "Downloads". The format comes from the file's first bytes, not
@@ -19,8 +20,8 @@ object TextExtract {
     private const val PART_LIMIT = 16 * 1024 * 1024
     private const val ENTRY_LIMIT = 4_000
 
-    private val EXTENSIONS = setOf("pdf", "doc", "dot", "docx", "docm", "dotx", "rtf", "odt", "ott", "ppt", "pps", "pot", "pptx", "ppsx",
-        "pptm", "odp", "xls", "xlt", "xlsx", "xlsm", "ods", "csv", "txt", "text", "md", "htm", "html", "xml", "json", "log")
+    private val EXTENSIONS = setOf("pdf", "doc", "dot", "docx", "docm", "dotx", "dotm", "rtf", "odt", "ott", "ppt", "pps", "pot", "pptx", "ppsx",
+        "pptm", "ppsm", "potx", "potm", "odp", "xls", "xlt", "xlsx", "xlsm", "xltx", "xltm", "ods", "csv", "txt", "text", "md", "htm", "html", "xml", "json", "log")
 
     fun extension(fileName: String) = fileName.substringAfterLast('.', "").lowercase(Locale.ROOT)
 
@@ -53,10 +54,15 @@ object TextExtract {
 
     /** Office Open XML (.docx, .pptx with notes, .xlsx cells) and OpenDocument (content.xml) packages. */
     private fun zip(bytes: ByteArray, checkActive: () -> Unit): String {
-        val parts = sortedMapOf<Pair<Int, Int>, ByteArray>(compareBy({ it.first }, { it.second }))
+        // Each part becomes text as soon as it is read, and only the text that can reach the first LIMIT characters
+        // is kept: a package of many huge parts (a zip bomb) holds one part's bytes at a time, never all of them.
+        val byOrder = compareBy<Pair<Int, Int>>({ it.first }, { it.second })
+        val parts = sortedMapOf<Pair<Int, Int>, Part>(byOrder)
+        var kept = 0
         var openDocument: ByteArray? = null
         var workbook = false
         var entries = 0
+        val passed = PassedOver(checkActive)
         ZipInputStream(ByteArrayInputStream(bytes)).use { zip ->
             while (true) {
                 checkActive()
@@ -67,8 +73,23 @@ object TextExtract {
                 when {
                     name == "content.xml" -> openDocument = Bounded.read(zip, PART_LIMIT, checkActive)
                     name == "xl/workbook.xml" -> workbook = true
-                    order != null -> parts[order] = Bounded.read(zip, PART_LIMIT, checkActive)
+                    // A workbook (Excel writes xl/workbook.xml first) is read by XlsxReader below; its shared strings
+                    // are not parsed here as well. A part placed after text that already fills the limit would add
+                    // nothing: it is not read.
+                    order != null -> if (!workbook && (kept < LIMIT || byOrder.compare(order, parts.lastKey()) <= 0)) {
+                        val part = readPart(Bounded.read(zip, PART_LIMIT, checkActive))
+                        parts.put(order, part)?.let { kept -= it.length }
+                        kept += part.length
+                        // The last parts drop out once the ones before them reach the limit on their own.
+                        while (parts.size > 1) {
+                            val last = parts.getValue(parts.lastKey())
+                            if (kept - last.length < LIMIT) break
+                            parts.remove(parts.lastKey())
+                            kept -= last.length
+                        }
+                    }
                 }
+                passed.rest(zip)
             }
         }
         openDocument?.let { return OpenDocumentText.text(it, checkActive) }
@@ -76,11 +97,31 @@ object TextExtract {
         // its workbook part still gives its shared strings.
         if (workbook) return SheetView.text(XlsxReader.read(bytes, checkActive))
         val text = StringBuilder()
-        parts.values.forEach { part ->
-            if (text.length < LIMIT) officeXml(part, text)
+        for (part in parts.values) {
+            if (text.length >= LIMIT) break
+            part.error?.let { throw it }
+            text.append(part.text)
             if (text.isNotEmpty() && text.last() != '\n') text.append('\n')
         }
         return text.toString().take(LIMIT).trim()
+    }
+
+    /** A package part's text, or the error its XML gave: raised only if the text reaches the part, as in order. */
+    private class Part(val text: String, val error: Exception? = null) {
+        /** Characters it adds to the text: its own and the line end after them. */
+        val length = text.length + if (text.isNotEmpty() && text.last() != '\n') 1 else 0
+    }
+
+    private fun readPart(xml: ByteArray): Part {
+        val text = StringBuilder()
+        return try {
+            officeXml(xml, text)
+            Part(text.toString())
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            Part("", error)
+        }
     }
 
     /** Where a package part's text goes: the document, slides then their notes in slide order, shared strings. */
@@ -101,8 +142,8 @@ object TextExtract {
             override fun startElement(uri: String?, localName: String, qName: String?, attributes: Attributes?) {
                 when (localName) {
                     "t" -> inText = true
-                    "tab" -> out.append(' ')
-                    "br" -> out.append('\n')
+                    "tab" -> if (out.length < LIMIT) out.append(' ')
+                    "br" -> if (out.length < LIMIT) out.append('\n')
                 }
             }
             override fun endElement(uri: String?, localName: String, qName: String?) {

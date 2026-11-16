@@ -59,12 +59,14 @@ internal object PptReader {
             var edit = user.i32(16)
             var documentRef = -1
             val seen = HashSet<Int>()
+            val directories = HashSet<Int>()
             while (edit > 0 && seen.add(edit) && seen.size < 1024) {
                 val atom = record(edit, bytes.size)?.takeIf { it.type == USER_EDIT && it.length >= 28 } ?: break
                 if (atom.length > 28) throw UnsupportedDocumentException("Encrypted presentation")
                 if (documentRef < 0) documentRef = bytes.i32(atom.body + 16)
                 // Newer saves come first and win; each entry lists consecutive persist ids from a start id.
-                record(bytes.i32(atom.body + 12), bytes.size)?.takeIf { it.type == PERSIST_DIRECTORY }?.let { list ->
+                // A directory named by several edits adds nothing after its first reading.
+                bytes.i32(atom.body + 12).takeIf(directories::add)?.let { record(it, bytes.size) }?.takeIf { it.type == PERSIST_DIRECTORY }?.let { list ->
                     var at = list.body
                     while (at + 4 <= list.end) {
                         val header = bytes.i32(at)

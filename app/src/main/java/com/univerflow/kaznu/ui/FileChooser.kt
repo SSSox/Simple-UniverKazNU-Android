@@ -3,6 +3,7 @@ package com.univerflow.kaznu.ui
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.ClipData
+import android.content.ContentResolver
 import android.content.Intent
 import android.net.Uri
 import android.provider.MediaStore
@@ -79,9 +80,11 @@ class FileChooser(private val activity: ComponentActivity, private val title: ()
         val pending = callback ?: return
         callback = null
         val taken = photo?.takeIf { it.first.length() > 0 }
-        val picked = if (resultCode != Activity.RESULT_OK) null else data?.clipData?.let { clip ->
-            (0 until clip.itemCount).mapNotNull { clip.getItemAt(it).uri }.takeIf { it.isNotEmpty() }?.toTypedArray()
-        } ?: data?.data?.let { arrayOf(it) } ?: taken?.let { arrayOf(it.second) }
+        val picked = (if (resultCode != Activity.RESULT_OK) null else data?.clipData?.let { clip ->
+            (0 until clip.itemCount).mapNotNull { clip.getItemAt(it).uri }.takeIf { it.isNotEmpty() }
+        } ?: data?.data?.let { listOf(it) } ?: taken?.let { listOf(it.second) })
+            // Only what a provider shares: a picker answering with a path could name this app's own files for upload.
+            ?.filter { it.scheme == ContentResolver.SCHEME_CONTENT }?.takeIf { it.isNotEmpty() }?.toTypedArray()
         if (picked == null || taken == null || picked.none { it == taken.second }) photo?.first?.delete()
         photo = null
         pending.onReceiveValue(picked)

@@ -3,7 +3,9 @@ package com.univerflow.kaznu
 import com.univerflow.kaznu.web.DownloadFileNames
 import com.univerflow.kaznu.web.DownloadNeedsLogin
 import com.univerflow.kaznu.web.DownloadAccessDenied
+import com.univerflow.kaznu.web.DownloadIsLink
 import com.univerflow.kaznu.web.DownloadProbe
+import com.univerflow.kaznu.web.DownloadTooLarge
 import com.univerflow.kaznu.web.SitePolicy
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
@@ -16,6 +18,29 @@ import java.io.IOException
 
 /** [DownloadProbe.open] suspends because a `Set-Cookie` may have to reach the main thread; the tests simply await it. */
 class DownloadProbeTest {
+    @Test fun oversizedDeclaredLengthIsRejectedBeforeSavingAndUnknownLengthIsBounded() = runBlocking {
+        val declared = Response(url, 200, mapOf("Content-Length" to "33"))
+        assertThrows(DownloadTooLarge::class.java) {
+            runBlockingAwait { DownloadProbe(maxBytes = 32) { declared }.open(url, "agent", null) }
+        }
+        assertTrue(declared.closed)
+        val unknown = Response(url, 200, emptyMap(), ByteArray(96) { 1 })
+        val output = ByteArrayOutputStream()
+        assertThrows(DownloadTooLarge::class.java) {
+            runBlockingAwait { DownloadProbe(maxBytes = 32) { unknown }.open(url, "agent", null).use { it.saveTo(output) } }
+        }
+        assertTrue(unknown.closed)
+        assertTrue("The chunk exceeding the cap is never written", output.size() <= 32)
+    }
+
+    @Test fun compressedAndMalformedLengthResponsesCannotBypassValidation() = runBlocking {
+        listOf(mapOf("Content-Encoding" to "gzip"), mapOf("Content-Length" to "-3"),
+            mapOf("Content-Length" to "999999999999999999999999999")).forEach { headers ->
+            val response = Response(url, 200, headers)
+            assertThrows(IOException::class.java) { runBlockingAwait { DownloadProbe { response }.open(url, "agent", null) } }
+            assertTrue(response.closed)
+        }
+    }
     private val url = "https://univer.kaznu.kz/student/umkd/get/3321866/99281/2026/1"
     private class Response(url: String, private val status: Int, private val headers: Map<String, String>,
         private val body: ByteArray = "%PDF-1.7 fixture".toByteArray()) : HttpURLConnection(URL(url)) {
@@ -86,12 +111,24 @@ class DownloadProbeTest {
         assertEquals(1, connections)
     }
     @Test fun externalRedirectNeverReceivesCookies() = runBlocking {
-        var connections = 0
-        val probe = DownloadProbe { connections++; Response(it, 302, mapOf("Location" to "https://external.test/file")) }
-        assertThrows(IllegalArgumentException::class.java) {
+        val visited = mutableListOf<String>()
+        val probe = DownloadProbe { visited += it; Response(it, 302, mapOf("Location" to "https://external.test/file")) }
+        // A course material sent on to another site is the teacher's link: it is handed back, never fetched.
+        val link = assertThrows(DownloadIsLink::class.java) {
             runBlockingAwait { probe.open(url, "agent", null, { "fixture=session" }) }
         }
-        assertEquals(1, connections)
+        assertEquals("https://external.test/file", link.target)
+        assertEquals(listOf(url), visited)
+        // Anything else that leaves the service, or a link to a bare address, is refused without a second request.
+        for ((start, target) in listOf("https://univer.kaznu.kz/files/guide.pdf" to "https://external.test/file",
+            url to "http://192.168.1.10/file", url to "https://localhost/file", url to "mailto:a@example.org")) {
+            visited.clear()
+            val other = DownloadProbe { visited += it; Response(it, 302, mapOf("Location" to target)) }
+            assertThrows(target, IllegalArgumentException::class.java) {
+                runBlockingAwait { other.open(start, "agent", null, { "fixture=session" }) }
+            }
+            assertEquals(listOf(start), visited)
+        }
     }
     @Test fun utf8FilenameAndDuplicateNamesKeepTheirExtensions() {
         val name = DownloadFileNames.fromDisposition("attachment; filename=course.pdf; filename*=UTF-8''%D0%9A%D1%83%D1%80%D1%81%2B1.pdf")

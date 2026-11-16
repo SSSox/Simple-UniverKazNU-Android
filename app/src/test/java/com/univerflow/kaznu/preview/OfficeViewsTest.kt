@@ -3,6 +3,8 @@ package com.univerflow.kaznu.preview
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.ByteArrayOutputStream
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.util.Locale
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
@@ -57,6 +59,99 @@ class OfficeViewsTest {
         assertEquals("0.1", format(0.1, "General"))
         assertEquals("33333.33333", format(100000.0 / 3, "General"))
         assertEquals("01.01.1904", CellFormat.format(CellValue.Number(0.0), "dd.mm.yyyy", true, Locale.ROOT))
+        // An empty section hides its values (zero-hiding grade sheets, ";;;"); the other sections still show theirs.
+        assertEquals("", format(0.0, "0;-0;;@"))
+        assertEquals("", format(0.0, "#,##0.00;-#,##0.00;"))
+        assertEquals("", format(0.0, "0;-0; ;@"))
+        assertEquals("", format(-5.0, "0;;0"))
+        assertEquals("", format(5.0, ";;;"))
+        assertEquals("5", format(5.0, "0;-0;;@"))
+        assertEquals("-5", format(-5.0, "0;-0;;@"))
+        assertEquals("5", format(5.0, ""))
+        // Elapsed time without seconds: the minutes after "[h]" are minutes, not the month of day 1.
+        assertEquals("36:00", format(1.5, "[h]:mm"))
+        assertEquals("36:30", format(1.5208333333, "[hh]:mm"))
+        assertEquals("36", format(1.5, "[h]"))
+        assertEquals("90.5", format(90.5 / 86_400, "[ss].0"))
+        // "General" with text around it keeps the number and the text.
+        assertEquals("5 шт", format(5.0, "General\" шт\""))
+        assertEquals("-2.5 шт", format(-2.5, "General\" шт\""))
+        assertEquals("0,1 кг", format(0.1, "General\" кг\"", Locale.forLanguageTag("ru")))
+        assertEquals("-5", format(-5.0, "General;-General"))
+    }
+
+    private fun ByteBuffer.u16(value: Int): ByteBuffer = putShort(value.toShort())
+
+    /** A BIFF8 record: type, body length, body. */
+    private fun record(type: Int, body: ByteBuffer.() -> Unit = {}): ByteArray {
+        val buffer = ByteBuffer.allocate(1024).order(ByteOrder.LITTLE_ENDIAN).apply(body)
+        val size = buffer.position()
+        return ByteBuffer.allocate(4 + size).order(ByteOrder.LITTLE_ENDIAN).u16(type).u16(size).put(buffer.array(), 0, size).array()
+    }
+
+    /** A compound file whose only stream is [name], padded past the mini-stream cutoff so it uses whole sectors. */
+    private fun compound(name: String, data: ByteArray): ByteArray {
+        val stream = data.copyOf((maxOf(data.size, 4096) + 511) / 512 * 512)
+        val sectors = stream.size / 512
+        val file = ByteBuffer.allocate(512 * (3 + sectors)).order(ByteOrder.LITTLE_ENDIAN)
+        file.put(byteArrayOf(0xD0.toByte(), 0xCF.toByte(), 0x11, 0xE0.toByte(), 0xA1.toByte(), 0xB1.toByte(), 0x1A, 0xE1.toByte()))
+        file.putShort(0x18, 0x3E).putShort(0x1A, 3).putShort(0x1C, 0xFFFE.toShort()).putShort(0x1E, 9).putShort(0x20, 6)
+        file.putInt(0x2C, 1).putInt(0x30, 1).putInt(0x38, 4096).putInt(0x3C, -2).putInt(0x40, 0).putInt(0x44, -2).putInt(0x48, 0)
+        for (index in 0 until 109) file.putInt(0x4C + index * 4, if (index == 0) 0 else -1)
+        // Sector 0 is the FAT, sector 1 the directory, sectors 2 onward the stream.
+        for (index in 0 until 128) file.putInt(512 + index * 4, when {
+            index == 0 -> -3
+            index == 1 || index == 1 + sectors -> -2
+            index in 2 until 1 + sectors -> index + 1
+            else -> -1
+        })
+        fun entry(at: Int, title: String, type: Int, child: Int, start: Int, size: Int) {
+            title.forEachIndexed { index, char -> file.putChar(at + index * 2, char) }
+            file.putShort(at + 0x40, ((title.length + 1) * 2).toShort()).put(at + 0x42, type.toByte()).put(at + 0x43, 1)
+            file.putInt(at + 0x44, -1).putInt(at + 0x48, -1).putInt(at + 0x4C, child).putInt(at + 0x74, start).putInt(at + 0x78, size)
+        }
+        entry(1024, "Root Entry", 5, 1, -2, 0)
+        entry(1024 + 128, name, 2, -1, 2, stream.size)
+        file.position(1536)
+        file.put(stream)
+        return file.array()
+    }
+
+    @Test fun xlsKeepsTextResultsOfSharedArrayAndTableFormulas() {
+        // Excel writes FORMULA, then SHRFMLA, ARRAY or TABLE for the first cell of such a formula, then the STRING result.
+        fun formula(row: Int, vararg own: ByteArray) = record(0x0006) {
+            u16(row); u16(0); u16(0); put(0); put(ByteArray(5)); u16(0xFFFF); u16(0x0008); putInt(0); u16(5); put(1); u16(0); u16(0)
+        } + own.fold(ByteArray(0)) { all, next -> all + next }
+        fun string(text: String) = record(0x0207) { u16(text.length); put(1); text.forEach { putChar(it) } }
+        val shared = record(0x04BC) { u16(0); u16(1); put(0); put(0); put(0); put(2); u16(3); put(0x1E); u16(1) }
+        val array = record(0x0221) { u16(2); u16(2); put(0); put(0); u16(0); putInt(0); u16(3); put(0x1E); u16(1) }
+        val table = record(0x0236) { u16(3); u16(3); put(0); put(0); put(0); put(0); u16(0); u16(0); u16(0); u16(0) }
+        val sheet = record(0x0809) { u16(0x0600); u16(0x0010); put(ByteArray(12)) } +
+            formula(0, shared) + string("зачтено") + formula(1) + string("не зачтено") +
+            formula(2, array) + string("массив") + formula(3, table) + string("кесте") + record(0x000A)
+        val bof = record(0x0809) { u16(0x0600); u16(0x0005); put(ByteArray(12)) }
+        fun boundSheet(position: Int) = record(0x0085) { putInt(position); put(0); put(0); put(5); put(1); "Лист1".forEach { putChar(it) } }
+        val eof = record(0x000A)
+        val globals = bof + boundSheet(bof.size + boundSheet(0).size + eof.size) + eof
+        val book = SheetView.read(compound("Workbook", globals + sheet))
+        assertEquals(listOf("зачтено", "не зачтено", "массив", "кесте"), (0..3).map { (book.sheets.single().cell(it, 0)?.value as? CellValue.Text)?.value })
+        assertEquals("Лист1\nзачтено\nне зачтено\nмассив\nкесте", SheetView.text(book))
+    }
+
+    @Test fun aWorkbookNamingOneSheetAThousandTimesKeepsABoundedNumberOfCells() {
+        val cells = (0 until 2000).fold(ByteArray(0)) { all, index ->
+            all + record(0x0203) { u16(index / 100); u16(index % 100); u16(0); putDouble(1.0) }
+        }
+        val sheet = record(0x0809) { u16(0x0600); u16(0x0010); put(ByteArray(12)) } + cells + record(0x000A)
+        val bof = record(0x0809) { u16(0x0600); u16(0x0005); put(ByteArray(12)) }
+        fun boundSheet(position: Int) = record(0x0085) { putInt(position); put(0); put(0); put(1); put(1); putChar('s') }
+        val eof = record(0x000A)
+        val names = 1000
+        val position = bof.size + names * boundSheet(0).size + eof.size
+        val globals = bof + (1..names).fold(ByteArray(0)) { all, _ -> all + boundSheet(position) } + eof
+        val book = SheetView.read(compound("Workbook", globals + sheet))
+        // The sheet's cells are read; the 999 further names of the same sheet add none.
+        assertEquals(2000, book.sheets.sumOf { it.rows.values.sumOf { row -> row.size } })
     }
 
     @Test fun pptAndPptxOfOnePresentationLookExactlyTheSame() {

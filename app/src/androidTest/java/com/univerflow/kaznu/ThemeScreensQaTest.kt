@@ -48,6 +48,15 @@ class ThemeScreensQaTest {
         return ColorUtils.calculateLuminance(image.getPixel(2, image.height - 3)).also { image.recycle() }
     }
 
+    /** The frame on screen, with the rounded clips that a drawing into a bitmap leaves out. */
+    private fun frame(name: String) {
+        Thread.sleep(500)
+        val image = checkNotNull(instrumentation.uiAutomation.takeScreenshot())
+        val directory = File(instrumentation.targetContext.getExternalFilesDir(null), "qa").apply { mkdirs() }
+        File(directory, "$name.png").outputStream().use { image.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        image.recycle()
+    }
+
     @Test fun downloadsSettingsAndPinScreenFollowTheTheme() {
         for (dark in listOf(false, true)) {
             instrumentation.runOnMainSync {
@@ -74,13 +83,13 @@ class ThemeScreensQaTest {
                     form.brandBadge.visibility = View.GONE; form.credentials.visibility = View.GONE; form.moreOptions.visibility = View.GONE
                     form.securitySection.visibility = View.GONE; form.subtitle.visibility = View.GONE
                     form.title.setText(R.string.settings); form.accountStatus.setText(R.string.account_saved)
-                    form.languages.check(R.id.russian); form.themes.check(if (dark) R.id.theme_dark else R.id.theme_light)
+                    form.languages.check(R.id.russian); (if (dark) form.themeDark else form.themeLight).isChecked = true
                     sheet = MaterialColors.getColor(form.root, com.google.android.material.R.attr.colorSurfaceContainerLow)
                     activity.setContentView(FrameLayout(activity).apply { addView(form.root) })
                 }
                 scenario.onActivity {
                     assertEquals(3, form.themes.childCount)
-                    assertTrue(form.themes.isSingleSelection && form.themes.isSelectionRequired)
+                    assertEquals(1, listOf(form.themeSystem, form.themeLight, form.themeDark).count { it.isChecked })
                     // The choice and its labels are readable: text contrast of at least 4.5:1 on the sheet.
                     val label = form.themeLabel.currentTextColor
                     assertTrue(ColorUtils.calculateContrast(label, sheet) >= 4.5)
@@ -88,6 +97,8 @@ class ThemeScreensQaTest {
                 }
                 val settings = capture("theme-settings-$theme", form.root, sheet)
                 assertTrue("Settings $theme: $settings", if (dark) settings < 0.1 else settings > 0.8)
+                scenario.onActivity { form.root.scrollTo(0, form.root.getChildAt(0).height) }
+                frame("theme-settings-end-$theme")
 
                 lateinit var pin: PinScreen
                 scenario.onActivity { activity ->

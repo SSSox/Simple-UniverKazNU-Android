@@ -55,8 +55,7 @@ class OfficeViewerQaTest {
 
     private fun asset(name: String) = instrumentation.context.assets.open("documents/$name").use { it.readBytes() }
 
-    private fun save(name: String, mime: String): DownloadRecord {
-        val bytes = asset(name)
+    private fun save(name: String, mime: String, bytes: ByteArray = asset(name)): DownloadRecord {
         val fileName = "Univer-QA-${UUID.randomUUID().toString().take(8)}-$name"
         val uri = PublicDownloadStore(context).create(fileName, mime).use { it.output.write(bytes); it.publish() }
         files += uri
@@ -135,6 +134,41 @@ class OfficeViewerQaTest {
                 assertEquals("\"https://www.kaznu.kz/\"", evaluate(web, "document.querySelector('a[href]').href"))
             }
             assertTrue(page, page.contains("Расписание экзаменов") && !page.contains("example.com"))
+        }
+    }
+
+    /** One empty page behind the standard security handler, with an owner and a user key no password opens. */
+    private fun passwordPdf(): ByteArray {
+        val key = "0123456789abcdef".repeat(4)
+        val objects = listOf("<< /Type /Catalog /Pages 2 0 R >>", "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] >>",
+            "<< /Filter /Standard /V 1 /R 2 /Length 40 /P -64 /O <$key> /U <$key> >>")
+        val out = StringBuilder("%PDF-1.4\n")
+        val offsets = objects.mapIndexed { index, body -> out.length.also { out.append("${index + 1} 0 obj\n$body\nendobj\n") } }
+        val xref = out.length
+        out.append("xref\n0 5\n0000000000 65535 f \n")
+        offsets.forEach { out.append("%010d 00000 n \n".format(it)) }
+        out.append("trailer\n<< /Size 5 /Root 1 0 R /Encrypt 4 0 R /ID [<$key> <$key>] >>\nstartxref\n$xref\n%%EOF\n")
+        return out.toString().toByteArray(Charsets.ISO_8859_1)
+    }
+
+    @Test fun aPdfThatAsksForAPasswordIsOfferedToAnotherApp() {
+        val record = save("password.pdf", "application/pdf", passwordPdf())
+        ActivityScenario.launch<FileViewerActivity>(FileViewerActivity.intent(context, record.id, AppLanguage.RUSSIAN)).use { scenario ->
+            val end = System.currentTimeMillis() + 20_000
+            var message = false
+            while (!message && System.currentTimeMillis() < end) {
+                scenario.onActivity { message = it.findViewById<View>(R.id.viewer_message).visibility == View.VISIBLE }
+                if (!message) Thread.sleep(200)
+            }
+            assertTrue("The viewer says it cannot show the file", message)
+            scenario.onActivity {
+                // The file is there, and an app that asks for the password can open it.
+                assertEquals(View.VISIBLE, it.findViewById<View>(R.id.viewer_open_external).visibility)
+                assertEquals(context.createConfigurationContext(android.content.res.Configuration(context.resources.configuration).apply {
+                    setLocale(java.util.Locale.forLanguageTag("ru")) }).getString(R.string.preview_unsupported),
+                    it.findViewById<android.widget.TextView>(R.id.viewer_message_text).text.toString())
+            }
         }
     }
 }

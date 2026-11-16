@@ -32,6 +32,37 @@ class UniverViewModelTest {
         assertNull(model.credentials)
     }
 
+    @Test fun retryAndRefreshKeepASignOutUntilTheStudentSignsIn() = runTest(dispatcher) {
+        val repository = FakeRepository().apply { saved = saved.copy(credentials = Credentials("fixture-user", "fixture-password")) }
+        val model = model(repository)
+        advanceUntilIdle()
+        model.pauseAutoLogin()
+        assertTrue(model.state.value.paused)
+
+        model.retrySignIn(signIn = false)
+        assertTrue("Retry on the error screen and Refresh do not sign in again", model.state.value.paused)
+        assertTrue("The sign-out is still the saved choice", repository.saved.paused)
+        assertTrue(model.guard.blocked)
+
+        model.retrySignIn(signIn = true)
+        assertFalse("The student's own Sign in ends the pause", model.state.value.paused)
+        assertFalse(repository.saved.paused)
+        assertFalse(model.guard.blocked)
+    }
+
+    @Test fun retryAfterAFailureLetsSignInTryAgain() = runTest(dispatcher) {
+        val repository = FakeRepository().apply { saved = saved.copy(credentials = Credentials("fixture-user", "fixture-password")) }
+        val model = model(repository)
+        advanceUntilIdle()
+        model.guard.stop() // What repeated refusals leave: sign-in stopped, with no pause chosen by the student.
+        assertFalse(model.state.value.paused)
+        assertTrue(model.guard.blocked)
+
+        model.retrySignIn(signIn = false)
+        assertFalse("Retry starts the attempt limits afresh", model.guard.blocked)
+        assertFalse(model.state.value.paused)
+    }
+
     @Test fun commandWaitsForStartupInsteadOfLosingItsStateToTheInitialSnapshot() = runTest(dispatcher) {
         val gate = CompletableDeferred<Unit>()
         val repository = FakeRepository().apply { onLoad = { gate.await(); saved } }
@@ -191,6 +222,23 @@ class UniverViewModelTest {
         assertFalse(model.sessionClearPending)
     }
 
+    @Test fun aPinChangeOutlivingItsScreenReadsTheDigitsThatWereEntered() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Unit>()
+        val repository = FakeRepository().apply { onPin = { gate.await() } }
+        val model = model(repository)
+        advanceUntilIdle()
+        val old = "123456".toCharArray()
+        val new = "708194".toCharArray()
+        val screen = launch { model.changePin(old, new) }
+        runCurrent()
+        // Rotation while the pad says "Checking…": the screen's work is cancelled and it erases its own arrays.
+        screen.cancelAndJoin()
+        old.fill(Char(0)); new.fill(Char(0))
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(listOf("123456", "708194"), repository.pinReads)
+    }
+
     @Test fun logoutIsOneAcceptedTransactionThatSurvivesRecreation() = runTest(dispatcher) {
         val gate = CompletableDeferred<Unit>()
         val repository = FakeRepository().apply { saved = saved.copy(credentials = Credentials("fixture-user", "fixture-password")) }
@@ -282,6 +330,83 @@ class UniverViewModelTest {
         assertTrue("the pending clear is retried", repository.saved.notices.isEmpty())
     }
 
+    @Test fun unfinishedSessionClearSurvivesAProcessRestartAndIsAcknowledgedOnlyAfterErasure() = runTest(dispatcher) {
+        val repository = FakeRepository()
+        val first = model(repository)
+        advanceUntilIdle()
+        first.save("first-user", "fixture-password")
+        first.sessionCleared()
+        first.endSession(delete = false)
+        assertTrue(repository.saved.sessionClearPending)
+        val restarted = model(repository)
+        advanceUntilIdle()
+        assertTrue(restarted.sessionClearPending)
+        assertTrue(restarted.state.value.paused)
+        restarted.sessionCleared()
+        assertFalse(repository.saved.sessionClearPending)
+        assertTrue("Acknowledging the wipe never resumes explicit logout", repository.saved.paused)
+    }
+
+    @Test fun accountReplacementPersistsTheWipeBeforeWritingTheNewCredentialRecord() = runTest(dispatcher) {
+        val repository = FakeRepository().apply {
+            saved = saved.copy(credentials = Credentials("old-user", "old-password"))
+            onSave = {
+                assertTrue("The process can die during this write", saved.sessionClearPending)
+                assertTrue("The old record cannot resume automatically", saved.paused)
+            }
+        }
+        val first = model(repository)
+        advanceUntilIdle()
+        first.save("new-user", "new-password")
+        val restarted = model(repository)
+        advanceUntilIdle()
+        assertEquals("new-user", restarted.credentials?.login)
+        assertTrue("The WebView must be erased before opening that account", restarted.sessionClearPending)
+    }
+
+    @Test fun failedWipeAcknowledgementKeepsTheDurableMarker() = runTest(dispatcher) {
+        val repository = FakeRepository().apply { saved = saved.copy(sessionClearPending = true) }
+        val model = model(repository)
+        advanceUntilIdle()
+        repository.onFinishClear = { throw IOException("Fixture write failure") }
+        assertTrue(runCatching { model.sessionCleared() }.isFailure)
+        assertTrue(model.sessionClearPending)
+        assertTrue(repository.saved.sessionClearPending)
+    }
+
+    @Test fun manualWebsiteLoginSurvivesRestartWithoutCreatingCredentialsAndEndsOnLogout() = runTest(dispatcher) {
+        val repository = FakeRepository()
+        val first = model(repository)
+        advanceUntilIdle()
+        first.startManualLogin()
+        assertTrue(first.state.value.canBrowse)
+        assertFalse(first.state.value.hasCredentials)
+        assertNull(first.credentials)
+        assertNull(repository.saved.credentials)
+        val restarted = model(repository)
+        advanceUntilIdle()
+        assertTrue(restarted.state.value.manualLogin)
+        assertTrue(restarted.state.value.canBrowse)
+        assertFalse(restarted.state.value.hasCredentials)
+        restarted.endSession(delete = false)
+        assertFalse(restarted.state.value.canBrowse)
+        assertFalse(repository.saved.manualLogin)
+        assertTrue(repository.saved.paused)
+        assertTrue(repository.saved.sessionClearPending)
+    }
+
+    @Test fun savingCredentialsReplacesManualModeOnlyAfterDurableSessionSeparation() = runTest(dispatcher) {
+        val repository = FakeRepository()
+        val model = model(repository)
+        advanceUntilIdle()
+        model.startManualLogin()
+        model.save("fixture-user", "fixture-password")
+        assertTrue(repository.saved.sessionClearPending)
+        assertFalse(repository.saved.manualLogin)
+        assertFalse(model.state.value.manualLogin)
+        assertTrue(model.state.value.hasCredentials)
+    }
+
     private class FakeRepository : SessionRepository {
         var saved = StoredSession()
         var onLoad: suspend () -> StoredSession = { saved }
@@ -292,9 +417,13 @@ class UniverViewModelTest {
         override suspend fun load() = onLoad()
         override suspend fun saveCredentials(credentials: Credentials) {
             onSave()
-            saved = saved.copy(credentials = credentials, paused = false)
+            saved = saved.copy(credentials = credentials, paused = false, manualLogin = false)
         }
         override suspend fun deleteCredentials() { saved = saved.copy(credentials = null, paused = true) }
+        override suspend fun beginSessionClear() { onPause(); saved = saved.copy(paused = true, sessionClearPending = true, manualLogin = false) }
+        override suspend fun setManualLogin(enabled: Boolean) { saved = saved.copy(manualLogin = enabled, paused = if (enabled) false else saved.paused) }
+        var onFinishClear: suspend () -> Unit = { }
+        override suspend fun finishSessionClear() { onFinishClear(); saved = saved.copy(sessionClearPending = false) }
         var onPause: suspend () -> Unit = { }
         override suspend fun setAutoLoginPaused(paused: Boolean) { onPause(); saved = saved.copy(paused = paused) }
         override suspend fun setLanguage(language: AppLanguage) {
@@ -305,10 +434,18 @@ class UniverViewModelTest {
         override suspend fun setMobileLayout(enabled: Boolean) { saved = saved.copy(mobileLayout = enabled) }
         override suspend fun setTextZoom(percent: Int) { saved = saved.copy(textZoom = percent) }
         override suspend fun setAnimations(enabled: Boolean) { saved = saved.copy(animations = enabled) }
+        override suspend fun setExternalLinks(enabled: Boolean) { saved = saved.copy(externalLinks = enabled) }
         override suspend fun setTheme(theme: AppTheme) { saved = saved.copy(theme = theme) }
         val shortcutWrites = mutableListOf<HomeShortcuts>()
         override suspend fun setShortcuts(shortcuts: HomeShortcuts) { shortcutWrites.add(shortcuts); saved = saved.copy(shortcuts = shortcuts) }
         var onNotices: suspend () -> Unit = { }
         override suspend fun setNotices(notices: List<SiteNotice>) { onNotices(); saved = saved.copy(notices = notices) }
+        var onPin: suspend () -> Unit = { }
+        val pinReads = mutableListOf<String>()
+        override suspend fun changePin(oldPin: CharArray, newPin: CharArray): UnlockResult {
+            onPin()
+            pinReads += String(oldPin); pinReads += String(newPin)
+            return UnlockResult.Unavailable
+        }
     }
 }

@@ -3,6 +3,7 @@ package com.univerflow.kaznu.main
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.widget.FrameLayout
@@ -11,23 +12,28 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.isVisible
 import androidx.core.widget.doAfterTextChanged
-import androidx.lifecycle.lifecycleScope
 import com.univerflow.kaznu.R
+import com.univerflow.kaznu.AppState
 import com.univerflow.kaznu.UniverViewModel
+import com.univerflow.kaznu.web.LinkProfile
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 import com.univerflow.kaznu.domain.AppLanguage
 import com.univerflow.kaznu.domain.AppTheme
+import com.univerflow.kaznu.ui.LanguageResources
 import com.univerflow.kaznu.ui.ThemeMode
-import com.univerflow.kaznu.ui.context
+import com.univerflow.kaznu.ui.launchCatching
 import com.univerflow.kaznu.databinding.SettingsSheetBinding
 import com.univerflow.kaznu.ui.BiometricUi
+import com.univerflow.kaznu.ui.Motion
 import com.univerflow.kaznu.ui.missingBottomInset
 import com.univerflow.kaznu.update.UpdatePhase
 import com.univerflow.kaznu.update.UpdateState
 import com.google.android.material.bottomsheet.BottomSheetBehavior
 import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.launch
+import com.google.android.material.tabs.TabLayout
 
 /**
  * One layout for the first-run sign-in form and the settings sheet. Labels follow the app language; the saved password
@@ -38,6 +44,7 @@ class SettingsForms(private val activity: AppCompatActivity, private val model: 
         val sessionChanging: Boolean
         fun save(form: SettingsSheetBinding, first: Boolean)
         fun endSession(delete: Boolean)
+        fun manualLogin(form: SettingsSheetBinding)
         fun openDownloads()
         fun setMobileLayout(enabled: Boolean, form: SettingsSheetBinding?)
         fun setTextZoom(percent: Int)
@@ -47,9 +54,17 @@ class SettingsForms(private val activity: AppCompatActivity, private val model: 
         fun installUpdate()
     }
 
+    /** Read once: [update] runs with every state change and every tick of an update's download while the sheet is open. */
+    private val versionName by lazy(LazyThreadSafetyMode.NONE) {
+        activity.packageManager.getPackageInfo(activity.packageName, 0).versionName.orEmpty()
+    }
+    private val languages = LanguageResources(activity)
     private var firstForm: SettingsSheetBinding? = null
     private var sheetForm: SettingsSheetBinding? = null
     private var sheet: BottomSheetDialog? = null
+
+    /** The open page of the settings; a theme change recreates the screen and the sheet comes back on it. */
+    var tab = 0
 
     val showing get() = sheet?.isShowing == true
 
@@ -106,6 +121,7 @@ class SettingsForms(private val activity: AppCompatActivity, private val model: 
             form.password.text?.clear()
             sheetForm = null
             sheet = null
+            tab = 0
         }
         dialog.show()
         ViewCompat.requestApplyInsets(form.root)
@@ -119,11 +135,12 @@ class SettingsForms(private val activity: AppCompatActivity, private val model: 
     }
 
     private fun make(first: Boolean): SettingsSheetBinding {
-        val form = SettingsSheetBinding.inflate(LayoutInflater.from(model.state.value.language.context(activity)))
+        val form = SettingsSheetBinding.inflate(LayoutInflater.from(languages.of(model.state.value.language)))
         bindAccount(form, first)
         // update() sets the switches and the language; their listeners come after it, so filling them is no user change.
         update(form, first)
         form.save.setOnClickListener { host.save(form, first) }
+        form.manualLogin.setOnClickListener { host.manualLogin(form) }
         form.password.setOnEditorActionListener { _, action, _ ->
             if (action == EditorInfo.IME_ACTION_DONE && form.save.isEnabled) { host.save(form, first); true } else false
         }
@@ -138,18 +155,44 @@ class SettingsForms(private val activity: AppCompatActivity, private val model: 
     private fun bindAccount(form: SettingsSheetBinding, first: Boolean) {
         form.credentials.isVisible = first
         form.preferences.isVisible = !first
+        form.settingsTabs.isVisible = !first
+        if (first) form.tabApp.isVisible = false else bindTabs(form)
         form.editAccount.setOnClickListener {
-            form.credentials.isVisible = !form.credentials.isVisible
+            toggle(form, form.credentials)
             if (form.credentials.isVisible) form.login.requestFocus()
         }
-        form.moreOptions.setOnClickListener { form.preferences.isVisible = !form.preferences.isVisible }
+        form.moreOptions.setOnClickListener { toggle(form, form.preferences) }
         form.closeSettings.setOnClickListener { dismiss() }
         form.downloads.setOnClickListener { dismiss(); host.openDownloads() }
         form.login.doAfterTextChanged { form.loginLayout.error = null }
         form.password.doAfterTextChanged { form.passwordLayout.error = null }
         // The saved password is never put back into a field: the show-password toggle would reveal it to whoever holds the phone.
         if (!first) form.login.setText(model.credentials?.login.orEmpty())
-        form.credentialsNote.isVisible = !first
+        form.credentialsNote.isVisible = true
+    }
+
+    /** Account, language and view, the app: one page at a time. */
+    private fun bindTabs(form: SettingsSheetBinding) {
+        listOf(R.string.tab_account, R.string.tab_view, R.string.tab_app).forEach { form.settingsTabs.addTab(form.settingsTabs.newTab().setText(host.text(it)), false) }
+        form.settingsTabs.addOnTabSelectedListener(object : TabLayout.OnTabSelectedListener {
+            override fun onTabSelected(selected: TabLayout.Tab) { tab = selected.position; showTab(form) }
+            override fun onTabUnselected(selected: TabLayout.Tab) = Unit
+            override fun onTabReselected(selected: TabLayout.Tab) = Unit
+        })
+        form.settingsTabs.getTabAt(tab)?.select()
+        showTab(form)
+    }
+
+    private fun showTab(form: SettingsSheetBinding) {
+        form.tabAccount.isVisible = tab == 0
+        form.tabView.isVisible = tab == 1
+        form.tabApp.isVisible = tab == 2
+    }
+
+    /** A section opens with the rows below it moving aside, not jumping. */
+    private fun toggle(form: SettingsSheetBinding, section: View) {
+        Motion.layout(form.root.getChildAt(0) as ViewGroup)
+        section.isVisible = !section.isVisible
     }
 
     /** Language, theme, reading layout, animations and text size. */
@@ -160,18 +203,14 @@ class SettingsForms(private val activity: AppCompatActivity, private val model: 
                 R.id.english -> AppLanguage.ENGLISH
                 else -> AppLanguage.RUSSIAN
             }
-            if (language != model.state.value.language && !host.sessionChanging) activity.lifecycleScope.launch {
-                try { model.setLanguage(language) }
-                catch (cancelled: CancellationException) { throw cancelled }
-                catch (_: Exception) { feedback(form, R.string.storage_error) }
-            }
+            if (language != model.state.value.language && !host.sessionChanging)
+                activity.launchCatching({ feedback(form, R.string.storage_error) }) { model.setLanguage(language) }
         }
-        form.themes.addOnButtonCheckedListener { _, id, checked ->
-            if (!checked) return@addOnButtonCheckedListener
-            setTheme(when (id) { R.id.theme_light -> AppTheme.LIGHT; R.id.theme_dark -> AppTheme.DARK; else -> AppTheme.SYSTEM }, form)
-        }
+        themeChoices(form).forEach { (card, theme) -> card.setOnClickListener { setTheme(theme, form) } }
         form.mobileLayout.setOnCheckedChangeListener { _, checked -> host.setMobileLayout(checked, form) }
         form.animations.setOnCheckedChangeListener { _, checked -> setAnimations(checked, form) }
+        form.externalLinks.setOnCheckedChangeListener { _, checked -> setExternalLinks(checked, form) }
+        form.linkDataClear.setOnClickListener { clearLinkData(form) }
         form.textSize.setLabelFormatter { activity.getString(R.string.percent_value, it.toInt()) }
         form.textSize.addOnChangeListener { _, value, fromUser ->
             form.textSizeValue.text = activity.getString(R.string.percent_value, value.toInt())
@@ -204,22 +243,35 @@ class SettingsForms(private val activity: AppCompatActivity, private val model: 
         }
     }
 
+    private fun themeChoices(form: SettingsSheetBinding) =
+        listOf(form.themeSystem to AppTheme.SYSTEM, form.themeLight to AppTheme.LIGHT, form.themeDark to AppTheme.DARK)
+
+    private fun setExternalLinks(enabled: Boolean, form: SettingsSheetBinding) {
+        if (enabled == model.state.value.externalLinks || !LinkProfile.available()) return
+        activity.launchCatching({ feedback(form, R.string.storage_error); update(form, isFirst(form)) }) { model.setExternalLinks(enabled) }
+    }
+
+    /** Success is reported only once WebView confirmed the link window's data gone; Univer's own session stays. */
+    private fun clearLinkData(form: SettingsSheetBinding) {
+        form.linkDataClear.isEnabled = false
+        activity.lifecycleScope.launch {
+            val cleared = try { LinkProfile.clear() } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { false }
+            form.linkDataClear.isEnabled = true
+            form.linkDataHint.tag = if (cleared) R.string.link_data_cleared else R.string.link_data_clear_failed
+            form.linkDataHint.text = host.text(form.linkDataHint.tag as Int)
+        }
+    }
+
     private fun setAnimations(enabled: Boolean, form: SettingsSheetBinding) {
         if (enabled == model.state.value.animations) return
-        activity.lifecycleScope.launch {
-            try { model.setAnimations(enabled) }
-            catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { feedback(form, R.string.storage_error); update(form, isFirst(form)) }
-        }
+        activity.launchCatching({ feedback(form, R.string.storage_error); update(form, isFirst(form)) }) { model.setAnimations(enabled) }
     }
 
     /** Saved first, then applied: AppCompat recreates the open screens in the new theme (the sheet reopens with them). */
     private fun setTheme(theme: AppTheme, form: SettingsSheetBinding) {
         if (theme == model.state.value.theme) return
-        activity.lifecycleScope.launch {
-            try { model.setTheme(theme); ThemeMode.apply(theme) }
-            catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { feedback(form, R.string.storage_error); update(form, isFirst(form)) }
+        activity.launchCatching({ feedback(form, R.string.storage_error); update(form, isFirst(form)) }) {
+            model.setTheme(theme); ThemeMode.apply(theme)
         }
     }
 
@@ -232,7 +284,7 @@ class SettingsForms(private val activity: AppCompatActivity, private val model: 
         form.closeSettings.text = text(R.string.done)
         form.accountSummary.isVisible = !first
         form.accountTitle.text = text(R.string.account)
-        form.accountStatus.text = text(if (state.paused) R.string.account_paused else R.string.account_saved)
+        form.accountStatus.text = text(if (state.manualLogin) R.string.account_manual else if (state.paused) R.string.account_paused else R.string.account_saved)
         form.editAccount.isVisible = !first
         form.editAccount.text = text(R.string.edit_account)
         form.moreOptions.isVisible = first
@@ -240,24 +292,38 @@ class SettingsForms(private val activity: AppCompatActivity, private val model: 
         form.downloads.isVisible = !first
         form.downloads.text = text(R.string.downloads)
         form.title.text = text(if (first) R.string.welcome else R.string.settings)
-        form.subtitle.text = if (first) text(R.string.welcome_hint) + "\n\n" + text(R.string.secure_hint) else text(R.string.secure_hint)
+        form.subtitle.text = text(R.string.welcome_hint)
         // Explanatory text is only part of the first-run screen; settings show controls alone.
         form.subtitle.isVisible = first
+        form.credentialsNote.text = text(if (first) R.string.secure_hint else R.string.password_not_shown)
         form.loginLayout.hint = text(R.string.login)
         form.passwordLayout.hint = text(R.string.password)
         form.passwordLayout.endIconContentDescription = text(R.string.show_password)
         form.languageLabel.text = text(R.string.language)
-        form.viewLabel.text = text(R.string.view_section)
         form.themeLabel.text = text(R.string.theme)
-        form.themeSystem.text = text(R.string.theme_system)
-        form.themeLight.text = text(R.string.theme_light)
-        form.themeDark.text = text(R.string.theme_dark)
-        form.themeHint.text = text(R.string.theme_hint)
-        val theme = when (state.theme) { AppTheme.SYSTEM -> R.id.theme_system; AppTheme.LIGHT -> R.id.theme_light; AppTheme.DARK -> R.id.theme_dark }
-        if (form.themes.checkedButtonId != theme) form.themes.check(theme)
+        form.languageHint.text = text(R.string.language_hint)
+        form.themeSystemLabel.text = text(R.string.theme_system)
+        form.themeLightLabel.text = text(R.string.theme_light)
+        form.themeDarkLabel.text = text(R.string.theme_dark)
+        themeChoices(form).forEach { (card, theme) -> card.isChecked = theme == state.theme }
+        form.themeSystem.contentDescription = form.themeSystemLabel.text
+        form.themeLight.contentDescription = form.themeLightLabel.text
+        form.themeDark.contentDescription = form.themeDarkLabel.text
         form.save.text = text(if (first) R.string.save_enter else R.string.save)
-        form.logout.text = text(R.string.logout)
-        form.delete.text = text(R.string.delete_credentials)
+        form.manualLogin.text = text(R.string.manual_login)
+        form.manualLogin.isVisible = first
+        form.manualLogin.isEnabled = !host.sessionChanging
+        form.logoutTitle.text = text(R.string.logout)
+        form.logoutHint.text = text(R.string.logout_hint)
+        form.logout.text = text(R.string.logout_action)
+        form.deleteTitleRow.text = text(R.string.delete_row)
+        form.deleteHint.text = text(R.string.delete_hint)
+        form.delete.text = text(R.string.delete_action)
+        form.delete.isEnabled = state.hasCredentials
+        form.about.text = languages.of(state.language).getString(R.string.about, versionName)
+        (0 until form.settingsTabs.tabCount).forEach { index ->
+            form.settingsTabs.getTabAt(index)?.text = text(listOf(R.string.tab_account, R.string.tab_view, R.string.tab_app)[index])
+        }
         form.mobileLayout.text = text(R.string.mobile_layout)
         form.mobileHint.text = text(R.string.mobile_hint)
         form.textSizeLabel.text = text(R.string.text_size)
@@ -268,9 +334,9 @@ class SettingsForms(private val activity: AppCompatActivity, private val model: 
         form.animations.text = text(R.string.animations)
         form.animationsHint.text = text(R.string.animations_hint)
         if (form.animations.isChecked != state.animations) form.animations.isChecked = state.animations
+        updateLinks(form, state)
         (form.feedback.tag as? Int)?.let { form.feedback.text = text(it) }
-        form.logout.isVisible = !first
-        form.delete.isVisible = !first
+        form.accountActions.isVisible = !first
         val selected = when (state.language) {
             AppLanguage.RUSSIAN -> R.id.russian
             AppLanguage.KAZAKH -> R.id.kazakh
@@ -281,6 +347,22 @@ class SettingsForms(private val activity: AppCompatActivity, private val model: 
         updateApp(form, first)
     }
 
+    /** Without separate WebView profiles links can only go to the browser: the switch shows that and the data row goes. */
+    private fun updateLinks(form: SettingsSheetBinding, state: AppState) {
+        val available = LinkProfile.available()
+        form.linksLabel.text = host.text(R.string.links_section)
+        form.externalLinks.text = host.text(R.string.external_links)
+        form.externalLinks.isEnabled = available
+        val external = state.externalLinks || !available
+        if (form.externalLinks.isChecked != external) form.externalLinks.isChecked = external
+        form.externalLinksHint.text = host.text(if (available) R.string.external_links_hint else R.string.external_links_unavailable)
+        form.linkDataDivider.isVisible = available
+        form.linkDataRow.isVisible = available
+        form.linkDataTitle.text = host.text(R.string.link_data)
+        form.linkDataHint.text = host.text(form.linkDataHint.tag as? Int ?: R.string.link_data_hint)
+        form.linkDataClear.text = host.text(R.string.link_data_clear)
+    }
+
     /** The update check always runs; this section stays even for a version whose dialog was turned off. */
     private fun updateApp(form: SettingsSheetBinding, first: Boolean) {
         form.updateSection.isVisible = !first
@@ -288,7 +370,8 @@ class SettingsForms(private val activity: AppCompatActivity, private val model: 
         val update = host.updateState
         val idle = update.phase == UpdatePhase.IDLE
         form.updateLabel.text = host.text(R.string.update_section)
-        form.updateStatus.text = host.updateStatus
+        // Download percentages tick many times a second; only a settled status is worth animating.
+        if (idle) Motion.text(form.updateStatus, host.updateStatus) else form.updateStatus.text = host.updateStatus
         form.updateInstall.text = host.text(R.string.update_install)
         form.updateInstall.isVisible = update.available != null
         form.updateInstall.isEnabled = idle
@@ -297,8 +380,8 @@ class SettingsForms(private val activity: AppCompatActivity, private val model: 
     }
 
     private fun updateSecurity(form: SettingsSheetBinding, first: Boolean) {
-        form.securitySection.isVisible = !first
-        if (first) return
+        form.securitySection.isVisible = !first && model.state.value.hasCredentials
+        if (first || !model.state.value.hasCredentials) return
         val lockState = model.state.value.lock
         form.securityLabel.text = host.text(R.string.security_title)
         form.securityStatus.text = host.text(if (lockState.enabled) R.string.security_status_on else R.string.security_status_off)

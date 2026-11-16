@@ -1,7 +1,6 @@
 <resources>
     <string name="brand_name" translatable="false">Univer</string>
     <string name="percent_value" translatable="false">%1$d%%</string>
-    <string name="brand_monogram" translatable="false">U</string>
     <string name="language_ru" translatable="false">Русский</string>
     <string name="language_kk" translatable="false">Қазақша</string>
     <string name="language_en" translatable="false">English</string>

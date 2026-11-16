@@ -164,6 +164,7 @@ class LargeDocumentsQaTest {
         }
         val page = PreviewHtml.docx("print.docx", "ru", null, body, PreviewHtml.Style(print = true)).toByteArray()
         val read = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+        val other = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
         val finished = CountDownLatch(1)
         var complete = -1
         lateinit var web: WebView
@@ -174,6 +175,8 @@ class LargeDocumentsQaTest {
                 override fun shouldInterceptRequest(view: WebView, request: android.webkit.WebResourceRequest): android.webkit.WebResourceResponse? {
                     val path = request.url.path.orEmpty()
                     if (path == "/print.html") return android.webkit.WebResourceResponse("text/html", "utf-8", java.io.ByteArrayInputStream(page))
+                    // WebView also asks for things that are not pictures of the document, such as an icon for the page.
+                    if (!path.startsWith("/media/")) { other += path; return null }
                     val media = path.removePrefix("/media/")
                     // A picture counts once WebView has read its last byte.
                     return android.webkit.WebResourceResponse("image/png", null, object : java.io.FilterInputStream(java.io.ByteArrayInputStream(png)) {
@@ -185,7 +188,7 @@ class LargeDocumentsQaTest {
             web.loadUrl(PreviewHtml.PRINT)
         }
         assertTrue(finished.await(30, TimeUnit.SECONDS))
-        android.util.Log.i("UniverQA", "printed copy: $complete of $count pictures read when the page finished loading")
+        android.util.Log.i("UniverQA", "printed copy: $complete of $count pictures read when the page finished loading, other requests: $other")
         instrumentation.runOnMainSync { web.destroy() }
         assertEquals(count, complete)
     }

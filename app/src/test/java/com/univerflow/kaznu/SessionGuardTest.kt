@@ -7,14 +7,55 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SessionGuardTest {
-    @Test fun failedRedirectStopsAutomaticRetries() {
+    @Test fun anExplicitNoClickReturnsTheReservationButUnknownResultsKeepIt() {
+        val guard = SessionGuard()
+        assertTrue(guard.tryLogin("page", 0))
+        guard.releaseLogin("old-page")
+        assertEquals("page", guard.pendingDocument)
+        guard.releaseLogin("page")
+        assertFalse(guard.loginStillVisible("page", 70_000))
+        assertTrue("No request was sent, so its time budget is returned", guard.tryLogin("page", 1_000))
+        guard.authenticated()
+        assertTrue(guard.tryReauthenticate("a", 2_000, "page"))
+        guard.releaseReauthentication("old")
+        assertEquals("a", guard.pendingReauthentication)
+        guard.releaseReauthentication("a")
+        repeat(3) { index ->
+            assertTrue(guard.tryReauthenticate("next-$index", 3_000L + index))
+            guard.reauthenticationResult("next-$index", true)
+        }
+        assertFalse("Real submissions still spend the budget", guard.tryReauthenticate("fourth", 4_000))
+    }
+    @Test fun firstFullPageRefusalWaitsOneMinuteAndSecondRefusalStops() {
         val guard = SessionGuard()
         assertTrue(guard.tryLogin("first-document", 1_000))
         assertFalse(guard.tryLogin("first-document", 2_000))
         assertTrue(guard.loginStillVisible("new-login-document", 3_000))
-        assertFalse(guard.tryLogin("new-login-document", 100_000))
+        assertTrue(guard.recoverable)
+        assertFalse(guard.tryLogin("new-login-document", 62_999))
+        assertTrue(guard.tryLogin("new-login-document", 63_000))
+        assertTrue(guard.loginStillVisible("second-refusal", 64_000))
+        assertFalse(guard.recoverable)
+        assertFalse(guard.tryLogin("another-form", 1_000_000))
         guard.retry()
         assertTrue(guard.tryLogin("new-login-document", 100_000))
+    }
+    @Test fun retryWithAWrongPasswordNeverSendsMoreThanThreeLoginsInTenMinutes() {
+        val guard = SessionGuard()
+        assertTrue(guard.tryLogin("a", 0)); assertTrue(guard.loginStillVisible("b", 1_000))
+        assertTrue(guard.tryLogin("b", 61_000)); assertTrue(guard.loginStillVisible("c", 62_000))
+        assertFalse(guard.recoverable)
+        guard.retry()
+        assertFalse("Retry keeps a minute between logins", guard.tryLogin("c", 63_000))
+        assertTrue("Retry lifts the stop for one more try", guard.tryLogin("c", 121_000))
+        assertTrue(guard.loginStillVisible("d", 122_000))
+        assertFalse("After two refusals the next one stops at once", guard.recoverable)
+        var sent = 0
+        repeat(10) { guard.retry(); if (guard.tryLogin("e$it", 125_000L + it)) sent++ }
+        assertEquals(0, sent)
+        assertTrue("The budget refills as old attempts leave the window", guard.tryLogin("f", 600_001))
+        guard.reset()
+        assertTrue("New credentials start afresh", guard.tryLogin("g", 600_002))
     }
     @Test fun stalledSubmissionStopsAndSuccessfulSessionCanExpireLater() {
         val guard = SessionGuard()
@@ -22,9 +63,11 @@ class SessionGuardTest {
         assertFalse(guard.loginStillVisible("one", 24_000))
         assertTrue(guard.loginStillVisible("one", 26_000))
         guard.retry()
-        assertTrue(guard.tryLogin("two", 30_000))
+        // Retry keeps the login window (review L5): the next login still waits a minute after the first.
+        assertFalse(guard.tryLogin("two", 30_000))
+        assertTrue(guard.tryLogin("two", 60_000))
         guard.authenticated()
-        assertTrue(guard.tryLogin("three", 91_000))
+        assertTrue(guard.tryLogin("three", 120_000))
     }
     @Test fun sessionEndingSoonAfterSuccessfulLoginWaitsInsteadOfStopping() {
         val guard = SessionGuard()
@@ -61,19 +104,22 @@ class SessionGuardTest {
         assertTrue(guard.tryLogin("first", 0))
         assertTrue(guard.loginStillVisible("first", 26_000))
         assertTrue("Same stalled form stays stopped", guard.loginStillVisible("first", 70_000))
-        assertFalse("A fresh login form is not stopped by a timeout", guard.loginStillVisible("second", 70_000))
-        assertTrue(guard.tryLogin("second", 70_000))
-        assertTrue("A rejection on the new form is a real failure", guard.loginStillVisible("third", 72_000))
-        assertFalse(guard.tryLogin("fourth", 200_000))
+        assertTrue("A fresh document still waits a minute after the timeout", guard.loginStillVisible("second", 70_000))
+        assertFalse(guard.loginStillVisible("second", 86_000))
+        assertTrue(guard.tryLogin("second", 86_000))
+        assertTrue(guard.loginStillVisible("third", 88_000))
+        assertTrue("A timeout did not count as a rejected password", guard.tryLogin("third", 148_000))
+        assertTrue(guard.loginStillVisible("fourth", 149_000))
+        assertFalse(guard.tryLogin("fifth", 800_000))
     }
-    @Test fun rejectedPasswordIsLiftedOnlyByASignedInPageNotByAnotherForm() {
+    @Test fun aProvenSignInResetsTheFullPageRefusalCount() {
         val guard = SessionGuard()
         assertTrue(guard.tryLogin("first", 0))
         assertTrue(guard.loginStillVisible("second", 1_000))
-        assertTrue(guard.loginStillVisible("third", 100_000))
-        assertFalse(guard.tryLogin("third", 100_000))
         assertTrue("The user signed in by hand", guard.authenticatedPage("profile"))
         assertTrue(guard.tryLogin("next-expiry", 200_000))
+        assertTrue(guard.loginStillVisible("new-refusal", 201_000))
+        assertTrue("The previous refusal no longer counts", guard.recoverable)
     }
     @Test fun explicitStopIsNeverLiftedAutomatically() {
         val guard = SessionGuard()
@@ -88,8 +134,9 @@ class SessionGuardTest {
         assertTrue(guard.tryReauthenticate("challenge", 0, "page-a"))
         assertTrue(guard.reauthenticationTimedOut(26_000))
         assertFalse(guard.authenticatedPage("page-a"))
-        assertFalse(guard.loginStillVisible("login-b", 30_000))
-        assertTrue("An ended session may use the full-page form", guard.tryLogin("login-b", 30_000))
+        assertTrue(guard.loginStillVisible("login-b", 30_000))
+        assertFalse(guard.tryLogin("login-b", 85_999))
+        assertTrue("An ended session may use the full-page form after the wait", guard.tryLogin("login-b", 86_000))
     }
     @Test fun recreatingTheWebViewDuringASlowLoginIsNotTheSitesRejection() {
         val guard = SessionGuard(loginTimeout = 60_000)
@@ -116,7 +163,7 @@ class SessionGuardTest {
         guard.reauthenticationTimedOut(26_000)
         assertFalse(guard.reauthenticationResult("one", false))
         assertTrue(guard.blocked)
-        assertFalse("A refused dialog does not forbid the full-page form of the ended session", guard.loginStillVisible("another-form", 30_000))
+        assertFalse("A refused dialog does not forbid the full-page form after its wait", guard.loginStillVisible("another-form", 90_000))
         guard.retry()
         guard.tryReauthenticate("two", 40_000, "page")
         guard.reauthenticationTimedOut(70_000)
@@ -165,7 +212,7 @@ class SessionGuardTest {
         assertTrue("A new verified session expiry within a minute still uses saved credentials", guard.tryReauthenticate("second", 5_000))
         guard.reauthenticationResult("second", false)
         assertTrue(guard.blocked)
-        assertFalse(guard.tryReauthenticate("third", 602_000))
+        assertTrue("A newer document can reauthenticate after the wait", guard.tryReauthenticate("third", 602_000))
     }
     @Test fun disappearingDialogWithoutAjaxResultTimesOutButVerifiedSuccessAllowsNewChallenge() {
         val guard = SessionGuard()
@@ -189,14 +236,14 @@ class SessionGuardTest {
         assertNull(guard.pendingReauthentication)
         assertTrue(guard.tryReauthenticate("fourth", 60_000))
     }
-    @Test fun rejectedReauthenticationDoesNotRetryWithoutExplicitRecovery() {
+    @Test fun refusedReauthenticationContinuesOnlyOnANewerDocumentAfterOneMinute() {
         val guard = SessionGuard()
-        assertTrue(guard.tryReauthenticate("first", 0))
-        guard.reauthenticationResult("first", false)
-        assertFalse(guard.tryReauthenticate("second", 60_000))
+        assertTrue(guard.tryReauthenticate("first", 0, "page-a"))
+        guard.reauthenticationResult("first", false, 5_000)
+        assertFalse(guard.tryReauthenticate("second", 64_999, "page-b"))
+        assertFalse(guard.tryReauthenticate("second", 90_000, "page-a"))
         assertTrue(guard.blocked)
-        guard.retry()
-        assertTrue(guard.tryReauthenticate("second", 61_000))
+        assertTrue(guard.tryReauthenticate("second", 90_000, "page-b"))
     }
     @Test fun refusedDialogAfterALongBreakStillAllowsOneFullPageLogin() {
         val guard = SessionGuard()
@@ -204,26 +251,29 @@ class SessionGuardTest {
         assertFalse(guard.reauthenticationResult("stale-key-dialog", false))
         assertTrue(guard.blocked)
         assertFalse("The same stuck page stays blocked", guard.tryLogin("page", 1_000))
-        assertFalse("The site's own login form is not forbidden by the refused dialog", guard.loginStillVisible("login-form", 5_000))
-        assertTrue("One full-page attempt", guard.tryLogin("login-form", 5_000))
+        assertFalse("The site's login form is allowed after the recovery wait", guard.loginStillVisible("login-form", 60_000))
+        assertTrue(guard.tryLogin("login-form", 60_000))
         assertFalse(guard.blocked)
-        // The form rejecting the password is the confirmed failure: no further attempt without Retry.
-        assertTrue(guard.loginStillVisible("login-form-after-rejection", 8_000))
+        assertTrue(guard.loginStillVisible("login-form-after-rejection", 63_000))
+        assertTrue("AJAX refusals do not count as full-page refusals", guard.recoverable)
         assertFalse(guard.tryLogin("another-form", 70_000))
         guard.retry()
-        assertTrue(guard.tryLogin("another-form", 70_000))
+        assertTrue("Retry lifts the block; the minute after the last login still applies", guard.tryLogin("another-form", 120_000))
     }
     @Test fun secondDialogAttemptMarkerIsNotAnExplicitStop() {
         val guard = SessionGuard()
         guard.reauthenticationRejected("page")
         assertTrue(guard.blocked)
-        assertFalse(guard.loginStillVisible("login-form", 1_000))
-        assertTrue(guard.tryLogin("login-form", 1_000))
+        assertTrue(guard.loginStillVisible("login-form", 1_000))
+        assertFalse(guard.loginStillVisible("login-form", 60_000))
+        assertTrue(guard.tryLogin("login-form", 60_000))
     }
     @Test fun refusedDialogNeverWeakensAConfirmedFailureOrAStop() {
         val failed = SessionGuard()
         assertTrue(failed.tryLogin("form", 0))
         assertTrue(failed.loginStillVisible("next-form", 3_000))
+        assertTrue(failed.tryLogin("next-form", 63_000))
+        assertTrue(failed.loginStillVisible("second-refusal", 64_000))
         failed.reauthenticationRejected("page")
         assertTrue("A confirmed full-page rejection stays final", failed.loginStillVisible("third-form", 70_000))
         val stopped = SessionGuard()
@@ -243,7 +293,7 @@ class SessionGuardTest {
         assertTrue(guard.canSubmitNotice("same", 3_000))
         assertFalse(guard.canSubmitAgreement("same", 3_000))
     }
-    @Test fun stalledOrRefusedAttemptsAreRecoverableButRejectionsAndStopsAreNot() {
+    @Test fun stalledOrRefusedAttemptsAreRecoverableButTwoFullPageRejectionsAndStopsAreNot() {
         val stalled = SessionGuard()
         assertTrue(stalled.tryLogin("form", 0))
         assertTrue(stalled.loginStillVisible("form", 26_000))
@@ -255,12 +305,14 @@ class SessionGuardTest {
         val rejected = SessionGuard()
         assertTrue(rejected.tryLogin("form", 0))
         assertTrue(rejected.loginStillVisible("next-form", 3_000))
+        assertTrue(rejected.tryLogin("next-form", 63_000))
+        assertTrue(rejected.loginStillVisible("second-refusal", 64_000))
         assertFalse("A rejected password is never retried by itself", rejected.recoverable)
         val stopped = SessionGuard()
         stopped.stop()
         assertFalse(stopped.recoverable)
     }
-    @Test fun secondRefusedDialogWithoutAProvingSignInIsTheRejection() {
+    @Test fun repeatedAjaxRefusalsRemainRecoverable() {
         val guard = SessionGuard()
         assertTrue(guard.tryReauthenticate("first", 0, "page-a"))
         guard.reauthenticationResult("first", false)
@@ -268,15 +320,16 @@ class SessionGuardTest {
         assertTrue(guard.tryReauthenticate("second", 70_000, "page-b"))
         guard.reauthenticationResult("second", false)
         assertTrue(guard.blocked)
-        assertFalse("Two refusals in a row: no reload, no full-page attempt", guard.recoverable)
+        assertTrue("A stale AJAX key never proves a wrong password", guard.recoverable)
         assertTrue(guard.loginStillVisible("login-form", 80_000))
         assertFalse(guard.tryLogin("login-form", 80_000))
+        assertTrue(guard.tryLogin("login-form", 130_000))
     }
     @Test fun refusalAfterAProvingFullPageSignInIsAmbiguousAgain() {
         val guard = SessionGuard()
         assertTrue(guard.tryReauthenticate("stale", 0, "page"))
         guard.reauthenticationResult("stale", false)
-        assertTrue(guard.tryLogin("login-form", 5_000))
+        assertTrue(guard.tryLogin("login-form", 60_000))
         guard.authenticated()
         assertTrue(guard.tryReauthenticate("later", 3_600_000, "news"))
         guard.reauthenticationResult("later", false)

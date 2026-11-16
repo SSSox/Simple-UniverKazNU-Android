@@ -1,18 +1,47 @@
 **Русский** · [Қазақша](README.kz.md) · [English](README.en.md)
 
-# Univer · КазНУ
+# Simple Univer для Android
 
-Неофициальное Android-приложение для студенческого портала [Univer КазНУ](https://univer.kaznu.kz/). Оно открывает сайт во встроенном WebView, само входит с сохранёнными данными и делает страницы удобными для телефона. Приложение не связано с КазНУ им. аль-Фараби, у него нет своего сервера, аналитики и рекламы.
+> **Неофициальное приложение.** Не связано с КазНУ им. аль-Фараби и не поддерживается университетом. Вход, данные и формы остаются на сайте [univer.kaznu.kz](https://univer.kaznu.kz/): приложение открывает настоящий сайт во встроенном WebView и делает его удобным на телефоне.
+
+Приложение для кабинета студента [Univer КазНУ](https://univer.kaznu.kz/) с теми же возможностями, что и [Simple Univer для Windows](https://github.com/SSSox/Simple-UniverKazNU-Desktop). На телефоне оно называется «Univer · КазНУ». Своего сервера, аналитики и рекламы у него нет, интерфейс переведён на русский, казахский и английский.
+
+[![Выпуск](https://img.shields.io/github/v/release/SSSox/Simple-UniverKazNU-Android?label=release)](https://github.com/SSSox/Simple-UniverKazNU-Android/releases/latest) [![Скачивания](https://img.shields.io/github/downloads/SSSox/Simple-UniverKazNU-Android/total?label=downloads)](https://github.com/SSSox/Simple-UniverKazNU-Android/releases) [![Android](https://img.shields.io/badge/Android-7.0%2B-3ddc84)](#установка) [![Лицензия](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](LICENSE)
+
+**[Скачать последнюю версию](https://github.com/SSSox/Simple-UniverKazNU-Android/releases/latest)** · [Установка](#установка) · [Приватность](PRIVACY.md) · [Безопасность](SECURITY.md)
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/SSSox/Simple-UniverKazNU-Android/main/.github/readme/home.png" width="240" alt="Главная: плитки разделов, поиск и новости">
+  <img src="https://raw.githubusercontent.com/SSSox/Simple-UniverKazNU-Android/main/.github/readme/schedule.png" width="240" alt="Расписание по дням с типом занятия и аудиторией">
+  <img src="https://raw.githubusercontent.com/SSSox/Simple-UniverKazNU-Android/main/.github/readme/downloads.png" width="240" alt="«Загрузки»: поиск, фильтр по предметам и типам файлов">
+</p>
 
 ## Возможности
 
+### Кабинет в удобном виде
+
 - **Вход без повторного ввода.** Логин и пароль хранятся только на телефоне в зашифрованном виде. Когда сессия на сайте заканчивается, приложение входит заново через форму самого сайта.
-- **Мобильный вид сайта.** Таблицы расписания, успеваемости, аттестации, УМКД и дистанционных курсов показаны карточками. Переключатель «Оригинал» возвращает исходную страницу сайта без изменений.
-- **Загрузки и просмотр файлов.** Материалы курсов сохраняются в папку «Загрузки» телефона. PDF, Word (.docx, .doc, .rtf), Excel (.xlsx, .xls), PowerPoint (.pptx, .ppt), OpenDocument, веб-страницы, картинки и текст открываются внутри приложения. Есть поиск по тексту файлов.
+- **Мобильный вид сайта.** Таблицы расписания, успеваемости, аттестации, УМКД и дистанционных курсов показаны карточками. Оформление повторяет версию для Windows: плитки разделов, сегменты с ползунком, чипы оценок, один вид занятия на главной и в расписании. Переключатель «Оригинал» возвращает исходную страницу сайта без изменений.
 - **Уведомления сайта.** Колокольчик собирает отметки сайта, например «Анкетирование студентов (2)». Анкеты, на которые студент уже ответил, не показываются.
 - **СДО Moodle** открывается внутри приложения: вход через Univer, прикрепление файлов и фото к заданиям.
-- **Обновления из GitHub.** Приложение само проверяет новые версии, предлагает их при входе и ставит в пару нажатий.
+- **Ссылки в приложении.** Страница преподавателя, Google Диск или библиотека открываются в отдельном окне со своими cookies, отдельно от входа в Univer. Внешний браузер можно включить в настройках.
 - **PIN-код и биометрия** (по желанию), русский, казахский и английский языки, светлая и тёмная тема, размер текста.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/SSSox/Simple-UniverKazNU-Android/main/.github/readme/sections.png" width="240" alt="«Все разделы»: поиск по разделам и закрепление на главной">
+</p>
+
+### Расписание и учёба
+
+- **Учебные страницы под телефон.** Расписание экзаменов и Midterm разложено по дням: сверху ближайший экзамен и сколько до него дней, у каждого слота время, тип, преподаватель и аудитория, а открытый экзамен запускается своей кнопкой. В анкетировании видна шкала ответов и сколько анкет заполнено, у эдвайзера есть карточка с кнопками «Написать» и «Позвонить», если сайт даёт контакты. Калькулятор GPA держит итог внизу экрана и убирает таблицу оценок в раскрывающуюся шкалу. Длинные памятки сворачиваются, а пустые списки задолженностей, FX, повышения GPA и обращений прямо говорят, что в них нет записей.
+- **Темы занятий и СРО.** В расписании показаны темы из печатного силлабуса именно вашей образовательной программы и учебного года. Порядок занятий сверяется со всеми неделями расписания группы, если семинары группы идут на другой чётности, чем в силлабусе, берётся ближайшая неделя; найденный план хранится на семестр; СРО стоит рядом с ближайшим семинаром. СРОП не выводится. Переключатель и сворачиваемые блоки рассчитаны на касание. Рядом со списком недель есть стрелки «‹ ›», а блок расписания в Бакалавре пишет, что сегодняшние пары закончились, с датой.
+
+### Файлы и обновления
+
+- **Загрузки и просмотр файлов.** Материалы УМКД сохраняются в «Загрузки/Univer УМКД/дисциплина/раздел», если страница позволяет определить дисциплину и раздел. Кнопка «Скачать все» у раздела УМКД сохраняет все его файлы, которых ещё нет, без ссылок преподавателя. Удалённые, перемещённые и переименованные файлы сами уходят из списка «Загрузок». PDF, Word (.docx, .doc, .rtf), Excel (.xlsx, .xls), PowerPoint (.pptx, .ppt), веб-страницы, картинки и текст открываются внутри приложения. Для OpenDocument извлекается текст для поиска; полноценного просмотра этих форматов нет. Имя и тип проверяются по заголовкам и содержимому; предел одного скачивания 1 ГиБ.
+- **Обновления из GitHub.** Приложение само проверяет новые версии, предлагает их и ставит в пару нажатий.
+
+Снимки экрана сделаны на демо-данных, личных данных в кадре нет.
 
 ## Установка
 
@@ -32,13 +61,13 @@
    sha256sum Simple-UniverKazNU.apk                           # Linux, macOS: shasum -a 256
    ```
 3. Откройте файл на телефоне и разрешите установку из этого источника, когда Android спросит.
-4. При первом запуске введите свой логин и пароль Univer и нажмите «Сохранить и войти».
+4. При первом запуске выберите: сохранить логин и пароль Univer для автоматического входа или войти вручную на странице сайта без сохранения пароля.
 
 **Подпись.** Выпуски подписаны ключом «SOX Team»: сертификат `CN=SOX Team, O=SOX Team, C=KZ`, SHA-256 `0aa54a2d4714db17bc71b9a0a4d4bc7818cb57d91f10685200416bd2094732b9`. Сверить можно командой `apksigner verify --print-certs Simple-UniverKazNU.apk` из Android SDK Build Tools: строка `certificate SHA-256 digest` должна совпасть.
 
-**Обновление.** Приложение само проверяет новые версии на GitHub. При входе оно показывает окно с кнопками «Позже» и «Установить», а в настройках есть раздел «Обновления» с кнопкой проверки. После «Установить» файл скачивается, проверяется и открывается установка Android; в первый раз Android попросит разрешить установку из этого приложения. Галочка «Больше не показывать» убирает окно для этой версии: проверка продолжается, версия остаётся в настройках, а следующая версия будет предложена снова. Новый APK ставится поверх старого, данные сохраняются. Отладочную сборку (`app-debug.apk`) перед установкой release нужно удалить: у них разные подписи. Сборки, выпущенные до 4 ноября 2026, подписаны прежним ключом, и новая версия поверх них не встанет: Android сообщит, что приложение не установлено из-за конфликта с существующим пакетом. Удалите старое приложение и установите новое, затем войдите заново. Сохранённый вход, PIN-код и список загрузок придётся настроить снова, скачанные файлы останутся в «Загрузках».
+**Обновление.** Приложение само проверяет новые версии на GitHub. При входе оно показывает окно с кнопками «Позже» и «Установить», а в настройках есть раздел «Обновления» с кнопкой проверки. После «Установить» файл скачивается, проверяется и открывается установка Android; в первый раз Android попросит разрешить установку из этого приложения. Галочка «Больше не показывать» убирает окно для этой версии: проверка продолжается, версия остаётся в настройках, а следующая версия будет предложена снова. Новый APK ставится поверх старого, данные сохраняются. На Android 9 и 10 версия 2.3.1 не может обновиться сама: её проверка ошибочно сообщает о другой подписи. Скачайте новую версию со страницы Releases и установите поверх, удалять приложение не нужно. Отладочную сборку (`app-debug.apk`) перед установкой release нужно удалить: у них разные подписи. Сборки, выпущенные до 4 ноября 2026, подписаны прежним ключом, и новая версия поверх них не встанет: Android сообщит, что приложение не установлено из-за конфликта с существующим пакетом. Удалите старое приложение и установите новое, затем войдите заново. Сохранённый вход, PIN-код и список загрузок придётся настроить снова, скачанные файлы останутся в «Загрузках».
 
-**Как убрать данные.** «Настройки» → «Выйти из аккаунта» очищает cookies, кеш и историю сайта. «Удалить сохранённые данные» стирает и зашифрованные логин с паролем. Удаление приложения убирает всё.
+**Как убрать данные.** «Настройки» → «Выйти из аккаунта» приостанавливает автовход и очищает cookies, хранилище сайта, кеш и историю. «Удалить сохранённые данные» стирает и зашифрованные логин с паролем. При удалении приложения его локальные данные исчезают, но файлы в общей папке «Загрузки» остаются.
 
 ## Безопасность и конфиденциальность
 
@@ -55,7 +84,7 @@
 - [Android Studio](https://developer.android.com/studio) со встроенным JDK (`jbr`);
 - Android SDK Platform 37 и Platform Tools (ставятся через SDK Manager).
 
-Gradle 9.8.0 скачивается обёрткой `gradlew` сам; JDK 25 для демона Gradle подбирается автоматически ([gradle/gradle-daemon-jvm.properties](gradle/gradle-daemon-jvm.properties)). Плагин Android Gradle 9.5.0, Kotlin встроен в него. Все зависимости закреплены в [gradle/libs.versions.toml](gradle/libs.versions.toml): это только AndroidX, Material Components и kotlinx-coroutines.
+Gradle 9.9.0 скачивается обёрткой `gradlew` сам; JDK 25 для демона Gradle подбирается автоматически ([gradle/gradle-daemon-jvm.properties](gradle/gradle-daemon-jvm.properties)). Плагин Android Gradle 9.5.1, Kotlin встроен в него. Все зависимости закреплены в [gradle/libs.versions.toml](gradle/libs.versions.toml): это только AndroidX, Material Components и kotlinx-coroutines.
 
 **В Android Studio:** File → Open → папка проекта, дождитесь Gradle Sync, выберите конфигурацию `app` и нажмите Run.
 
@@ -117,16 +146,16 @@ Release собирается с R8 (сокращение кода и ресур�
 | [UniverViewModel.kt](app/src/main/java/com/univerflow/kaznu/UniverViewModel.kt) | состояние приложения (StateFlow), выход, смена аккаунта, блокировка |
 | [domain/](app/src/main/java/com/univerflow/kaznu/domain) | чистый Kotlin без Android: правила PIN, уведомлений, загрузок, плиток главной |
 | [data/](app/src/main/java/com/univerflow/kaznu/data) | хранение: Keystore-шифрование ([CredentialVault.kt](app/src/main/java/com/univerflow/kaznu/data/CredentialVault.kt)), PIN ([LockVault.kt](app/src/main/java/com/univerflow/kaznu/data/LockVault.kt), [LockCrypto.kt](app/src/main/java/com/univerflow/kaznu/data/LockCrypto.kt)), настройки |
-| [web/](app/src/main/java/com/univerflow/kaznu/web) | политика адресов ([SitePolicy.kt](app/src/main/java/com/univerflow/kaznu/web/SitePolicy.kt)), настройки WebView ([SecureWebSettings.kt](app/src/main/java/com/univerflow/kaznu/web/SecureWebSettings.kt)), автоматизация входа и её лимиты ([AutomationController.kt](app/src/main/java/com/univerflow/kaznu/web/AutomationController.kt), [SessionGuard.kt](app/src/main/java/com/univerflow/kaznu/web/SessionGuard.kt)), мобильный вид |
+| [web/](app/src/main/java/com/univerflow/kaznu/web) | политика адресов ([SitePolicy.kt](app/src/main/java/com/univerflow/kaznu/web/SitePolicy.kt)), настройки WebView ([SecureWebSettings.kt](app/src/main/java/com/univerflow/kaznu/web/SecureWebSettings.kt)), автоматизация входа и её лимиты ([AutomationController.kt](app/src/main/java/com/univerflow/kaznu/web/AutomationController.kt), [SessionGuard.kt](app/src/main/java/com/univerflow/kaznu/web/SessionGuard.kt)), мобильный вид, правила показа скелетона страницы ([PageCover.kt](app/src/main/java/com/univerflow/kaznu/web/PageCover.kt)), клиент на время закрытия WebView ([RetiredWebViewClient.kt](app/src/main/java/com/univerflow/kaznu/web/RetiredWebViewClient.kt)), вызов скриптов страницы и экранирование строк JS ([PageEvaluation.kt](app/src/main/java/com/univerflow/kaznu/web/PageEvaluation.kt)) |
 | [download/](app/src/main/java/com/univerflow/kaznu/download) | скачивание в «Загрузки» телефона с проверкой ответа сервера |
 | [update/](app/src/main/java/com/univerflow/kaznu/update), [Updates.kt](app/src/main/java/com/univerflow/kaznu/domain/Updates.kt) | проверка и установка обновлений из GitHub: версии, разрешённые адреса, SHA-256 и подпись |
-| [preview/](app/src/main/java/com/univerflow/kaznu/preview) | собственные читатели документов: PDF, Word, Excel, PowerPoint, OpenDocument, HTML |
-| [ui/](app/src/main/java/com/univerflow/kaznu/ui), [main/](app/src/main/java/com/univerflow/kaznu/main) | нативные экраны: «Загрузки», просмотр файлов, PIN, настройки, уведомления |
-| [assets/](app/src/main/assets) | JavaScript для страниц сайта: вход ([univer-automation.js](app/src/main/assets/univer-automation.js)), мобильный вид, уведомления ([univer-notices.js](app/src/main/assets/univer-notices.js)) |
+| [preview/](app/src/main/java/com/univerflow/kaznu/preview) | собственные читатели PDF, Word, Excel, PowerPoint и HTML; извлечение текста OpenDocument для поиска |
+| [ui/](app/src/main/java/com/univerflow/kaznu/ui), [main/](app/src/main/java/com/univerflow/kaznu/main) | нативные экраны: «Загрузки», просмотр файлов, PIN, настройки, уведомления, скелетон страницы на время загрузки ([PageSkeleton.kt](app/src/main/java/com/univerflow/kaznu/ui/PageSkeleton.kt)), строка статуса под панелью ([StatusBanner.kt](app/src/main/java/com/univerflow/kaznu/main/StatusBanner.kt)), корутины экранов: сбой как сообщение, отмена без ошибки ([Coroutines.kt](app/src/main/java/com/univerflow/kaznu/ui/Coroutines.kt)), карточки «Загрузок» ([DownloadsAdapter.kt](app/src/main/java/com/univerflow/kaznu/ui/DownloadsAdapter.kt)), рамка окна документа ([DocumentPanel.kt](app/src/main/java/com/univerflow/kaznu/ui/DocumentPanel.kt)), масштаб двумя пальцами в просмотре файлов ([LayoutPinch.kt](app/src/main/java/com/univerflow/kaznu/ui/LayoutPinch.kt)), проверка уведомлений сайта ([NoticeFlow.kt](app/src/main/java/com/univerflow/kaznu/main/NoticeFlow.kt)), слежение за сетью ([NetworkWatch.kt](app/src/main/java/com/univerflow/kaznu/main/NetworkWatch.kt)), стирание данных сайта при выходе ([SiteData.kt](app/src/main/java/com/univerflow/kaznu/main/SiteData.kt)) |
+| [assets/](app/src/main/assets) | JavaScript для страниц сайта: вход ([univer-automation.js](app/src/main/assets/univer-automation.js)), мобильный вид и его оформление ([univer-style.js](app/src/main/assets/univer-style.js), ползунки сегментов в [univer-kit.js](app/src/main/assets/univer-kit.js)), уведомления ([univer-notices.js](app/src/main/assets/univer-notices.js)), учебные страницы под телефон ([univer-screens.js](app/src/main/assets/univer-screens.js)) |
 | [res/xml/network_security_config.xml](app/src/main/res/xml/network_security_config.xml) | доверенные сертификаты: системные, плюс Sectigo R46 только для `univer.kaznu.kz` и ISRG Root X1 только для файлов обновлений на `*.githubusercontent.com` |
 | [app/src/test](app/src/test), [app/src/androidTest](app/src/androidTest) | юнит-тесты и тесты на эмуляторе с синтетическими страницами |
 
-Вход идёт через форму самого сайта: скрипт заполняет видимые поля `#login_frm` и нажимает его кнопку, поэтому шифрование пароля и обработчики сайта не обходятся. Число попыток ограничено; если сайт отклонил пароль, приложение останавливается и ждёт, пока его исправят в настройках или нажмут «Повторить».
+Вход идёт через форму самого сайта: скрипт заполняет видимые поля `#login_frm` и нажимает его кнопку, поэтому шифрование пароля и обработчики сайта не обходятся. Лимиты: три полных входа за 10 минут и три AJAX-повторных входа в минуту. Первый отказ полной формы, отказ AJAX или тайм-аут допускают восстановление на новом документе не раньше чем через минуту; исчерпанный лимит означает ожидание. Два отказа полной формы подряд, другой аккаунт, недоступные данные входа или явный выход требуют действия пользователя. Повторяется только безопасный GET, не отправленный POST.
 
 ## Ограничения
 

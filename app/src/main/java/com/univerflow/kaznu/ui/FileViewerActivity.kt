@@ -1,6 +1,5 @@
 package com.univerflow.kaznu.ui
 
-import android.annotation.SuppressLint
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
@@ -11,7 +10,6 @@ import android.print.PageRange
 import android.print.PrintAttributes
 import android.print.PrintDocumentAdapter
 import android.print.PrintManager
-import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -52,6 +50,7 @@ import com.univerflow.kaznu.preview.TextPreview
 import com.univerflow.kaznu.preview.UnsupportedDocumentException
 import com.univerflow.kaznu.preview.WordView
 import com.univerflow.kaznu.web.configureOfflineViewer
+import com.univerflow.kaznu.web.RetiredWebViewClient
 import com.google.android.material.color.MaterialColors
 import com.google.android.material.snackbar.Snackbar
 import kotlinx.coroutines.CancellationException
@@ -68,7 +67,6 @@ import java.io.InputStream
 import java.util.Locale
 import java.util.UUID
 import kotlin.math.abs
-import kotlin.math.ln
 import kotlin.math.roundToInt
 
 /**
@@ -79,12 +77,12 @@ class FileViewerActivity : AppCompatActivity() {
     private lateinit var binding: ActivityFileViewerBinding
     private var language = AppLanguage.RUSSIAN
     @Volatile private var record: DownloadRecord? = null
-    /** The document page for WebView: bytes, or a PDF written while it is read. */
+    /** The document page for WebView, drawn when WebView reads it; a PDF is written while it is read. */
     @Volatile private var page: (() -> InputStream)? = null
-    /** The table on its own screen: its page and the WebView showing it; [tableIndex] is -1 while none is open. */
-    @Volatile private var tablePage: ByteArray? = null
+    /** The table on its own screen: its page (drawn when read) and the WebView showing it; [tableIndex] is -1 while none is open. */
+    @Volatile private var tablePage: (() -> InputStream)? = null
     /** The copy of the document being printed and the WebView loading it ([print]). */
-    @Volatile private var printPage: ByteArray? = null
+    @Volatile private var printPage: (() -> InputStream)? = null
     private var printWeb: WebView? = null
     private var tableWeb: WebView? = null
     @Volatile private var tableIndex = -1
@@ -112,13 +110,10 @@ class FileViewerActivity : AppCompatActivity() {
     private var zoomingOut = false
     /** Where to return after a redraw, as a share of the page's height. */
     private var restoreFraction: Float? = null
-    /** A pinch the viewer handles itself: below 100%, or zooming out past the magnified range. */
-    private var pinchMode = Pinch.NONE
-    private var pinchStart = 1f
-    private var pinchFactor = 1f
-    /** Events of a pinch whose direction is not known yet; WebView gets them if it is its own. */
-    private val held = ArrayList<MotionEvent>()
-    private val hideZoom = Runnable { binding.viewerZoomLevel.isVisible = false }
+    /** Two-finger zoom of the page: WebView's own above 100%, the viewer's layout zoom at or below it. */
+    private lateinit var pinch: LayoutPinch
+    private val hideZoom = Runnable { Motion.show(binding.viewerZoomLevel, false) }
+    private val languages = LanguageResources(this)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -129,7 +124,7 @@ class FileViewerActivity : AppCompatActivity() {
         binding = ActivityFileViewerBinding.inflate(layoutInflater)
         setContentView(binding.root)
         AppLockSession.secondaryScreen(this, binding.root)
-        findBar = FindBar(window, binding, ::text) { active, count -> language.context(this).getString(R.string.find_count, active, count) }
+        findBar = FindBar(window, binding, ::text) { active, count -> labels().getString(R.string.find_count, active, count) }
         pageWidth = (resources.displayMetrics.widthPixels * 1.5f).toInt()
         binding.viewerToolbar.setNavigationOnClickListener { if (tableWeb != null) closeTable() else finish() }
         onBackPressedDispatcher.addCallback(this, closeTableOnBack)
@@ -150,7 +145,10 @@ class FileViewerActivity : AppCompatActivity() {
         binding.viewerWeb.setBackgroundColor(MaterialColors.getColor(binding.viewerWeb, android.R.attr.colorBackground))
         binding.viewerOpenExternal.setOnClickListener { record?.let { if (!FileActions.openExternal(this, it)) message(R.string.open_failed) } }
         configureWeb(binding.viewerWeb)
-        configurePinch(binding.viewerWeb)
+        pinch = LayoutPinch(binding.viewerWeb, layoutZoom = { layoutZoom }, preview = ::showZoom, settle = { step ->
+            if (step != layoutZoom) { layoutZoom = step; redraw() }
+            showZoom(step)
+        }).also { it.attach() }
         localize()
         if (AppLockSession.locked) finish()
         // Pictures of viewers that never closed (the process was stopped) are removed after a while.
@@ -182,7 +180,9 @@ class FileViewerActivity : AppCompatActivity() {
         }
     }
 
-    private fun text(id: Int) = language.context(this).getString(id)
+    private fun labels() = languages.of(language)
+
+    private fun text(id: Int) = labels().getString(id)
 
     private val dark get() = ThemeMode.isDark(this)
 
@@ -201,7 +201,7 @@ class FileViewerActivity : AppCompatActivity() {
         binding.viewerToolbar.menu.findItem(R.id.viewer_find_toggle).title = text(R.string.find_in_file)
         findBar.localize()
         val current = record
-        binding.viewerToolbar.title = current?.fileName?.ifBlank { null } ?: text(R.string.downloads)
+        binding.viewerToolbar.title = current?.fileName?.let(FileKinds::title)?.ifBlank { null } ?: text(R.string.downloads)
         val tables = this.current?.tables
         binding.viewerToolbar.subtitle = if (tableIndex >= 0 && tables != null)
             text(R.string.preview_table_title).format(Locale.ROOT, tableIndex + 1, tables.count) else current?.let { item ->
@@ -264,14 +264,15 @@ class FileViewerActivity : AppCompatActivity() {
      */
     private class Page(val render: (PreviewHtml.Style) -> String, val findable: Boolean = false, val paper: Boolean = false,
         val tables: DocumentTables? = null, val stream: ((PreviewHtml.Style) -> InputStream)? = null) {
+        /** The page is drawn when WebView reads it, on WebView's own thread, so a large document never stalls the screen. */
         fun source(style: PreviewHtml.Style): () -> InputStream = stream?.let { open -> { open(style) } }
-            ?: render(style).toByteArray(Charsets.UTF_8).let { bytes -> { ByteArrayInputStream(bytes) } }
+            ?: { ByteArrayInputStream(render(style).toByteArray(Charsets.UTF_8)) }
     }
 
     /** Returns the page to show, or null for a type that only another app can open. Runs on IO. */
     private suspend fun build(item: DownloadRecord, store: FileMedia): Page? {
         val uri = item.uri!!.toUri()
-        val labels = language.context(this)
+        val labels = labels()
         val coroutine = currentCoroutineContext()
         val checkActive = { coroutine.ensureActive() }
         val extension = item.fileName.substringAfterLast('.', "").lowercase(Locale.ROOT)
@@ -364,7 +365,10 @@ class FileViewerActivity : AppCompatActivity() {
         val markup = current?.tables?.markup(index) ?: return
         if (webGone || isFinishing) return
         if (findBar.isOpen) findBar.close()
-        tablePage = PreviewHtml.table(record?.fileName.orEmpty(), language.siteCode, markup, style()).toByteArray(Charsets.UTF_8)
+        val title = record?.fileName.orEmpty()
+        val site = language.siteCode
+        val style = style()
+        tablePage = { ByteArrayInputStream(PreviewHtml.table(title, site, markup, style).toByteArray(Charsets.UTF_8)) }
         val web = tableWeb ?: WebView(this).also { web ->
             web.id = R.id.viewer_table_web
             web.configureOfflineViewer()
@@ -391,7 +395,7 @@ class FileViewerActivity : AppCompatActivity() {
         tablePage = null
         closeTableOnBack.isEnabled = false
         (web.parent as? ViewGroup)?.removeView(web)
-        web.stopLoading(); web.webViewClient = WebViewClient(); web.destroy()
+        web.stopLoading(); web.webViewClient = RetiredWebViewClient(); web.destroy()
         if (!webGone) binding.viewerWeb.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
         localize()
     }
@@ -436,7 +440,7 @@ class FileViewerActivity : AppCompatActivity() {
     /** The current zoom for a moment at the bottom: the layout zoom below 100%, the magnification above. */
     private fun showZoom(percent: Int = currentZoom()) {
         binding.viewerZoomLevel.text = text(R.string.preview_zoom_level).format(Locale.ROOT, percent)
-        binding.viewerZoomLevel.isVisible = true
+        Motion.show(binding.viewerZoomLevel, true)
         binding.viewerZoomLevel.removeCallbacks(hideZoom)
         binding.viewerZoomLevel.postDelayed(hideZoom, 1200)
     }
@@ -445,91 +449,12 @@ class FileViewerActivity : AppCompatActivity() {
     private fun currentZoom() = tableWeb?.let { (it.scale / resources.displayMetrics.density * 100).roundToInt() }
         ?: if (layoutZoom < 100 || webGone) layoutZoom else (binding.viewerWeb.scale / resources.displayMetrics.density * 100).roundToInt()
 
-    /** The zoom step nearest to [percent] (on a ratio scale, as zoom is felt). */
-    private fun nearestStep(percent: Float) = PreviewHtml.ZOOM_STEPS.minBy { abs(ln(it / percent)) }
-
-    /**
-     * Two fingers: above 100% it is WebView's own zoom; at or below 100% the viewer previews the pinch under the
-     * fingers and lays the page out at the nearest zoom step on release. A pinch keeps the mode it started in.
-     */
-    @SuppressLint("ClickableViewAccessibility") // Only two-finger gestures are taken; taps and scrolling reach WebView unchanged.
-    private fun configurePinch(web: WebView) {
-        // Measured on screen: during the preview the view is scaled, and its own coordinates with it.
-        fun span(event: MotionEvent) = if (event.pointerCount < 2) 0f
-            else kotlin.math.hypot(event.getX(0) - event.getX(1), event.getY(0) - event.getY(1)) * web.scaleX
-        /** WebView has seen the first finger: it is told the gesture ended, so it neither scrolls nor zooms. */
-        fun cancel(event: MotionEvent) = MotionEvent.obtain(event).also { it.action = MotionEvent.ACTION_CANCEL; web.onTouchEvent(it); it.recycle() }
-        fun preview(event: MotionEvent) {
-            pinchFactor = span(event) / pinchStart
-            val target = (layoutZoom * pinchFactor).coerceIn(PreviewHtml.MIN_ZOOM.toFloat(), 100f)
-            web.scaleX = target / layoutZoom
-            web.scaleY = target / layoutZoom
-            showZoom(nearestStep(target))
-        }
-        fun finish() {
-            pinchMode = Pinch.DONE
-            web.scaleX = 1f
-            web.scaleY = 1f
-            val target = nearestStep(layoutZoom * pinchFactor)
-            if (target != layoutZoom) { layoutZoom = target; redraw() }
-            showZoom(target)
-        }
-        fun replay() {
-            held.forEach { web.onTouchEvent(it); it.recycle() }
-            held.clear()
-            pinchMode = Pinch.WEBVIEW
-        }
-        web.setOnTouchListener { _, event ->
-            when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> { pinchMode = Pinch.NONE; held.forEach(MotionEvent::recycle); held.clear(); false }
-                MotionEvent.ACTION_POINTER_DOWN -> when {
-                    pinchMode != Pinch.NONE || event.pointerCount != 2 -> pinchMode == Pinch.OURS || pinchMode == Pinch.DONE
-                    // Magnified: WebView zooms in either direction, down to 100%.
-                    @Suppress("DEPRECATION") web.canZoomOut() -> { pinchMode = Pinch.WEBVIEW; false }
-                    else -> {
-                        pinchStart = span(event).coerceAtLeast(1f)
-                        pinchFactor = 1f
-                        web.pivotX = (event.getX(0) + event.getX(1)) / 2
-                        web.pivotY = (event.getY(0) + event.getY(1)) / 2
-                        if (layoutZoom < 100) { pinchMode = Pinch.OURS; cancel(event) }
-                        // At 100%: outwards is WebView's magnification, inwards ours; held until the direction shows.
-                        else { pinchMode = Pinch.DECIDING; held += MotionEvent.obtain(event) }
-                        true
-                    }
-                }
-                MotionEvent.ACTION_MOVE -> when (pinchMode) {
-                    Pinch.DECIDING -> {
-                        held += MotionEvent.obtain(event)
-                        val factor = span(event) / pinchStart
-                        if (factor > 1.04f) replay()
-                        else if (factor < 0.96f) { pinchMode = Pinch.OURS; held.forEach(MotionEvent::recycle); held.clear(); cancel(event); preview(event) }
-                        true
-                    }
-                    Pinch.OURS -> { preview(event); true }
-                    Pinch.DONE -> true
-                    else -> false
-                }
-                MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> when (pinchMode) {
-                    // Fingers lifted before the direction showed: WebView gets the whole gesture.
-                    Pinch.DECIDING -> { held += MotionEvent.obtain(event); replay(); true }
-                    Pinch.OURS -> { finish(); true }
-                    Pinch.DONE -> true
-                    else -> false
-                }
-                else -> pinchMode == Pinch.OURS || pinchMode == Pinch.DONE
-            }
-        }
-    }
-
-    /** Who handles the current two-finger gesture: nobody yet, undecided at 100%, the viewer, after it, or WebView. */
-    private enum class Pinch { NONE, DECIDING, OURS, DONE, WEBVIEW }
-
     private fun showMessage(id: Int, external: Boolean) {
         messageId = id
         binding.viewerProgress.isVisible = false
         binding.viewerWeb.isVisible = false
         binding.viewerFindBar.isVisible = false
-        binding.viewerMessage.isVisible = true
+        Motion.show(binding.viewerMessage, true)
         binding.viewerMessageText.text = text(id)
         binding.viewerOpenExternal.isVisible = external && record != null
         updateMenu()
@@ -551,7 +476,9 @@ class FileViewerActivity : AppCompatActivity() {
             if (printWeb != null || webGone) return
             // While reading, pictures are fetched only near the screen. The printed copy is a page of its own that fetches
             // all of them, at 100%, and goes to the printer once it has loaded (an unattached WebView prints as well).
-            printPage = document.render(PreviewHtml.Style(100, paperA4, dark, print = true)).toByteArray(Charsets.UTF_8)
+            // Built when the print WebView reads it, off the main thread, like the reading page.
+            val style = PreviewHtml.Style(100, paperA4, dark, print = true)
+            printPage = { ByteArrayInputStream(document.render(style).toByteArray(Charsets.UTF_8)) }
             val web = WebView(this)
             printWeb = web
             web.configureOfflineViewer()
@@ -576,7 +503,7 @@ class FileViewerActivity : AppCompatActivity() {
         val web = printWeb ?: return
         printWeb = null
         printPage = null
-        web.stopLoading(); web.webViewClient = WebViewClient(); web.destroy()
+        web.stopLoading(); web.webViewClient = RetiredWebViewClient(); web.destroy()
     }
 
     /** Prints the copy and lets it go when the print dialog is done with it. */
@@ -599,7 +526,7 @@ class FileViewerActivity : AppCompatActivity() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest) = navigate(request)
             override fun onPageCommitVisible(view: WebView, url: String?) {
                 if (url == PreviewHtml.INDEX && messageId == null) {
-                    binding.viewerProgress.isVisible = false
+                    Motion.show(binding.viewerProgress, false)
                     binding.viewerWeb.isVisible = true
                     updateMenu()
                     // Matches are counted once the page has its text; a search from Downloads starts here.
@@ -648,7 +575,7 @@ class FileViewerActivity : AppCompatActivity() {
         val url = request.url
         if (request.isForMainFrame && request.hasGesture()) {
             if (url.scheme == "https" && url.host == FILES_HOST)
-                Regex("^/table/(\\d{1,5})$").matchEntire(url.path.orEmpty())?.let { match -> runOnUiThread { openTable(match.groupValues[1].toInt()) } }
+                TABLE_PATH.matchEntire(url.path.orEmpty())?.let { match -> runOnUiThread { openTable(match.groupValues[1].toInt()) } }
             else if (url.scheme in setOf("http", "https", "mailto")) runOnUiThread { openLink(url) }
         }
         return true
@@ -667,8 +594,10 @@ class FileViewerActivity : AppCompatActivity() {
             try {
                 when {
                     path == "/index.html" -> page?.let { return WebResourceResponse("text/html", "utf-8", 200, "OK", NO_CACHE, it()) }
-                    path == "/print.html" -> printPage?.let { return response("text/html", it) }
-                    path.startsWith("/table/") -> tablePage?.takeIf { path == "/table/$tableIndex" }?.let { return response("text/html", it) }
+                    path == "/print.html" -> printPage?.let { return WebResourceResponse("text/html", "utf-8", 200, "OK", NO_CACHE, it()) }
+                    path.startsWith("/table/") -> tablePage?.takeIf { path == "/table/$tableIndex" }?.let {
+                        return WebResourceResponse("text/html", "utf-8", 200, "OK", NO_CACHE, it())
+                    }
                     path == "/file" -> record?.takeIf { it.kind == FileKind.IMAGE }?.let { item ->
                         contentResolver.openInputStream(item.uri!!.toUri())?.let { stream ->
                             return WebResourceResponse(FileActions.mime(item), null, 200, "OK", NO_CACHE, stream)
@@ -685,20 +614,26 @@ class FileViewerActivity : AppCompatActivity() {
                         }
                     }
                 }
+            } catch (_: OutOfMemoryError) {
+                // A page too large to draw in this device's memory shows the limit message, as when the file is read.
+                if (path == "/index.html" || path == "/print.html" || path.startsWith("/table/")) runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    if (path == "/index.html") showMessage(R.string.preview_limit, external = true)
+                    else if (path == "/print.html") { if (printWeb != null) { closePrint(); message(R.string.preview_limit) } }
+                    else if (tableWeb != null) { closeTable(); message(R.string.preview_limit) }
+                }
             } catch (_: Exception) { /* A missing or unreadable part is shown as absent. */ }
         }
         return WebResourceResponse("text/plain", "utf-8", 404, "Not Found", NO_CACHE, ByteArrayInputStream(ByteArray(0)))
     }
 
-    private fun response(mime: String, bytes: ByteArray) =
-        WebResourceResponse(mime, if (mime.startsWith("text/")) "utf-8" else null, 200, "OK", NO_CACHE, ByteArrayInputStream(bytes))
-
     override fun onDestroy() {
+        pinch.release()
         closeTable()
         closePrint()
         // A WebView whose renderer is gone was destroyed already; it is not used again.
         if (!webGone) binding.viewerWeb.apply {
-            stopLoading(); webViewClient = WebViewClient()
+            stopLoading(); webViewClient = RetiredWebViewClient()
             (parent as? android.view.ViewGroup)?.removeView(this); destroy()
         }
         pdf?.close(); pdf = null; page = null
@@ -715,9 +650,11 @@ class FileViewerActivity : AppCompatActivity() {
         private const val STALE_MEDIA = 6 * 60 * 60 * 1000L
         private val WORD_VIEW = setOf("doc", "dot", "docx", "docm", "dotx", "dotm", "rtf")
         private val SHEET_VIEW = setOf("xls", "xlt", "xlsx", "xlsm", "xltx", "xltm")
-        private val SLIDE_VIEW = setOf("ppt", "pps", "pot", "pptx", "ppsx", "pptm", "potx", "ppsm")
+        private val SLIDE_VIEW = setOf("ppt", "pps", "pot", "pptx", "ppsx", "pptm", "potx", "ppsm", "potm")
         private val WEB_VIEW = setOf("htm", "html")
         private val NO_CACHE = mapOf("Cache-Control" to "no-store")
+        /** A table link inside the document: /table/{index}. */
+        private val TABLE_PATH = Regex("^/table/(\\d{1,5})$")
         /** [query]: words to find in the document as soon as it opens (from the search in Downloads). */
         fun intent(context: Context, recordId: String, language: AppLanguage, query: String? = null): Intent =
             Intent(context, FileViewerActivity::class.java).putExtra(EXTRA_RECORD, recordId).putExtra(EXTRA_LANGUAGE, language.siteCode)

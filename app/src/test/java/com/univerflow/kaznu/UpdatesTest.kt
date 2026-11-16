@@ -2,13 +2,17 @@ package com.univerflow.kaznu
 
 import com.univerflow.kaznu.domain.Updates
 import com.univerflow.kaznu.update.UpdateClient
+import com.univerflow.kaznu.update.UpdatePackage
+import com.univerflow.kaznu.update.attemptFile
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
+import java.nio.file.Files
 import java.security.MessageDigest
 
 class UpdatesTest {
@@ -129,5 +133,31 @@ class UpdatesTest {
         assertEquals(hash, client.checksum("2.4"))
         val empty = client(Updates.checksumUrl("2.4") to { url -> Response(url, 200, body = "oops".toByteArray()) })
         assertThrows(IOException::class.java) { empty.checksum("2.4") }
+    }
+
+    @Test fun aRetryOfTheSameVersionDownloadsToItsOwnFile() {
+        val cache = Files.createTempDirectory("update-test").toFile()
+        try {
+            val folder = File(cache, "updates")
+            val cancelled = attemptFile(folder, "2.4")
+            val retry = attemptFile(folder, "2.4")
+            retry.writeText("apk bytes")
+            assertNotEquals(cancelled, retry)
+            // What the cancelled attempt does once its stalled read ends.
+            cancelled.delete()
+            assertEquals("apk bytes", retry.readText())
+        } finally { cache.deleteRecursively() }
+    }
+
+    @Test fun aRotatedKeyStillUpdatesButAnotherKeyDoesNot() {
+        assertTrue("same key", UpdatePackage.sameSigners(setOf("old"), listOf("old"), setOf("old")))
+        assertTrue("v3 rotation old -> new", UpdatePackage.sameSigners(setOf("new"), listOf("old", "new"), setOf("old")))
+        assertFalse("another key", UpdatePackage.sameSigners(setOf("other"), listOf("other"), setOf("old")))
+        assertFalse("a lineage without the installed key", UpdatePackage.sameSigners(setOf("new"), listOf("older", "new"), setOf("old")))
+        assertFalse("the old key does not replace a rotated install", UpdatePackage.sameSigners(setOf("old"), listOf("old"), setOf("new")))
+        assertFalse("before Android 9 there is no lineage", UpdatePackage.sameSigners(setOf("new"), null, setOf("old")))
+        assertFalse("unsigned", UpdatePackage.sameSigners(emptySet(), null, setOf("old")))
+        assertTrue("several signers in any order", UpdatePackage.sameSigners(setOf("a", "b"), null, setOf("b", "a")))
+        assertFalse("several signers must all match", UpdatePackage.sameSigners(setOf("a", "b"), null, setOf("a")))
     }
 }

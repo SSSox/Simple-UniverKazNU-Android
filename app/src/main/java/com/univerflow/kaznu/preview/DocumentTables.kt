@@ -52,13 +52,15 @@ class DocumentTables private constructor(val body: String, private val ranges: L
 
         /** At least two rows and four cells: a layout table of one row (a heading, a signature) gets no link. */
         private fun large(body: String, start: Int, end: Int): Boolean {
+            // Searched on its own: a tag the table lacks is not looked for through the rest of the document.
+            val table = body.substring(start, end)
             fun count(tag: String, enough: Int): Int {
                 var found = 0
-                var at = start
+                var at = 0
                 while (found < enough) {
-                    at = body.indexOf(tag, at).takeIf { it in start until end } ?: break
+                    at = table.indexOf(tag, at).takeIf { it >= 0 } ?: break
                     at += tag.length
-                    if (body.getOrNull(at) == '>' || body.getOrNull(at) == ' ') found++ // Not <thead>.
+                    if (table.getOrNull(at) == '>' || table.getOrNull(at) == ' ') found++ // Not <thead>.
                 }
                 return found
             }

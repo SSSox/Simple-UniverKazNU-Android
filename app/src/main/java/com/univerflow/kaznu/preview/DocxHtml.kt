@@ -14,6 +14,7 @@ object DocxHtml {
     private const val W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
     private const val R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
     private const val M = "http://schemas.openxmlformats.org/officeDocument/2006/math"
+    private const val MC = "http://schemas.openxmlformats.org/markup-compatibility/2006"
     private const val DOCUMENT_LIMIT = 64 * 1024 * 1024
     private const val PART_LIMIT = 4 * 1024 * 1024
     private const val IMAGE_LIMIT = 32 * 1024 * 1024
@@ -39,6 +40,7 @@ object DocxHtml {
         var styles: ByteArray? = null
         val media = mutableMapOf<String, String>()
         var entries = 0
+        val passed = PassedOver(checkActive)
         ZipInputStream(input).use { zip ->
             while (true) {
                 checkActive()
@@ -54,6 +56,7 @@ object DocxHtml {
                         bytes?.let { store.add(WordHtml.imageType(name)!!, it) }?.let { media[name.removePrefix("word/")] = it }
                     }
                 }
+                passed.rest(zip)
             }
         }
         return Package(document ?: throw UnsupportedDocumentException("Not a Word document"), relations, styles, media)
@@ -97,32 +100,54 @@ object DocxHtml {
         val media: Map<String, String>,
         val checkActive: () -> Unit,
     ) : DefaultHandler() {
+        /** An open paragraph: its style so far and the run style around it, restored when a text box's paragraph ends. */
+        private class Open(var style: ParagraphStyle, val run: RunStyle)
+
         private val html = WordHtml()
         private var nodes = 0
         private var depth = 0
         private var inBody = false
-        private var paragraph = ParagraphStyle()
+        /** Open paragraphs, outermost first: a text box's paragraphs lie inside the paragraph that anchors it. */
+        private val paragraphs = ArrayDeque<Open>()
+        /** Depth inside paragraph properties; table and row alignment never changes a paragraph. */
+        private var properties = 0
         private var run = RunStyle()
         private var inText = false
         private var tabStops = false
         private val text = StringBuilder()
+        /** Elements shown so far (paragraphs, text, tables, pictures), to tell whether an alternative's choice showed anything. */
+        private var shown = 0
+        /** [shown] where each open mc:AlternateContent started. */
+        private val alternates = ArrayDeque<Int>()
+        /** Depth inside a skipped mc:Fallback, the second copy of what its mc:Choice already showed. */
+        private var fallback = 0
 
         fun result(): String = html.result()
 
         private fun on(attributes: Attributes) = attributes.getValue(W, "val")?.lowercase(Locale.ROOT) !in setOf("0", "false", "none")
 
+        private fun paragraph(change: (ParagraphStyle) -> ParagraphStyle) {
+            if (properties > 0) paragraphs.lastOrNull()?.let { it.style = change(it.style) }
+        }
+
         override fun startElement(uri: String, local: String, qName: String, attributes: Attributes) {
             if (++nodes > NODE_LIMIT || ++depth > DEPTH_LIMIT) throw PreviewLimitException()
             if (nodes % 512 == 0) checkActive()
+            // Word saves text boxes, shapes and groups twice: for itself (mc:Choice) and for older readers (mc:Fallback).
+            // The fallback is shown only when the choice showed nothing, as with a chart type this view cannot draw.
+            if (uri == MC && local == "Fallback" && (fallback > 0 || shown > (alternates.lastOrNull() ?: -1))) { fallback++; return }
+            if (fallback > 0) return
+            if (uri == MC && local == "AlternateContent") { alternates.addLast(shown); return }
             if (uri == W && local == "body") { inBody = true; return }
             if (!inBody) return
             if (uri == M) { math(local, open = true); return }
             when (if (uri == W) local else "") {
-                "p" -> { html.startParagraph(); paragraph = ParagraphStyle() }
-                "pStyle" -> paragraph = paragraph.copy(heading = headings[attributes.getValue(W, "val")] ?: 0)
-                "numPr" -> paragraph = paragraph.copy(listItem = true)
-                "jc" -> paragraph = paragraph.copy(align = when (attributes.getValue(W, "val")) {
-                    "center" -> Align.CENTER; "right", "end" -> Align.END; "both" -> Align.JUSTIFY; else -> null })
+                "p" -> { html.startParagraph(); paragraphs.addLast(Open(ParagraphStyle(), run)); shown++ }
+                "pPr" -> properties++
+                "pStyle" -> paragraph { it.copy(heading = headings[attributes.getValue(W, "val")] ?: 0) }
+                "numPr" -> paragraph { it.copy(listItem = true) }
+                "jc" -> paragraph { it.copy(align = when (attributes.getValue(W, "val")) {
+                    "center" -> Align.CENTER; "right", "end" -> Align.END; "both" -> Align.JUSTIFY; else -> null }) }
                 "r" -> run = RunStyle()
                 "b" -> run = run.copy(bold = on(attributes))
                 "i" -> run = run.copy(italic = on(attributes))
@@ -130,12 +155,12 @@ object DocxHtml {
                 "strike", "dstrike" -> run = run.copy(strike = on(attributes))
                 "vertAlign" -> run = run.copy(vertical = when (attributes.getValue(W, "val")) {
                     "superscript" -> RunStyle.Vertical.SUPER; "subscript" -> RunStyle.Vertical.SUB; else -> RunStyle.Vertical.NONE })
-                "t" -> { inText = true; text.setLength(0) }
+                "t" -> { inText = true; text.setLength(0); shown++ }
                 "tabs" -> tabStops = true
                 "tab" -> if (!tabStops) html.tab()
                 "br", "cr" -> html.lineBreak()
                 "hyperlink" -> html.startLink(attributes.getValue(R, "id")?.let(relations::get)?.takeIf { it.second }?.first)
-                "tbl" -> html.startTable()
+                "tbl" -> { html.startTable(); shown++ }
                 "gridCol" -> html.column(attributes.getValue(W, "w")?.toIntOrNull())
                 "tr" -> html.startRow()
                 "tc" -> html.startCell()
@@ -163,22 +188,34 @@ object DocxHtml {
             val target = relations[id]?.takeIf { !it.second }?.first ?: return
             val name = target.removePrefix("/word/").removePrefix("./")
             html.picture(media[name] ?: return)
+            shown++
         }
 
         override fun characters(ch: CharArray, start: Int, length: Int) {
-            if (inText) text.append(ch, start, length)
+            if (!inText || fallback > 0) return
+            // A run longer than the whole reading view can hold fails now instead of after filling memory.
+            if (text.length + length > WordHtml.OUTPUT_LIMIT) throw PreviewLimitException()
+            text.append(ch, start, length)
         }
 
         override fun endElement(uri: String, local: String, qName: String) {
             depth--
+            if (uri == MC && local == "Fallback" && fallback > 0) { fallback--; return }
+            if (fallback > 0) return
+            if (uri == MC && local == "AlternateContent") { alternates.removeLastOrNull(); return }
             if (uri == M && inBody) { math(local, open = false); return }
             if (uri != W || !inBody) return
             when (local) {
                 "body" -> inBody = false
                 "tabs" -> tabStops = false
+                "pPr" -> properties--
                 "t" -> { inText = false; html.text(text.toString(), run) }
                 "hyperlink" -> html.endLink()
-                "p" -> html.endParagraph(paragraph)
+                "p" -> {
+                    val open = paragraphs.removeLastOrNull()
+                    html.endParagraph(open?.style ?: ParagraphStyle())
+                    open?.let { run = it.run }
+                }
                 "tc" -> html.endCell()
                 "tbl" -> html.endTable()
             }

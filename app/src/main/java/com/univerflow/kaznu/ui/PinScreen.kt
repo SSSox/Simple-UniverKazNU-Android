@@ -34,6 +34,7 @@ class PinScreen(context: Context, private val describe: (Int) -> String) : Frame
     private val digits = CharArray(PinPolicy.LENGTH)
     private var count = 0
     private var inputEnabled = true
+    private var succeeded = false
     private val density = resources.displayMetrics.density
     private fun dp(value: Int) = (value * density).toInt()
 
@@ -59,11 +60,13 @@ class PinScreen(context: Context, private val describe: (Int) -> String) : Frame
     private val onSurfaceVariant = MaterialColors.getColor(context, com.google.android.material.R.attr.colorOnSurfaceVariant, Color.DKGRAY)
     private val keyFill = MaterialColors.getColor(context, com.google.android.material.R.attr.colorSurfaceContainerHigh, Color.LTGRAY)
     private val error = MaterialColors.getColor(context, androidx.appcompat.R.attr.colorError, Color.RED)
+    private val success = MaterialColors.getColor(context, com.google.android.material.R.attr.colorTertiary, Color.GREEN)
 
     init {
         setBackgroundColor(MaterialColors.getColor(context, com.google.android.material.R.attr.colorSurface, Color.WHITE))
         isClickable = true; isFocusable = true
-        // Nothing underneath is readable by an accessibility service while this screen is up.
+        // This marks only the pad itself; LockUi hides the views beside it, so nothing underneath is readable by an
+        // accessibility service while this screen is up.
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
         val column = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL
@@ -146,7 +149,7 @@ class PinScreen(context: Context, private val describe: (Int) -> String) : Frame
 
     /** Title, hint, and which extra controls are offered. */
     fun configure(titleText: String, hint: String?, closeable: Boolean, biometric: Boolean, forgotText: String?) {
-        title.text = titleText
+        Motion.text(title, titleText)
         // The hint keeps its two lines when empty, so the keypad does not jump between the steps.
         subtitle.text = hint.orEmpty()
         close.isVisible = closeable; close.contentDescription = describe(R.string.lock_close)
@@ -164,15 +167,18 @@ class PinScreen(context: Context, private val describe: (Int) -> String) : Frame
 
     fun setInputEnabled(enabled: Boolean) {
         inputEnabled = enabled
-        keys.forEach { it.alpha = if (enabled) 1f else 0.4f }
+        keys.forEach { Motion.dim(it, if (enabled) 1f else 0.4f) }
     }
 
     /** Empties the entered digits (nothing is kept anywhere). */
-    fun reset() { digits.fill('\u0000'); count = 0; paintDots() }
+    fun reset() { digits.fill('\u0000'); count = 0; succeeded = false; paintDots() }
+
+    /** The right PIN: every dot takes the success colour as the screen leaves, so the entry is seen to have worked. */
+    fun succeed() { setInputEnabled(false); succeeded = true; paintDots() }
 
     fun shake() {
         performHapticFeedback(if (Build.VERSION.SDK_INT >= 30) HapticFeedbackConstants.REJECT else HapticFeedbackConstants.LONG_PRESS)
-        if (!Motion.enabled) return
+        if (!Motion.active) return
         ObjectAnimator.ofFloat(dotRow, View.TRANSLATION_X, 0f, -dp(14).toFloat(), dp(14).toFloat(), -dp(8).toFloat(), dp(8).toFloat(), 0f).apply { duration = 320 }.start()
     }
 
@@ -180,6 +186,7 @@ class PinScreen(context: Context, private val describe: (Int) -> String) : Frame
         if (count >= PinPolicy.LENGTH) return
         digits[count++] = digit
         paintDots()
+        Motion.pop(dotViews[count - 1])
         if (count == PinPolicy.LENGTH) {
             val pin = digits.copyOf()
             digits.fill('\u0000'); count = 0
@@ -195,7 +202,11 @@ class PinScreen(context: Context, private val describe: (Int) -> String) : Frame
         dotViews.forEachIndexed { index, dot ->
             dot.background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                if (index < count) setColor(primary) else { setColor(Color.TRANSPARENT); setStroke(dp(2), onSurfaceVariant) }
+                when {
+                    succeeded -> setColor(success)
+                    index < count -> setColor(primary)
+                    else -> { setColor(Color.TRANSPARENT); setStroke(dp(2), onSurfaceVariant) }
+                }
             }
         }
         dotRow.contentDescription = describe(R.string.lock_pin_progress).format(count, PinPolicy.LENGTH)

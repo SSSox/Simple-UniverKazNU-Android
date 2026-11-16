@@ -1,5 +1,6 @@
 package com.univerflow.kaznu.web
 
+import android.content.res.AssetManager
 import android.content.res.Configuration
 import android.webkit.WebView
 import androidx.webkit.ScriptHandler
@@ -7,7 +8,6 @@ import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import com.univerflow.kaznu.domain.AppLanguage
 import kotlinx.coroutines.*
-import org.json.JSONObject
 import org.json.JSONTokener
 import kotlin.coroutines.resume
 
@@ -17,16 +17,13 @@ class MobilePageAdapter(
     private val allowDocumentStart: Boolean = true,
     private val readinessTimeoutMillis: Long = 8_000,
     private val nativeChrome: Boolean = false,
+    /** The main page's channel key; null (a document window) gives the modules no sender at all. */
+    private val channel: ChannelGuard? = null,
+    private val onConcealed: (Boolean) -> Unit = {},
     private val onContentReady: () -> Unit = {},
 ) {
-    /**
-     * The adapter's modules, concatenated. Built on first use and kept for the lifetime of this adapter: an activity
-     * recreation or a document window would otherwise re-read and re-join 638 KB on the main thread.
-     */
-    private val script by lazy(LazyThreadSafetyMode.NONE) {
-        SCRIPTS.joinToString("\n") { name -> web.context.assets.open(name).bufferedReader().use { it.readText() } }
-    }
-    private val bootstrap = web.context.assets.open("univer-page-start.js").bufferedReader().use { it.readText() }
+    private val assets = web.context.assets
+    private val bootstrap = assets.open("univer-page-start.js").bufferedReader().use { it.readText() }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var applyJob: Job? = null
     private var startScript: ScriptHandler? = null
@@ -72,8 +69,13 @@ class MobilePageAdapter(
     fun pageStarted(url: String? = web.url) {
         navigationVersion++
         applyJob?.cancel()
-        // Alpha keeps the renderer/JS active, including visual-state callbacks. No stale page is exposed.
-        web.alpha = if (enabled && SitePolicy.trusted(url)) 0f else 1f
+        conceal(enabled && SitePolicy.trusted(url))
+    }
+
+    // Alpha keeps the renderer/JS active, including visual-state callbacks. No stale page is exposed.
+    private fun conceal(hidden: Boolean) {
+        web.alpha = if (hidden) 0f else 1f
+        onConcealed(hidden)
     }
 
     fun apply(enabled: Boolean, language: AppLanguage) {
@@ -83,7 +85,7 @@ class MobilePageAdapter(
         web.settings.loadWithOverviewMode = !enabled
         updateDocumentStart()
         if (!enabled) {
-            web.alpha = 1f
+            conceal(false)
             if (SitePolicy.trusted(web.url))
                 web.evaluateJavascript("(function(){if(location.origin===${quote(SitePolicy.ORIGIN)})" +
                     "window.__univerPresentationV1?.release();})()", null)
@@ -99,7 +101,7 @@ class MobilePageAdapter(
             try {
                 val ready = withTimeoutOrNull(readinessTimeoutMillis) { applyTo(url, version) } == true
                 if (!closed && version == navigationVersion && url == web.url) {
-                    web.alpha = 1f
+                    conceal(false)
                     if (ready && announcedVersion != version) {
                         announcedVersion = version
                         onContentReady()
@@ -108,7 +110,7 @@ class MobilePageAdapter(
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) {
                 if (!closed && version == navigationVersion) {
-                    web.alpha = 1f
+                    conceal(false)
                     web.evaluateJavascript("(function(){if(location.origin===${quote(SitePolicy.ORIGIN)})" +
                         "window.__univerPresentationV1?.release();})()", null)
                 }
@@ -140,7 +142,9 @@ class MobilePageAdapter(
         val installed = evaluate("(function(){if(!($sameDocument)||" +
             "!window.__univerMobileV1)return false;$apply return true;})()")
         if (installed != "true") {
-            val injected = evaluate("(function(){if(!($sameDocument))return false;$script\n$apply return true;})()")
+            val script = modules(assets)
+            if (version != navigationVersion || url != web.url) return false
+            val injected = evaluate(withSenders("if(!($sameDocument))return false;\n$script\n$apply return true;", channel?.senders() ?: "null"))
             if (injected != "true") return false
         }
         awaitVisualState(version)
@@ -156,9 +160,7 @@ class MobilePageAdapter(
         return JSONTokener(reply).nextValue() as? String
     }
 
-    private suspend fun evaluate(source: String): String? = suspendCancellableCoroutine { continuation ->
-        web.evaluateJavascript(source) { if (continuation.isActive) continuation.resume(it) }
-    }
+    private suspend fun evaluate(source: String): String? = web.evaluate(source)
 
     private suspend fun awaitVisualState(version: Long) = suspendCancellableCoroutine { continuation ->
         web.postVisualStateCallback(version, object : WebView.VisualStateCallback() {
@@ -173,6 +175,7 @@ class MobilePageAdapter(
         web.evaluateJavascript("""(function(){
             if(location.origin!=='${SitePolicy.ORIGIN}'||!document.documentElement.classList.contains('univer-mobile'))return false;
             if(window.__univerTablesV1&&window.__univerTablesV1.close())return true;
+            if(window.__univerShortcutsV1&&window.__univerShortcutsV1.close())return true;
             var menu=document.querySelector('.univer-app-menu[open]');
             if(!menu)return false;
             menu.open=false;menu.querySelector('summary').focus({preventScroll:true});return true;
@@ -189,15 +192,39 @@ class MobilePageAdapter(
             WebViewCompat.removeWebMessageListener(web, EVENTS)
     }
 
-    private fun quote(value: String) = JSONObject.quote(value)
+    private fun quote(value: String) = jsString(value)
     companion object {
         private const val EVENTS = "__univerPageEvents"
+        /**
+         * The modules' only way to native code, visible to them and not to the site: pin requests and a UMKD section's
+         * «Скачать все» go through the keyed app sender, nothing else. Strict, so a function the page swapped in for a
+         * built-in cannot reach the sender through .caller; the prefix checks use no prototype method.
+         */
+        private const val NATIVE = "var __univerNative=__univerSend&&typeof __univerSend.app==='function'?function(v){'use strict';" +
+            "if(typeof v!=='string'||v.length<11)return;var p='univer-pin:',d='univer-download-all:',i,a=true,b=true;" +
+            "for(i=0;i<d.length;i++){if(i<p.length&&v[i]!==p[i])a=false;if(v[i]!==d[i])b=false;}" +
+            "if(window===window.top&&((a&&v.length<=8192)||(b&&v.length<=65536)))__univerSend.app(v);}:null;"
+
+        /**
+         * [body] (the modules) run with [senders] (a JS expression, see [ChannelGuard.senders]) as their only sender.
+         * Strict throughout, and the secret only in the call's arguments: no frame the site reaches through .caller or a
+         * stack trace holds the senders, and no function's text holds the secret. [body] may `return` a value.
+         */
+        fun withSenders(body: String, senders: String) = "(function(__univerSend){'use strict';$NATIVE\n$body\n})($senders);"
         /**
          * Feature modules shared with the Windows app install first; the adapter calls them while its observer is paused.
          * The presentation layer installs last and owns motion.
          */
-        val SCRIPTS = listOf("univer-palette.js", "univer-dom.js", "univer-lesson.js", "univer-news.js", "univer-attendance.js", "univer-study-links.js", "univer-materials.js",
+        val SCRIPTS = listOf("univer-palette.js", "univer-dom.js", "univer-lesson.js", "univer-news.js", "univer-attendance.js", "univer-study-links.js", "univer-materials.js", "univer-folds.js",
             "univer-overview.js", "univer-shortcuts-css.js", "univer-shortcuts.js", "univer-terms.js", "univer-attestation.js", "univer-discussion.js",
-            "univer-tables.js", "univer-mobile-css.js", "univer-mobile.js", "univer-motion.js", "univer-style.js")
+            "univer-tables.js", "univer-syllabus.js", "univer-top.js", "univer-mobile-css.js", "univer-polish.js", "univer-screens.js", "univer-mobile.js", "univer-motion.js", "univer-kit.js", "univer-style.js")
+
+        /** [SCRIPTS] concatenated (about 940 KB), kept for the process: activity recreations and document windows reuse it. */
+        @Volatile private var joined: String? = null
+
+        /** Reads and joins [SCRIPTS] once, off the main thread; later calls return the same text without suspending. */
+        private suspend fun modules(assets: AssetManager): String = joined ?: withContext(Dispatchers.IO) {
+            joined ?: SCRIPTS.joinToString("\n") { name -> assets.open(name).bufferedReader().use { it.readText() } }.also { joined = it }
+        }
     }
 }

@@ -17,6 +17,13 @@
     <color name="md_error_container">#FFDAD6</color>
     <color name="md_on_error_container">#410002</color>
     <color name="md_background">#F1F4F7</color>
+    <!-- The page placeholder repeats the site layer's own surfaces (univer-style.js tokens). -->
+    <color name="skeleton_surface">#FFFFFF</color>
+    <color name="skeleton_line">#DFE5EC</color>
+    <color name="skeleton_bar">#E9EEF4</color>
+    <color name="skeleton_tint">#E9F1FB</color>
+    <color name="skeleton_accent">#1B5FA6</color>
+    <color name="skeleton_on_accent">#5D8ABC</color>
     <color name="md_surface">#F7F9FC</color>
     <color name="md_on_surface">#16283B</color>
     <color name="md_surface_variant">#E0E4EC</color>

@@ -14,6 +14,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -37,6 +38,8 @@ class UpdateManager private constructor(private val context: Context) {
     private val preferences = AppPreferences(context)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val folder = File(context.cacheDir, "updates")
+    /** Clears what an earlier process left; an attempt waits for it, so the wipe cannot take that attempt's file. */
+    private val cleared = scope.launch { folder.deleteRecursively() }
     private val mutable = MutableStateFlow(load())
     val state = mutable.asStateFlow()
     private var work: Job? = null
@@ -45,8 +48,6 @@ class UpdateManager private constructor(private val context: Context) {
 
     /** The student went to allow installing from this app; the install continues on return, even after a restart. */
     val installWaiting get() = runCatching { preferences.updateResume }.getOrDefault(false)
-
-    init { scope.launch { folder.deleteRecursively() } }
 
     private fun load(): UpdateState {
         val current = UpdatePackage.installedVersion(context)
@@ -95,24 +96,36 @@ class UpdateManager private constructor(private val context: Context) {
         if (!begin(UpdatePhase.DOWNLOADING)) return
         mutable.update { it.copy(answered = true) }
         work = scope.launch {
-            val apk = File(folder, "app-$version.apk")
+            val coroutine = currentCoroutineContext()
+            var apk: File? = null
             try {
-                download(version, apk)
+                cleared.join()
+                // Cancel can leave an attempt blocked in a read; with its own file it cannot delete or truncate the retry's.
+                val file = attemptFile(folder, version).also { apk = it }
+                download(version, file)
+                coroutine.ensureActive()
                 mutable.update { it.copy(phase = UpdatePhase.INSTALLING) }
-                if (!UpdatePackage.sameApp(context, apk)) { apk.delete(); fail(UpdateFailure.SIGNATURE); return@launch }
-                commit(apk)
-            } catch (cancelled: CancellationException) { apk.delete(); throw cancelled }
-            catch (_: ChecksumMismatch) { apk.delete(); fail(UpdateFailure.VERIFY) }
-            catch (_: Exception) { apk.delete(); fail(UpdateFailure.DOWNLOAD) }
+                if (!UpdatePackage.sameApp(context, file)) { if (coroutine.isActive) fail(UpdateFailure.SIGNATURE); return@launch }
+                // Cancel can be pressed up to here: the file must not reach the installer after it.
+                coroutine.ensureActive()
+                commit(file)
+            } catch (cancelled: CancellationException) { throw cancelled }
+            // A cancelled attempt reports nothing: the state may already belong to the next one.
+            catch (_: ChecksumMismatch) { if (coroutine.isActive) fail(UpdateFailure.VERIFY) }
+            catch (_: InstallFailed) { if (coroutine.isActive) fail(UpdateFailure.INSTALL) }
+            catch (_: Exception) { if (coroutine.isActive) fail(UpdateFailure.DOWNLOAD) }
+            // The installer session keeps its own copy, so the cached file is not needed after commit either.
+            finally { apk?.delete() }
         }
     }
 
     private suspend fun download(version: String, apk: File) {
         val coroutine = currentCoroutineContext()
-        folder.mkdirs()
         val expected = client.checksum(version)
         val actual = apk.outputStream().use { output ->
-            client.download(version, output, { coroutine.ensureActive() }) { percent -> mutable.update { it.copy(progress = percent) } }
+            client.download(version, output, { coroutine.ensureActive() }) { percent ->
+                if (coroutine.isActive) mutable.update { it.copy(progress = percent) }
+            }
         }
         if (actual != expected) throw ChecksumMismatch()
     }
@@ -125,15 +138,23 @@ class UpdateManager private constructor(private val context: Context) {
             // After the app has installed itself once, Android 12+ can skip the confirmation.
             if (Build.VERSION.SDK_INT >= 31) setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
         }
-        session = installer.createSession(params)
-        installer.openSession(session).use { open ->
-            open.openWrite("base.apk", 0, apk.length()).use { output ->
-                apk.inputStream().use { it.copyTo(output) }
-                open.fsync(output)
+        val id = try { installer.createSession(params) } catch (e: Exception) { throw InstallFailed(e) }
+        session = id
+        try {
+            installer.openSession(id).use { open ->
+                open.openWrite("base.apk", 0, apk.length()).use { output ->
+                    apk.inputStream().use { it.copyTo(output) }
+                    open.fsync(output)
+                }
+                // The installer fills the status into this intent, so it has to stay mutable.
+                val flags = PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0)
+                open.commit(PendingIntent.getBroadcast(context, 0, Intent(context, UpdateInstallReceiver::class.java), flags).intentSender)
             }
-            // The installer fills the status into this intent, so it has to stay mutable.
-            val flags = PendingIntent.FLAG_UPDATE_CURRENT or (if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0)
-            open.commit(PendingIntent.getBroadcast(context, 0, Intent(context, UpdateInstallReceiver::class.java), flags).intentSender)
+        } catch (e: Exception) {
+            // Closing does not end a session: left open, it keeps its staged bytes. Cancel may have abandoned it already.
+            runCatching { installer.abandonSession(id) }
+            if (session == id) session = NO_SESSION
+            throw InstallFailed(e)
         }
     }
 
@@ -163,7 +184,6 @@ class UpdateManager private constructor(private val context: Context) {
 
     private fun finish(failure: UpdateFailure?) {
         session = NO_SESSION
-        scope.launch { folder.deleteRecursively() }
         mutable.update { it.copy(phase = UpdatePhase.IDLE, progress = 0, confirm = null, failure = failure) }
     }
 
@@ -176,6 +196,8 @@ class UpdateManager private constructor(private val context: Context) {
     }
 
     private class ChecksumMismatch : IOException()
+    /** The download was fine; the system installer refused or failed to take it. */
+    private class InstallFailed(cause: Throwable) : Exception(cause)
 
     companion object {
         private const val NO_SESSION = -1
@@ -187,3 +209,7 @@ class UpdateManager private constructor(private val context: Context) {
         }
     }
 }
+
+/** A new file for each download attempt, even when two attempts fetch the same version. */
+internal fun attemptFile(folder: File, version: String): File =
+    File.createTempFile("app-$version-", ".apk", folder.apply { mkdirs() })

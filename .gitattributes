@@ -1,0 +1,25 @@
+# One line ending for every text file: LF in the repository and in the working copy, on Windows too.
+# Before this file the tree mixed CRLF and LF, and an editor saving a file with the other ending turned
+# a one-line change into a diff of the whole file.
+* text=auto eol=lf
+
+# Windows command scripts need CRLF to run.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary files are never converted or diffed as text.
+*.jar binary
+*.png binary
+*.jpg binary
+*.webp binary
+*.apk binary
+*.aab binary
+*.jks binary
+*.keystore binary
+
+# Test documents are read byte for byte by the parsers under test: an RTF or a "Word" HTML file keeps the
+# line endings it was saved with.
+app/src/test/resources/documents/** -text
+app/src/androidTest/assets/documents/** -text
+# A copy of the site's jQuery served by the fixtures exactly as downloaded.
+app/src/androidTest/assets/site-jquery.js -text

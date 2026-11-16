@@ -38,8 +38,6 @@
 :root.univer-mobile .univer-app-trash.univer-app-trash-hot { border-style:solid; background:var(--u-danger,#b42318); color:#fff; transform:translate(-50%,0) scale(1.06); }
 :root.univer-mobile .univer-app-trash-icon { flex:0 0 auto; width:24px; height:24px; background:currentColor; -webkit-mask:var(--univer-trash-icon) center/contain no-repeat; mask:var(--univer-trash-icon) center/contain no-repeat; }
 :root.univer-mobile.univer-app-still .univer-app-trash { transition:none; }
-:root.univer-mobile .univer-app-quick:empty { display:block!important; }
-:root.univer-mobile .univer-app-quick:empty::before { content:attr(data-empty); display:block; padding:18px 16px; border:1px dashed var(--u-line-strong,#c4cfdb); border-radius:12px; background:var(--u-surface,#fff); color:var(--u-muted,#5b6b7c); font-size:15px; line-height:1.45; text-align:center; }
 :root.univer-mobile .univer-app-move>.univer-app-move-remove { color:var(--u-danger,#b42318)!important; border-color:#f0c9c5!important; }
 :root.univer-mobile .univer-app-move>.univer-app-move-remove::before { -webkit-mask-image:var(--univer-trash-icon)!important; mask-image:var(--univer-trash-icon)!important; transform:none!important; }
 :root.univer-mobile .univer-app-after-credentials { display:none!important; }
@@ -142,8 +140,6 @@
 :root.univer-mobile .univer-app-overview-done { opacity:.6; }
 :root.univer-mobile .univer-app-overview-now { margin:0 -12px!important; padding:10px 12px!important; border-radius:10px; background:var(--u-brand-soft,#e9f1fb); border-top-color:transparent!important; }
 :root.univer-mobile .univer-app-overview-state { flex:0 0 auto; padding:2px 10px; border-radius:999px; background:var(--u-surface-2,#f3f6f9); color:var(--u-muted,#5b6b7c); font-size:12px; font-weight:600; }
-:root.univer-mobile .univer-app-overview-now .univer-app-overview-state { background:var(--u-brand,#1b5fa6); color:#fff; }
-:root.univer-mobile .univer-app-overview-next .univer-app-overview-state { background:var(--u-teal-soft,#e3f3ef); color:var(--u-teal,#0f766e); }
 :root.univer-mobile .univer-app-overview-courses>li { align-items:center; gap:12px; }
 :root.univer-mobile .univer-app-overview-courses>li>.univer-app-overview-course-link { flex:1 1 160px; min-width:0; color:var(--u-brand,#1b5fa6)!important; font-size:15px; font-weight:500; text-decoration:none; }
 :root.univer-mobile .univer-app-overview-scores { display:flex; flex:0 1 auto; flex-wrap:wrap; justify-content:flex-end; gap:6px; }
@@ -161,8 +157,7 @@
 :root.univer-mobile .univer-app-overview-requests>li { align-items:center; }
 /* Two large study tabs; Е-услуги lives on the home screen as a tile. */
 :root.univer-mobile .univer-app-tabs>a.univer-app-tab-hidden { display:none!important; }
-:root.univer-mobile .univer-app-tabs>a.univer-app-tab-icon { height:44px!important; padding:0 20px!important; border-radius:10px!important; font-size:16px!important; font-weight:600!important; }
-:root.univer-mobile .univer-app-tabs>a.univer-app-tab-icon::before { width:20px!important; height:20px!important; }
+:root.univer-mobile .univer-app-tabs>a.univer-app-tab-icon { height:44px!important; padding:0 20px!important; border-radius:10px!important; font-size:16px!important; font-weight:600!important; }:root.univer-mobile .univer-app-tabs>a.univer-app-tab-icon::before { width:20px!important; height:20px!important; }
 :root.univer-mobile .univer-app-tabs>a.univer-app-tab-icon.active { background:var(--u-brand,#1b5fa6)!important; color:#fff!important; box-shadow:0 1px 2px rgba(16,40,70,.15); }
 :root.univer-mobile .univer-app-tabs>a.univer-app-tab-icon:focus-visible { outline:2px solid var(--u-brand,#1b5fa6); outline-offset:2px; }
 /* Services: a compact list; request rows open the request. */
@@ -192,6 +187,7 @@
 :root.univer-mobile #l4 td.ct.univer-app-panel-body img[src*="info"] { display:none!important; }
 :root.univer-mobile #l4 td.ct.univer-app-panel-body>b { display:block; margin:0 0 8px; color:var(--u-ink,#16283b); font-size:16px; font-weight:600; }
 :root.univer-mobile #l4 td.ct.univer-app-panel-body>b+br { display:none; }
+:root.univer-mobile #l4 td.ct.univer-app-panel-body>b.univer-app-inline-bold { display:inline; margin:0; font-size:inherit; }
 :root.univer-mobile #l4 td.ct.univer-app-panel-body ol.univer-app-list { padding:0!important; list-style:none!important; }
 :root.univer-mobile #l4 td.ct.univer-app-panel-body ol.univer-app-list>li { margin:0 0 8px!important; padding:10px 14px!important; border-left:3px solid #d97706; border-radius:8px; background:#fff8eb; color:var(--u-ink,#16283b)!important; }
 :root.univer-mobile #l4 td.ct.univer-app-panel-body ol.univer-app-list>li br:last-child { display:none; }

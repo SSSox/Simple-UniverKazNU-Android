@@ -9,14 +9,22 @@ import java.io.Closeable
 import java.io.InputStream
 import java.io.OutputStream
 import java.io.IOException
+import java.io.ByteArrayOutputStream
+import java.nio.ByteBuffer
+import java.nio.charset.Charset
+import java.nio.charset.CodingErrorAction
+import kotlin.io.encoding.Base64
 
 data class DownloadMetadata(val url: String, val disposition: String?, val mime: String?, val length: Long)
 class DownloadNeedsLogin : Exception()
 class DownloadAccessDenied : Exception()
+class DownloadTooLarge : IOException("Download exceeds size limit")
+/** The material is a teacher's link to [target], handed back unvisited: no Univer cookie leaves the site. */
+class DownloadIsLink(val target: String) : Exception()
 
 /** The validated response is the response saved to disk: no second GET and no unchecked redirects. */
 class DownloadResponse internal constructor(val metadata: DownloadMetadata, private val input: InputStream,
-    private val connection: HttpURLConnection) : Closeable {
+    private val connection: HttpURLConnection, private val maxBytes: Long, val prefix: ByteArray) : Closeable {
     fun saveTo(output: OutputStream, checkActive: () -> Unit = {}, progress: (Long, Long) -> Unit = { _, _ -> }) {
         val buffer = ByteArray(64 * 1024)
         var total = 0L
@@ -25,6 +33,7 @@ class DownloadResponse internal constructor(val metadata: DownloadMetadata, priv
             val count = input.read(buffer)
             if (count < 0) break
             checkActive()
+            if (count.toLong() > maxBytes - total) throw DownloadTooLarge()
             output.write(buffer, 0, count)
             total += count
             progress(total, metadata.length)
@@ -35,7 +44,7 @@ class DownloadResponse internal constructor(val metadata: DownloadMetadata, priv
     override fun close() { try { input.close() } finally { connection.disconnect() } }
 }
 
-class DownloadProbe(private val connect: (String) -> HttpURLConnection = {
+class DownloadProbe(private val maxBytes: Long = 1024L * 1024 * 1024, private val connect: (String) -> HttpURLConnection = {
     URL(it).openConnection() as HttpURLConnection
 }) {
     /** Suspending: a `Set-Cookie` may need the main thread, and blocking a download coroutine on it stalls the frame. */
@@ -57,7 +66,11 @@ class DownloadProbe(private val connect: (String) -> HttpURLConnection = {
                     setCookie(next, value)
                 if (status in listOf(301, 302, 303, 307, 308)) {
                     val target = URI(next).resolve(connection.getHeaderField("Location") ?: error("Missing redirect")).toString()
-                    require(SingleSignOnPolicy.sameService(url, target)) // Never send session cookies to another service.
+                    // Never send session cookies to another service.
+                    if (!SingleSignOnPolicy.sameService(url, target)) {
+                        if (SitePolicy.materialLink(url, target)) throw DownloadIsLink(target)
+                        throw IllegalArgumentException("Redirect to another service")
+                    }
                     next = target
                 } else {
                     val response = accept(connection, status, next)
@@ -95,22 +108,27 @@ class DownloadProbe(private val connect: (String) -> HttpURLConnection = {
         if (status == 213 || status == 401) throw DownloadNeedsLogin()
         if (status == 403) throw DownloadAccessDenied()
         check(status == 200) { "Download HTTP error" }
+        if (!connection.contentEncoding.isNullOrBlank() && !connection.contentEncoding.equals("identity", true))
+            throw IOException("Unexpected content encoding")
+        val lengthHeader = connection.getHeaderField("Content-Length")
+        val length = if (lengthHeader == null) -1L else lengthHeader.toLongOrNull()?.takeIf { it >= 0 }
+            ?: throw IOException("Invalid content length")
+        if (length > maxBytes) throw DownloadTooLarge()
         val mime = connection.contentType?.substringBefore(';')?.trim()
         val disposition = connection.getHeaderField("Content-Disposition")
         if (mime.equals("text/html", true) || mime.equals("application/xhtml+xml", true))
             throw DownloadNeedsLogin()
         val input = BufferedInputStream(connection.inputStream, 64 * 1024)
-        if (startsLikeLoginPage(input)) {
+        val prefix = readPrefix(input)
+        if (startsLikeLoginPage(prefix)) {
             input.close()
             throw DownloadNeedsLogin()
         }
-        val length = if (connection.contentEncoding.isNullOrBlank() || connection.contentEncoding.equals("identity", true))
-            connection.getHeaderField("Content-Length")?.toLongOrNull() ?: -1L else -1L
-        return DownloadResponse(DownloadMetadata(url, disposition, mime, length), input, connection)
+        return DownloadResponse(DownloadMetadata(url, disposition, mime, length), input, connection, maxBytes, prefix)
     }
 
     // Some expired sessions are mislabeled as binary attachments. Inspect only a bounded prefix, then rewind.
-    private fun startsLikeLoginPage(input: BufferedInputStream): Boolean {
+    private fun readPrefix(input: BufferedInputStream): ByteArray {
         input.mark(4096)
         val prefix = ByteArray(4096)
         var size = 0
@@ -120,35 +138,74 @@ class DownloadProbe(private val connect: (String) -> HttpURLConnection = {
             size += count
         }
         input.reset()
-        val beginning = String(prefix, 0, size, Charsets.UTF_8).trimStart('\uFEFF', ' ', '\r', '\n', '\t')
+        return prefix.copyOf(size)
+    }
+    private fun startsLikeLoginPage(prefix: ByteArray): Boolean {
+        val beginning = prefix.toString(Charsets.UTF_8).trimStart('\uFEFF', ' ', '\r', '\n', '\t')
         return Regex("^(?:<!doctype\\s+html|<html\\b|<head\\b|<body\\b|<form\\b)", RegexOption.IGNORE_CASE).containsMatchIn(beginning) ||
             beginning.contains("id=\"login_frm\"", true) || beginning.contains("id='login_frm'", true)
     }
 }
 
 object DownloadFileNames {
+    fun extension(name: String): String = name.substringAfterLast('.', "").lowercase(java.util.Locale.ROOT)
+        .takeIf { it.matches(Regex("(?=[a-z0-9]*[a-z])[a-z0-9]{1,8}")) }.orEmpty()
+
+    fun fromUrl(url: String): String = runCatching {
+        val last = URI(url).rawPath.orEmpty().substringAfterLast('/')
+        val decoded = URLDecoder.decode(last.replace("+", "%2B"), "UTF-8")
+        if (extension(decoded).isEmpty()) "Univer-document" else safe(decoded)
+    }.getOrDefault("Univer-document")
     fun fromDisposition(header: String?): String? {
         if (header == null) return null
         // RFC 5987 filename* takes priority over the often-ASCII filename fallback.
         val encoded = Regex("(?:^|;)\\s*filename\\*\\s*=\\s*\"?([^;\"]+)", RegexOption.IGNORE_CASE).find(header)?.groupValues?.get(1)
         encoded?.let {
             val parts = it.trim().split('\'', limit = 3)
-            if (parts.size == 3 && parts[0].equals("UTF-8", true))
-                runCatching { URLDecoder.decode(parts[2].replace("+", "%2B"), "UTF-8") }.getOrNull()?.let { name -> return safe(name) }
+            if (parts.size == 3)
+                runCatching { URLDecoder.decode(parts[2].replace("+", "%2B"), Charset.forName(parts[0]).name()) }.getOrNull()
+                    ?.takeIf { name -> name.isNotBlank() }?.let { name -> return safe(name) }
         }
         return Regex("(?:^|;)\\s*filename\\s*=\\s*(?:\"([^\"]*)\"|([^;]*))", RegexOption.IGNORE_CASE).find(header)
-            ?.let { safe(it.groupValues[1].ifEmpty { it.groupValues[2].trim() }) }
+            ?.let { it.groupValues[1].ifEmpty { it.groupValues[2].trim() } }?.takeIf { it.isNotBlank() }?.let { safe(decodeLegacy(it)) }
+    }
+
+    private fun decodeLegacy(value: String): String {
+        val word = Regex("^=\\?([^?]+)\\?([bqBQ])\\?([^?]*)\\?=$").matchEntire(value)
+        if (word != null) runCatching {
+            val bytes = if (word.groupValues[2].equals("b", true)) Base64.decode(word.groupValues[3]) else {
+                val text = word.groupValues[3].replace('_', ' ')
+                val result = ByteArrayOutputStream()
+                var i = 0
+                while (i < text.length) {
+                    if (text[i] == '=' && i + 2 < text.length) { result.write(text.substring(i + 1, i + 3).toInt(16)); i += 3 }
+                    else { result.write(text[i].code); i++ }
+                }
+                result.toByteArray()
+            }
+            String(bytes, Charset.forName(word.groupValues[1]))
+        }.getOrNull()?.let { return it }
+        var text = value
+        repeat(2) {
+            if (text.any { it.code > 255 } || text.none { it in "ÐÑÃÂ" }) return text
+            text = runCatching {
+                Charsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT).onUnmappableCharacter(CodingErrorAction.REPORT)
+                    .decode(ByteBuffer.wrap(text.toByteArray(Charsets.ISO_8859_1))).toString()
+            }.getOrNull() ?: return text
+        }
+        return text
     }
 
     fun safe(name: String): String {
         val cleaned = name.replace(Regex("[\\p{Cc}\\p{Cf}/\\\\:*?\"<>|]"), "_").trim(' ', '.')
-        val extension = cleaned.substringAfterLast('.', "").takeIf { it.length in 1..12 }
+        val extension = extension(cleaned).takeIf { it.isNotEmpty() }
         val base = if (extension == null) cleaned else cleaned.substringBeforeLast('.')
         var bounded = base.take(100)
         // File systems limit names in bytes. CJK/emoji can exceed that limit at 100 characters.
         while (bounded.toByteArray(Charsets.UTF_8).size > 200 || bounded.lastOrNull()?.isHighSurrogate() == true)
             bounded = bounded.dropLast(1)
-        return (bounded.ifBlank { "Univer-document" } + (extension?.let { ".$it" } ?: ""))
+        val result = bounded.ifBlank { "Univer-document" } + (extension?.let { ".$it" } ?: "")
+        return if (Regex("^(CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])(?:\\.|$)", RegexOption.IGNORE_CASE).containsMatchIn(result)) "_$result" else result
     }
 
     fun unique(name: String, suffix: String): String {

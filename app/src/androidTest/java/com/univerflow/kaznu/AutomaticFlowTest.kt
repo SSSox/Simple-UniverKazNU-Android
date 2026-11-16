@@ -131,10 +131,10 @@ class AutomaticFlowTest {
             assertEquals("\"1\"", eval("localStorage.getItem('fixture-notices')"))
             assertTrue("The real notice handler ran beneath the native loading screen", noticeWasCovered)
             awaitCondition { status == AutomationStatus.IDLE }
-            instrumentation.runOnMainSync {
-                assertEquals(android.view.View.GONE, fixtureBinding.noticeLoadingOverlay.visibility)
-                assertEquals(android.view.View.VISIBLE, web.visibility)
-            }
+            // The cover stops counting at once; the view itself takes a moment to fade away.
+            instrumentation.runOnMainSync { assertFalse(loading.covering) }
+            awaitCondition { fixtureBinding.noticeLoadingOverlay.visibility == android.view.View.GONE }
+            instrumentation.runOnMainSync { assertEquals(android.view.View.VISIBLE, web.visibility) }
 
             // Reopen with a still-active cookie: no new native credential entry or login submission.
             instrumentation.runOnMainSync { controller.open() }

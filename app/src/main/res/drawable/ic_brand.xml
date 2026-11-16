@@ -1,0 +1,6 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="48dp" android:height="48dp"
+    android:viewportWidth="48" android:viewportHeight="48">
+    <!-- The launcher icon's mark at the size of the drawer and sign-in badges. -->
+    <path android:fillColor="#00000000" android:strokeColor="#FFFFFF" android:strokeWidth="5.6" android:strokeLineCap="round"
+        android:pathData="M12,8 L12,27.2 C12,44 36,44 36,27.2 L36,8" />
+</vector>

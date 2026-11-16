@@ -64,8 +64,10 @@ object HtmlView {
             // A head ends at its end tag or where the body starts, even when the page forgets to close it.
             if (name == "head") return Regex("</head\\s*>|<body[\\s>]", RegexOption.IGNORE_CASE).find(source, end)
                 ?.let { if (it.value.startsWith("</")) it.range.last + 1 else it.range.first } ?: source.length
-            if (name in DROPPED) return skip(name, end)
-            startTag(name, attributes, source.getOrNull(end - 2) == '/')
+            val selfClosing = source.getOrNull(end - 2) == '/'
+            // <embed> never has an end tag and a self-closing <svg/> holds nothing: only the tag itself is dropped.
+            if (name in DROPPED) return if (name == "embed" || selfClosing) end else skip(name, end)
+            startTag(name, attributes, selfClosing)
             return end
         }
 

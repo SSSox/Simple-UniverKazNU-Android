@@ -36,21 +36,23 @@ internal data class CellRange(val firstRow: Int, val firstColumn: Int, val lastR
 internal class ColumnSpec(val first: Int, val last: Int, val width: Double?, val hidden: Boolean)
 
 /** One worksheet: cells by row and column (from 0), merged ranges, column widths and hidden rows. */
-internal class Sheet(val name: String) {
+internal class Sheet(val name: String, private val budget: CellBudget = CellBudget()) {
     val rows = TreeMap<Int, TreeMap<Int, SheetCell>>()
     val merges = mutableListOf<CellRange>()
     val columns = mutableListOf<ColumnSpec>()
     val hiddenRows = HashSet<Int>()
     var defaultWidth: Double? = null
-    /** The first row whose cells were left out past [CELL_LIMIT]: the sheet is shown up to the row before it. */
+    /** The first row whose cells were left out past [CELL_LIMIT] or the workbook's budget: the sheet is shown up to the row before it. */
     var truncatedAt: Int? = null
         private set
     private var count = 0
+    private val specs = HashMap<Int, ColumnSpec?>()
+    private var specsOf = 0
 
     fun put(row: Int, column: Int, cell: SheetCell) {
         if (row !in 0 until MAX_ROWS || column !in 0 until MAX_COLUMNS) return
         if (cell.value is CellValue.Text && cell.value.value.isEmpty()) return
-        if (count >= CELL_LIMIT) { truncatedAt = minOf(truncatedAt ?: row, row); return }
+        if (count >= CELL_LIMIT || !budget.take()) { truncatedAt = minOf(truncatedAt ?: row, row); return }
         count++
         rows.getOrPut(row) { TreeMap() }[column] = cell
     }
@@ -72,14 +74,24 @@ internal class Sheet(val name: String) {
     fun cell(row: Int, column: Int) = rows[row]?.get(column)
 
     /** The last column's spec wins, as in Excel's own reading of overlapping ranges. */
-    fun spec(column: Int) = columns.lastOrNull { column in it.first..it.last }
+    fun spec(column: Int): ColumnSpec? {
+        if (specsOf != columns.size) { specs.clear(); specsOf = columns.size }
+        if (column !in specs) specs[column] = columns.lastOrNull { column in it.first..it.last }
+        return specs[column]
+    }
 
     companion object {
         const val MAX_ROWS = 1_048_576
         const val MAX_COLUMNS = 16_384
         const val CELL_LIMIT = 500_000
+        const val WORKBOOK_LIMIT = 1_000_000
         const val MERGE_LIMIT = 20_000
     }
+}
+
+/** The cells all sheets of one workbook may still hold: a file of a thousand full sheets must not fill memory. */
+internal class CellBudget(private var left: Int = Sheet.WORKBOOK_LIMIT) {
+    fun take(): Boolean = left > 0 && run { left--; true }
 }
 
 /** The visible sheets of a workbook in tab order; [date1904] is the workbook's date system. */
@@ -200,12 +212,17 @@ internal class SheetHtml(private val labels: PreviewLabels) {
         // A merge is drawn at its first visible cell and spans only visible rows and columns.
         val anchors = HashMap<Long, Pair<CellRange, IntArray>>()
         val covered = HashSet<Long>()
+        // Merged ranges of a real sheet do not overlap, so together they fit the grid; what a file adds past that is not drawn.
+        var room = rows.size.toLong() * columns.size
         for (range in sheet.merges) {
             val visibleRows = rows.subList(firstAtLeast(rows, range.firstRow), firstAtLeast(rows, range.lastRow + 1))
             val visibleColumns = columns.subList(firstAtLeast(columns, range.firstColumn), firstAtLeast(columns, range.lastColumn + 1))
             if (visibleRows.isEmpty() || visibleColumns.isEmpty()) continue
             val key = key(visibleRows.first(), visibleColumns.first())
             if (key in covered || key in anchors) continue
+            val cells = visibleRows.size.toLong() * visibleColumns.size
+            if (cells > room) continue
+            room -= cells
             anchors[key] = range to intArrayOf(visibleRows.size, visibleColumns.size)
             for (row in visibleRows) for (column in visibleColumns) if (row != visibleRows.first() || column != visibleColumns.first()) covered += key(row, column)
         }

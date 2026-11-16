@@ -25,6 +25,27 @@ class AppPreferences(context: Context, name: String = "univer.preferences") {
     var autoLoginPaused: Boolean
         get() = preferences.getBoolean("autologin_paused", false)
         set(value) { check(preferences.edit().putBoolean("autologin_paused", value).commit()) }
+    val sessionClearPending: Boolean
+        get() = preferences.getBoolean("session_clear_pending", false)
+    var manualLogin: Boolean
+        get() = preferences.getBoolean("manual_login", false)
+        set(value) {
+            val write = preferences.edit().putBoolean("manual_login", value)
+            if (value) write.putBoolean("autologin_paused", false)
+            check(write.commit())
+        }
+
+    fun accountSaved() {
+        check(preferences.edit().putBoolean("autologin_paused", false).putBoolean("manual_login", false).commit())
+    }
+
+    fun beginSessionClear() {
+        check(preferences.edit().putBoolean("autologin_paused", true).putBoolean("session_clear_pending", true).putBoolean("manual_login", false).commit())
+    }
+
+    fun finishSessionClear() {
+        check(preferences.edit().putBoolean("session_clear_pending", false).commit())
+    }
     var mobileLayout: Boolean
         get() = preferences.getBoolean("mobile_layout", true)
         set(value) { check(preferences.edit().putBoolean("mobile_layout", value).commit()) }
@@ -35,6 +56,10 @@ class AppPreferences(context: Context, name: String = "univer.preferences") {
     var animations: Boolean
         get() = preferences.getBoolean("animations", true)
         set(value) { check(preferences.edit().putBoolean("animations", value).commit()) }
+    /** Links to other sites go to the system browser instead of the app's own link window. */
+    var externalLinks: Boolean
+        get() = preferences.getBoolean("external_links", false)
+        set(value) { check(preferences.edit().putBoolean("external_links", value).commit()) }
     /** The file viewer's "A4 page width": Word and web pages stop widening at an A4 sheet when zoomed out. */
     var previewPageA4: Boolean
         get() = preferences.getBoolean("preview_page_a4", true)

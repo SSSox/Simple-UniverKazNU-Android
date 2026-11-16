@@ -181,13 +181,22 @@
         if (v.frame) cancelAnimationFrame(v.frame);
         document.removeEventListener('keydown', keydown, true);
         window.removeEventListener('resize', resize);
+        var hint = null;
         mutate(function () {
-            if (v.home.parentNode) v.home.parentNode.replaceChild(v.table, v.home);
+            var box = v.home.parentNode;
+            if (box) {
+                box.replaceChild(v.table, v.home);
+                // The pass that ran while the box was empty hid its "Expand" hint, and a hidden button takes no focus.
+                // The table is back, so the hint shows again now; the adapter's next pass measures it as usual.
+                hint = box.__univerHint || null;
+                if (hint) hint.hidden = false;
+            }
             v.overlay.remove();
             document.documentElement.classList.remove('univer-app-table-viewing');
         });
-        var opener = v.home.parentNode ? null : document.querySelector('.univer-app-table-open');
-        try { (v.focus && v.focus.isConnected ? v.focus : opener)?.focus({preventScroll:true}); } catch (_) { }
+        // Focus returns to what opened the view, else to this table's own "Expand" (never another table's).
+        var opener = hint && hint.isConnected ? hint.querySelector('.univer-app-table-open') : null;
+        try { (v.focus && v.focus.isConnected && v.focus !== document.body ? v.focus : opener)?.focus({preventScroll:true}); } catch (_) { }
         return true;
     }
     // Original layout: the table goes home and every fitted table gets its own zoom back.

@@ -1,0 +1,8 @@
+{
+  "name": "univer-android-dom-tests",
+  "version": "2.4.0",
+  "private": true,
+  "license": "GPL-3.0-or-later",
+  "scripts": { "test": "node --test tests/dom/*.test.cjs" },
+  "devDependencies": { "jsdom": "22.1.0" }
+}

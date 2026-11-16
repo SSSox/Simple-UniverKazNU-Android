@@ -38,7 +38,9 @@ class DownloadTextIndex(context: Context) {
         val coroutine = currentCoroutineContext()
         val text = try { extract(record) { coroutine.ensureActive() } }
             catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { null } ?: return@withContext null
+            catch (_: Exception) { null }
+            // A file too large for memory has no searchable text; the search goes on with the others.
+            catch (_: OutOfMemoryError) { null } ?: return@withContext null
         folder.mkdirs()
         val output = runCatching { cached.startWrite() }.getOrNull()
         if (output != null) {

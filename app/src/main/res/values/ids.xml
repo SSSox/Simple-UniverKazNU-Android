@@ -1,4 +1,6 @@
 <resources>
     <item name="document_web" type="id" />
     <item name="viewer_table_web" type="id" />
+    <!-- Marks a view whose exit animation is running (see Motion). -->
+    <item name="motion_leaving" type="id" />
 </resources>

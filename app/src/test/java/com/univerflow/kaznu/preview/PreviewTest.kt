@@ -2,6 +2,7 @@ package com.univerflow.kaznu.preview
 
 import org.junit.Assert.*
 import org.junit.Test
+import org.xml.sax.helpers.DefaultHandler
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.util.zip.ZipEntry
@@ -95,6 +96,62 @@ class PreviewTest {
         val evil = """<?xml version="1.0"?><!DOCTYPE d [<!ENTITY x SYSTEM "file:///etc/hosts">]>""" + body("<w:p><w:r><w:t>&x;</w:t></w:r></w:p>").substringAfter("?>")
         val result = runCatching { DocxHtml.convert(ByteArrayInputStream(docx(evil))) }
         assertFalse(result.getOrNull().orEmpty().contains("localhost"))
+    }
+
+    @Test fun nestedEntitiesAreRefusedBeforeAnyParserExpandsThemInEveryEncodingItReads() {
+        // Android's parser ignores the DOCTYPE ban and expands internal entities, so the check cannot be left to it.
+        val prolog = """<?xml version="1.0" encoding="UTF-8"?><!-- a <b> in a comment --><!DOCTYPE w:document [<!ENTITY a "aaaaaaaa"><!ENTITY b "&a;&a;&a;&a;&a;&a;&a;&a;">]>"""
+        val bomb = prolog + body("<w:p><w:r><w:t>&b;</w:t></w:r></w:p>").substringAfter("?>")
+        val utf16 = bomb.replace("UTF-8", "UTF-16")
+        listOf(bomb.toByteArray(Charsets.UTF_8), byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()) + bomb.toByteArray(Charsets.UTF_8),
+            utf16.toByteArray(Charsets.UTF_16), byteArrayOf(0xFF.toByte(), 0xFE.toByte()) + utf16.toByteArray(Charsets.UTF_16LE),
+            utf16.toByteArray(Charsets.UTF_16LE), utf16.toByteArray(Charsets.UTF_16BE), ("\n " + bomb.substringAfter("?>")).toByteArray()).forEach { bytes ->
+            assertThrows(UnsupportedDocumentException::class.java) { SafeXml.parse(bytes, DefaultHandler()) }
+        }
+        assertThrows(UnsupportedDocumentException::class.java) { DocxHtml.convert(ByteArrayInputStream(docx(bomb))) }
+        // A declaration mentioned in text, in a comment or in character data is not one.
+        val mentioned = body("<w:p><w:r><w:t>&lt;!DOCTYPE html&gt; <![CDATA[<!DOCTYPE x>]]></w:t></w:r></w:p>").replaceFirst("?>", "?><!-- <!DOCTYPE c> -->")
+        assertEquals("<p>&lt;!DOCTYPE html&gt; &lt;!DOCTYPE x&gt;</p>", DocxHtml.convert(ByteArrayInputStream(docx(mentioned))))
+    }
+
+    @Test fun textBoxesAndGroupsSavedTwiceShowOnceInsideTheParagraphThatAnchorsThem() {
+        val chart = png + byteArrayOf(1)
+        val styles = """<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:styleId="1"><w:name w:val="heading 1"/></w:style></w:styles>"""
+        val relations = """<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+            <Relationship Id="rImage" Target="media/image1.png"/><Relationship Id="rChartPicture" Target="media/image2.png"/></Relationships>"""
+        val namespaces = """xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:v="urn:schemas-microsoft-com:vml"
+            xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" xmlns:wpg="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup"
+            xmlns:cx="http://schemas.microsoft.com/office/drawing/2014/chartex""""
+        // Word 2010 and later save a text box, shape or group for itself (Choice) and again in VML for older readers (Fallback).
+        fun alternate(requires: String, choice: String, fallback: String) =
+            "<mc:AlternateContent $namespaces><mc:Choice Requires=\"$requires\">$choice</mc:Choice><mc:Fallback>$fallback</mc:Fallback></mc:AlternateContent>"
+        val box = "<w:txbxContent><w:p><w:r><w:t>Штамп</w:t></w:r></w:p><w:tbl><w:tblPr><w:jc w:val=\"center\"/></w:tblPr>" +
+            "<w:tr><w:tc><w:p><w:r><w:t>Подпись</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:txbxContent>"
+        val html = DocxHtml.convert(ByteArrayInputStream(docx(body("""
+            <w:p><w:pPr><w:pStyle w:val="1"/></w:pPr><w:r><w:t>Титул</w:t></w:r><w:r><w:rPr><w:b/></w:rPr>${alternate("wps",
+                "<w:drawing><wps:wsp><wps:txbx>$box</wps:txbx></wps:wsp></w:drawing>",
+                "<w:pict><v:shape><v:textbox>$box</v:textbox></v:shape></w:pict>")}<w:t>после</w:t></w:r></w:p>
+            <w:p><w:r>${alternate("wpg", "<w:drawing><wpg:wgp><a:blip r:embed=\"rImage\"/></wpg:wgp></w:drawing>",
+                "<w:pict><v:group><v:shape><v:imagedata r:id=\"rImage\"/></v:shape></v:group></w:pict>")}</w:r></w:p>
+            <w:p><w:r>${alternate("cx1", "<w:drawing><cx:chart r:id=\"rChart\"/></w:drawing>",
+                "<w:drawing><a:blip r:embed=\"rChartPicture\"/></w:drawing>")}</w:r></w:p>"""), relations, styles,
+            mapOf("image1.png" to png, "image2.png" to chart))))
+        assertEquals(html, 1, Regex("Штамп").findAll(html).count())
+        assertEquals(1, Regex("Подпись").findAll(html).count())
+        // The heading keeps its level: neither the text box's paragraphs nor its table's alignment replace its style.
+        assertTrue(html, html.startsWith("<h1>Титул<p>Штамп</p>"))
+        assertTrue("The run holding the text box keeps its formatting after it", html.contains("<b>после</b></h1>"))
+        assertEquals("A grouped picture appears once", 2, html.split("base64,${WordHtml.base64(png)}\"").size)
+        // A chart type this view cannot draw shows the picture Word saved in its place.
+        assertEquals(2, html.split("base64,${WordHtml.base64(chart)}\"").size)
+    }
+
+    @Test fun aVoidEmbedOrASelfClosingDroppedElementKeepsTheRestOfAWebPage() {
+        assertEquals("<p>a</p><p>b</p>", HtmlView.html("<p>a</p><embed src=\"lecture.pdf\" type=\"application/pdf\"><p>b</p>".toByteArray()))
+        assertEquals("<p>a</p><p>b</p>", HtmlView.html("<p>a</p><embed src=video.mp4 /><p>b</p>".toByteArray()))
+        assertEquals("<p>a</p><p>b</p>", HtmlView.html("<p>a</p><svg width=\"10\"/><math/><p>b</p>".toByteArray()))
+        // A dropped element that is closed still loses its content.
+        assertEquals("<p>a</p><p>b</p>", HtmlView.html("<p>a</p><svg><text>x</text></svg><video src=v.mp4>Нет видео</video><p>b</p>".toByteArray()))
     }
 
     @Test fun textDecodingDetectsBomsUtf8AndWindows1251() {

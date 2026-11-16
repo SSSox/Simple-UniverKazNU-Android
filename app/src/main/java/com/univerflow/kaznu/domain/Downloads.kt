@@ -4,14 +4,37 @@ import java.util.Locale
 
 enum class DownloadState { RUNNING, COMPLETED, FAILED, CANCELED }
 
+/** Whether a saved file is still where it was saved. UNKNOWN when the storage gives no clear answer: such a file stays listed. */
+enum class FilePresence { PRESENT, GONE, UNKNOWN }
+
+/** How a check of a saved file is read; the storage queries themselves are in FileActions. */
+object FilePresenceRules {
+    /** A MediaStore row (Android 10+): gone without a row, or when its folder or name now differs from where it was saved. */
+    fun ofRow(found: Boolean, saved: String?, current: String?): FilePresence = when {
+        !found -> FilePresence.GONE
+        saved.isNullOrEmpty() || current.isNullOrEmpty() -> FilePresence.PRESENT
+        saved != current -> FilePresence.GONE
+        else -> FilePresence.PRESENT
+    }
+
+    /**
+     * A failed check: only "no such file" on mounted shared storage says that the file is gone. Android reports every
+     * failed open (a revoked storage permission, an I/O error) as FileNotFoundException, so its errno decides.
+     */
+    fun ofFailure(failure: Throwable, mounted: Boolean): FilePresence =
+        if (mounted && failure is java.io.FileNotFoundException && failure.message.orEmpty().let { "ENOENT" in it || "No such file or directory" in it })
+            FilePresence.GONE else FilePresence.UNKNOWN
+}
+
 enum class FileKind { PDF, WORD, EXCEL, POWERPOINT, IMAGE, TEXT, ARCHIVE, OTHER }
 
 /** Why a transfer did not complete. Only these codes are stored, never server text or URLs. */
-enum class DownloadFailure { LOGIN, ACCESS_DENIED, NETWORK, INTERRUPTED }
+enum class DownloadFailure { LOGIN, ACCESS_DENIED, NETWORK, INTERRUPTED, TOO_LARGE }
 
 /**
  * A file saved through the app: its local name and content URI only, never the URL, cookies or referer.
  * [key] is a one-way digest of the address ([DownloadKeys]) that recognises the same file downloaded again.
+ * [place] is where the file was saved in shared storage (folder and name, Android 10+), to notice it moved or renamed.
  */
 data class DownloadRecord(
     val id: String,
@@ -26,6 +49,7 @@ data class DownloadRecord(
     val source: String = "",
     val failure: DownloadFailure? = null,
     val key: String = "",
+    val place: String? = null,
 ) {
     val kind get() = FileKinds.of(fileName, mime)
     val progress: Int? get() = if (total > 0) (received * 100 / total).coerceIn(0, 100).toInt() else null
@@ -36,8 +60,8 @@ object FileKinds {
         val fromName = when (name.orEmpty().substringAfterLast('.', "").lowercase(Locale.ROOT)) {
             "pdf" -> FileKind.PDF
             "doc", "docx", "docm", "dot", "dotx", "dotm", "rtf", "odt" -> FileKind.WORD
-            "xls", "xlt", "xlsx", "xlsm", "csv", "ods" -> FileKind.EXCEL
-            "ppt", "pot", "pptx", "pptm", "pps", "ppsx", "odp" -> FileKind.POWERPOINT
+            "xls", "xlt", "xlsx", "xlsm", "xltx", "xltm", "csv", "ods" -> FileKind.EXCEL
+            "ppt", "pot", "pptx", "pptm", "pps", "ppsx", "ppsm", "potx", "potm", "odp" -> FileKind.POWERPOINT
             "png", "jpg", "jpeg", "gif", "bmp", "webp" -> FileKind.IMAGE
             "txt" -> FileKind.TEXT
             "zip", "rar", "7z" -> FileKind.ARCHIVE
@@ -64,16 +88,14 @@ object FileKinds {
         FileKind.OTHER -> "FILE"
     }
 
-    /** "Other" also covers text and archives. */
-    fun matchesFilter(record: DownloadRecord, filter: FileKind?): Boolean {
-        if (filter == null) return true
-        val actual = record.kind
-        return if (filter == FileKind.OTHER) actual in setOf(FileKind.OTHER, FileKind.TEXT, FileKind.ARCHIVE) else actual == filter
-    }
+    /** The filter chip a file belongs to: "Other" also covers text and archives, which have no chip of their own. */
+    fun filterKind(kind: FileKind): FileKind = if (kind == FileKind.TEXT || kind == FileKind.ARCHIVE) FileKind.OTHER else kind
+
+    fun matchesFilter(record: DownloadRecord, filter: FileKind?): Boolean = filter == null || filterKind(record.kind) == filter
 
     /** Every word must occur in the name or source; case is ignored and "ё" equals "е". */
     fun matchesQuery(record: DownloadRecord, query: String): Boolean {
-        val words = fold(query).trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+        val words = fold(query).trim().split(SPACES).filter { it.isNotEmpty() }
         if (words.isEmpty()) return true
         val text = fold(record.fileName + " " + record.source)
         return words.all { text.contains(it) }
@@ -87,7 +109,10 @@ object FileKinds {
      * "Социология (Системы … -6618): СРС 1. | СДО КазНУ …" (a Moodle page) becomes "Социология".
      */
     fun subject(record: DownloadRecord): String = record.source.substringBefore(" | ").substringBefore(" (").substringBefore(":")
-        .replace(Regex("\\s+"), " ").trim().take(80)
+        .replace(SPACES, " ").trim().take(80)
+
+    /** A file name as a line of the list or a title: the server's runs of spaces ("СРО  1.docx") read as one. */
+    fun title(name: String): String = name.replace(SPACES, " ").trim()
 
     fun matchesSubject(record: DownloadRecord, subject: String?) = subject == null || subject(record) == subject
 
@@ -112,6 +137,9 @@ object FileKinds {
     }
 
     private fun fold(value: String) = value.lowercase(Locale.ROOT).replace('ё', 'е')
+
+    /** Compiled once: a search runs it over every record on every keystroke. */
+    private val SPACES = Regex("\\s+")
 }
 
 /** Newest first and bounded. A transfer cannot outlive the process that ran it. */
@@ -161,7 +189,8 @@ object TextSearch {
     /** Lower case and "ё" → "е" without changing the length, so positions map back to the original text. */
     fun fold(value: String): String = buildString(value.length) { value.forEach { append(if (it == 'ё' || it == 'Ё') 'е' else it.lowercaseChar()) } }
 
-    private fun words(query: String) = fold(query).trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+    private val SPACES = Regex("\\s+")
+    private fun words(query: String) = fold(query).trim().split(SPACES).filter { it.isNotEmpty() }
 
     fun matches(folded: String, query: String) = words(query).let { list -> list.isNotEmpty() && list.any { folded.contains(it) } }
 

@@ -203,8 +203,9 @@ class TableViewQaTest {
             // Back again leaves the viewer.
             scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
             Thread.sleep(400)
+            // The viewer may already be gone: onActivity then throws instead of reporting it as finishing.
             var finishing = false
-            scenario.onActivity { finishing = it.isFinishing }
+            runCatching { scenario.onActivity { finishing = it.isFinishing } }
             assertTrue(finishing || scenario.state == androidx.lifecycle.Lifecycle.State.DESTROYED)
         }
 

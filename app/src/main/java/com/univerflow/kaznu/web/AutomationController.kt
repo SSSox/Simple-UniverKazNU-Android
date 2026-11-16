@@ -11,11 +11,9 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
 import org.json.JSONTokener
-import kotlin.coroutines.resume
 
 /** The page the site redirected to its login form; kept by the ViewModel so a rotation cannot lose it. */
 class ResumeTarget { var url: String? = null; var pending = false }
@@ -58,14 +56,19 @@ class AutomationController(private val web: WebView, private val model: UniverVi
     // An agreement failure belongs to the document it happened in: a new navigation (for example the login
     // form after the session ended) must not stay blocked by it.
     fun pageStarted() { generation++; watch?.cancel(); agreementFailed = false; pendingAgreement = null; presentation.apply() }
-    fun retry() { guard.retry(); resume() }
+    fun retry() { guard.retry(); resume(replacing = true) }
     fun handOffCompleted() { guard.authenticated() }
     /** [url] was replaced by the login form; null forgets it (the user went somewhere else). */
     fun resumeAfterLogin(url: String?) { resumeUrl = url; resumePending = false }
-    fun resume() {
+    /**
+     * [replacing]: the caller is loading another document, so the next page is observed and this one left alone:
+     * a login sent from it would be lost with it, and the fresh form would then read as a rejection. So the attempt in
+     * flight is dropped as well; its budget stays.
+     */
+    fun resume(replacing: Boolean = false) {
         running = true
         presentation.setEnabled(canRecover(), retry = canRecover())
-        observe()
+        if (replacing) { generation++; watch?.cancel(); guard.detach() } else observe()
     }
     fun pause() { running = false; generation++; watch?.cancel(); presentation.setEnabled(false) }
     fun close() {
@@ -98,6 +101,9 @@ class AutomationController(private val web: WebView, private val model: UniverVi
 
     fun applyLanguage(language: AppLanguage) {
         switches.clear()
+        // A flag click now would abort a login, dialog or agreement still waiting for the site's answer, and the fresh
+        // login form would read as a rejection. The language is saved: the observation switches once that has settled.
+        if (guard.pendingDocument != null || guard.pendingReauthentication != null || pendingAgreement != null) return
         switchingUntil = SystemClock.elapsedRealtime() + 2_000
         pageStarted()
         val epoch = generation
@@ -181,7 +187,9 @@ class AutomationController(private val web: WebView, private val model: UniverVi
             val step = settlePending(probe, document, now, round)
             if (step != Step.NEXT) return step
         }
-        val language = syncLanguage(probe, state.language, now)
+        // A sent login waits for its answer first (see applyLanguage); a pending dialog or agreement already waited above.
+        val language = if (automated && guard.pendingDocument != null) LanguageSync.MATCHED
+            else syncLanguage(probe, state.language, now)
         if (language == LanguageSync.SWITCHED) return Step.WAIT
         if (!automated) return Step.NEXT
         if (probe.optBoolean("loginPage")) return signIn(probe, document, now, round)
@@ -226,12 +234,12 @@ class AutomationController(private val web: WebView, private val model: UniverVi
         if (pending != null) {
             val outcome = probe.optString("reauthOutcome")
             if (probe.optString("reauthResultChallenge") == pending && outcome in listOf("success", "failure") &&
-                guard.reauthenticationResult(pending, outcome == "success")) report(AutomationStatus.IDLE)
+                guard.reauthenticationResult(pending, outcome == "success", now)) report(AutomationStatus.IDLE)
             else if (guard.reauthenticationTimedOut(now)) report(AutomationStatus.LOGIN_FAILED)
             else if (guard.pendingReauthentication != null) report(AutomationStatus.SIGNING_IN)
         }
-        // A refused or unanswered dialog does not prove the password wrong: the page is reloaded, and the ended
-        // session's full-page login form signs in once (see SessionGuard.rejectChallenge).
+        guard.continueOnNewDocument(document, now)
+        // A refused dialog can carry a stale key. A newer document continues after the recovery wait.
         if (probe.optBoolean("reauth")) { reauthenticate(probe, document, now); return recoverLater(round, now, Step.WAIT) }
         // A newly loaded page of the signed-in account ends a stall/failure stop.
         if (probe.optBoolean("authenticated") && guard.authenticatedPage(document)) report(AutomationStatus.IDLE)
@@ -263,7 +271,7 @@ class AutomationController(private val web: WebView, private val model: UniverVi
     private suspend fun reauthenticate(probe: JSONObject, document: String, now: Long) {
         when {
             probe.optInt("reauthAttempt") > 1 -> {
-                guard.reauthenticationRejected(document); report(AutomationStatus.LOGIN_FAILED)
+                guard.reauthenticationRejected(document, now); report(AutomationStatus.LOGIN_FAILED)
             }
             guard.blocked -> report(AutomationStatus.LOGIN_FAILED)
             guard.pendingReauthentication != null -> report(AutomationStatus.SIGNING_IN)
@@ -272,7 +280,8 @@ class AutomationController(private val web: WebView, private val model: UniverVi
                 val challenge = probe.getString("reauthChallenge")
                 if (credentials != null && guard.tryReauthenticate(challenge, now, document)) {
                     report(AutomationStatus.SIGNING_IN)
-                    val result = evaluate("JSON.stringify(window.__univerAutomationV1.reauthenticate(${quote(document)},${quote(challenge)},${quote(credentials.login)},${quote(credentials.password)}))")
+                    val result = evaluate(onSite("window.__univerAutomationV1.reauthenticate(${quote(document)},${quote(challenge)},${quote(credentials.login)},${quote(credentials.password)})"))
+                    if (result == "wait") guard.releaseReauthentication(challenge)
                     // The dialog's readonly login belongs to another account: never replace it.
                     if (result?.contains("account-mismatch") == true) { guard.stop(); report(AutomationStatus.LOGIN_FAILED) }
                 } else if (guard.blocked) report(AutomationStatus.LOGIN_FAILED)
@@ -315,7 +324,8 @@ class AutomationController(private val web: WebView, private val model: UniverVi
             }
             if (credentials != null && guard.tryLogin(document, now)) {
                 report(AutomationStatus.SIGNING_IN)
-                evaluate("JSON.stringify(window.__univerAutomationV1.login(${quote(document)},${quote(credentials.login)},${quote(credentials.password)}))")
+                val result = evaluate(onSite("window.__univerAutomationV1.login(${quote(document)},${quote(credentials.login)},${quote(credentials.password)})"))
+                if (result == "wait") guard.releaseLogin(document)
             } else if (guard.blocked || guard.loginBudgetExhausted(now)) report(AutomationStatus.LOGIN_FAILED)
             // The next login waits a minute after the previous one, then continues by itself.
             else if (credentials != null) report(AutomationStatus.SIGNING_IN)
@@ -374,7 +384,8 @@ class AutomationController(private val web: WebView, private val model: UniverVi
         report(AutomationStatus.NOTICE_CONFIRMING)
         if (!guard.canSubmitNotice(key, now)) return Step.NEXT
         val ready = if (probe.optBoolean("checked")) probe.optBoolean("submitEnabled")
-            else evaluate("JSON.stringify(window.__univerAutomationV1.prepareNotice(${quote(document)},${quote(appearance)}))") == "ready"
+            // A plain string result: evaluate() already removes the one JSON layer evaluateJavascript adds.
+            else evaluate("window.__univerAutomationV1.prepareNotice(${quote(document)},${quote(appearance)})") == "ready"
         if (round.epoch != generation || !currentCoroutineContext().isActive) return Step.STOP
         if (ready && !model.state.value.paused && !guard.blocked) {
             // Reserve BEFORE the click: a navigation can discard the JS callback.
@@ -414,15 +425,17 @@ class AutomationController(private val web: WebView, private val model: UniverVi
         return Step.NEXT
     }
 
-    private suspend fun evaluate(script: String): String? = withTimeoutOrNull(3_000) {
-        suspendCancellableCoroutine { continuation ->
-            web.evaluateJavascript(script) { result ->
-                if (continuation.isActive) continuation.resume(runCatching { JSONTokener(result).nextValue() as? String }.getOrNull())
-            }
-        }
-    }
+    /** The string a library call returned, or null for anything else or for no answer within 3 s. */
+    private suspend fun evaluate(script: String): String? = withTimeoutOrNull(3_000) { web.evaluate(script) }
+        ?.let { result -> runCatching { JSONTokener(result).nextValue() as? String }.getOrNull() }
 
-    private fun quote(value: String) = JSONObject.quote(value).replace("\u2028", "\\u2028").replace("\u2029", "\\u2029")
+    private fun quote(value: String) = jsString(value)
+
+    /**
+     * [call] carries the password, so the script itself checks where it runs: the page may have changed between the
+     * address check in Kotlin and the evaluation.
+     */
+    private fun onSite(call: String) = "(function(){return location.origin===${quote(SitePolicy.ORIGIN)}?$call:null})()"
 
     private companion object {
         /** A login form older than this is reloaded before the saved account is submitted to it. */

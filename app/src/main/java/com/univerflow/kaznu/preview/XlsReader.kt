@@ -46,9 +46,11 @@ internal object XlsReader {
                 }
                 at = body + length
             }
-            val result = sheets.filter { it.visible && it.worksheet }.mapNotNull { bound ->
+            val budget = CellBudget()
+            // One substream is one sheet, whatever number of names a damaged workbook gives it.
+            val result = sheets.filter { it.visible && it.worksheet }.distinctBy { it.position }.mapNotNull { bound ->
                 // A damaged worksheet is left out; the others still open.
-                try { Sheet(bound.name).also { sheet(bound.position, it) } } catch (_: UnsupportedDocumentException) { null }
+                try { Sheet(bound.name, budget).also { sheet(bound.position, it) } } catch (_: UnsupportedDocumentException) { null }
             }
             return Workbook(result, date1904)
         }
@@ -108,7 +110,8 @@ internal object XlsReader {
                     ROW -> if (bytes.u16(body + 12) and 0x20 != 0) sheet.hideRow(bytes.u16(body))
                     EOF -> return
                 }
-                if (type != FORMULA && type != STRING && type != CONTINUE) pendingFormula = null
+                // A shared, array or table formula's own record sits between the first cell's FORMULA and its STRING.
+                if (type != FORMULA && type != STRING && type != CONTINUE && type != SHRFMLA && type != ARRAY && type != TABLE) pendingFormula = null
                 at = body + length
             }
         }
@@ -243,6 +246,9 @@ internal object XlsReader {
             const val BOOLERR = 0x0205
             const val FORMULA = 0x0006
             const val STRING = 0x0207
+            const val SHRFMLA = 0x04BC
+            const val ARRAY = 0x0221
+            const val TABLE = 0x0236
             const val MERGEDCELLS = 0x00E5
             const val COLINFO = 0x007D
             const val STANDARDWIDTH = 0x0099

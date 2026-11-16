@@ -1,6 +1,7 @@
 package com.univerflow.kaznu.ui
 
 import android.os.SystemClock
+import android.view.View
 import android.view.ViewGroup
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
@@ -20,6 +21,9 @@ import kotlinx.coroutines.launch
 class LockUi(private val activity: AppCompatActivity, private val text: (Int) -> String) {
     private var screen: PinScreen? = null
     private var countdown: Job? = null
+    // The views beside the pad that it hid from accessibility services, with the setting each had before.
+    private val covered = ArrayList<Pair<View, Int>>()
+    private var coveredParent: ViewGroup? = null
 
     val isShowing get() = screen?.isAttachedToWindow == true
 
@@ -27,6 +31,35 @@ class LockUi(private val activity: AppCompatActivity, private val text: (Int) ->
         screen = it
         activity.addContentView(it, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         it.elevation = 100f
+        coverSiblings(it)
+    }
+
+    /**
+     * A covered view is still in the accessibility tree: without this, swiping past the last key reaches the toolbar,
+     * drawer and page under the pad, and a double tap activates them. Views already hidden (the locked page) stay as they are.
+     */
+    private fun coverSiblings(pad: View) {
+        val parent = pad.parent as? ViewGroup ?: return
+        for (index in 0 until parent.childCount) parent.getChildAt(index).takeIf { it !== pad }?.let(::cover)
+        // A message shown while the pad is up (a Snackbar that finds no closer parent) is added next to it later.
+        coveredParent = parent
+        parent.setOnHierarchyChangeListener(object : ViewGroup.OnHierarchyChangeListener {
+            override fun onChildViewAdded(parent: View, child: View) { if (child !== pad) cover(child) }
+            override fun onChildViewRemoved(parent: View, child: View) { covered.removeAll { it.first === child } }
+        })
+    }
+
+    private fun cover(view: View) {
+        if (view.importantForAccessibility == View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS) return
+        covered += view to view.importantForAccessibility
+        view.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+    }
+
+    private fun uncoverSiblings() {
+        coveredParent?.setOnHierarchyChangeListener(null)
+        coveredParent = null
+        covered.forEach { (view, previous) -> view.importantForAccessibility = previous }
+        covered.clear()
     }
 
     /** The Back button: a closeable screen closes, the unlock screen sends the app to the background. */
@@ -36,10 +69,15 @@ class LockUi(private val activity: AppCompatActivity, private val text: (Int) ->
         return true
     }
 
-    fun hide() {
+    /** [animated]: the pad fades off the page it covered; closing the Activity removes it at once. */
+    fun hide(animated: Boolean = false) {
         countdown?.cancel(); countdown = null
-        screen?.let { (it.parent as? ViewGroup)?.removeView(it) }
+        // At once, not after the fade: the unlock screen shows the page again right after this returns.
+        uncoverSiblings()
+        val view = screen ?: return
         screen = null
+        val remove = { (view.parent as? ViewGroup)?.removeView(view); Unit }
+        if (animated) Motion.leave(view, remove) else remove()
     }
 
     private fun clock(milliseconds: Long): String {
@@ -47,8 +85,13 @@ class LockUi(private val activity: AppCompatActivity, private val text: (Int) ->
         return "%d:%02d".format(seconds / 60, seconds % 60)
     }
 
-    /** Disables the keys and counts the wait down; the keys return when it is over. */
-    private fun wait(view: PinScreen, milliseconds: Long) {
+    private fun wrongPinTexts() = WrongPinTexts(text(R.string.lock_wrong_pin), text(R.string.lock_last_attempt), text(R.string.lock_wait))
+
+    /**
+     * Disables the keys and counts the wait down; the keys return when it is over. [attemptsLeft], when known, stays on
+     * screen through the wait and after it, so the last attempt before the wipe is never a surprise.
+     */
+    private fun wait(view: PinScreen, milliseconds: Long, attemptsLeft: Int? = null) {
         countdown?.cancel()
         val deadline = SystemClock.elapsedRealtime() + milliseconds
         view.setInputEnabled(false)
@@ -56,10 +99,10 @@ class LockUi(private val activity: AppCompatActivity, private val text: (Int) ->
             while (true) {
                 val left = deadline - SystemClock.elapsedRealtime()
                 if (left <= 0) break
-                view.showMessage(text(R.string.lock_wait).format(clock(left)))
+                view.showMessage(wrongPinTexts().duringWait(clock(left), attemptsLeft))
                 delay(500)
             }
-            view.showMessage(null)
+            view.showMessage(attemptsLeft?.let { wrongPinTexts().afterWrongPin(it) })
             view.setInputEnabled(true)
         }
     }
@@ -80,7 +123,7 @@ class LockUi(private val activity: AppCompatActivity, private val text: (Int) ->
         view.reset(); view.setInputEnabled(true)
         view.onBiometric = onBiometric
         view.onForgot = onForgot
-        view.onClose = { hide(); onClose() }
+        view.onClose = { hide(animated = true); onClose() }
         view.onComplete = { pin ->
             activity.lifecycleScope.launch {
                 view.setInputEnabled(false)
@@ -89,13 +132,13 @@ class LockUi(private val activity: AppCompatActivity, private val text: (Int) ->
                 catch (_: Exception) { UnlockResult.Unavailable }
                 when (result) {
                     is UnlockResult.Success -> {
-                        if (!keepOpen) hide()
+                        if (!keepOpen) { view.succeed(); hide(animated = true) }
                         onVerified(pin.copyOf())
                     }
                     is UnlockResult.WrongPin -> {
                         view.shake(); view.reset()
-                        if (result.waitMs > 0) wait(view, result.waitMs)
-                        else { view.showMessage(text(R.string.lock_wrong_pin).format(result.attemptsLeft)); view.setInputEnabled(true) }
+                        if (result.waitMs > 0) wait(view, result.waitMs, result.attemptsLeft)
+                        else { view.showMessage(wrongPinTexts().afterWrongPin(result.attemptsLeft)); view.setInputEnabled(true) }
                     }
                     is UnlockResult.WaitRequired -> { view.shake(); view.reset(); wait(view, result.remainingMs) }
                     UnlockResult.Wiped -> { hide(); onWiped() }
@@ -121,7 +164,7 @@ class LockUi(private val activity: AppCompatActivity, private val text: (Int) ->
             view.reset(); view.setInputEnabled(true)
         }
         start()
-        view.onClose = { first?.fill('\u0000'); hide(); onClose() }
+        view.onClose = { first?.fill('\u0000'); hide(animated = true); onClose() }
         view.onComplete = { pin ->
             val earlier = first
             if (earlier == null) {
@@ -145,12 +188,26 @@ class LockUi(private val activity: AppCompatActivity, private val text: (Int) ->
                     val stored = try { accept(pin) } catch (cancelled: CancellationException) { pin.fill('\u0000'); throw cancelled }
                     catch (_: Exception) { false }
                     pin.fill('\u0000'); earlier.fill('\u0000'); first = null
-                    if (stored) hide() else { start(); view.showMessage(text(R.string.storage_error)) }
+                    if (stored) { view.succeed(); hide(animated = true) } else { start(); view.showMessage(text(R.string.storage_error)) }
                 }
             } else {
                 view.shake(); pin.fill('\u0000')
                 start(); view.showMessage(text(R.string.lock_mismatch))
             }
         }
+    }
+}
+
+/**
+ * What the pad says after a wrong PIN, from texts already in the app's language: [wrongPin] takes the attempts left,
+ * [wait] the time left; [lastAttempt] warns that the next wrong PIN erases the saved account.
+ */
+internal class WrongPinTexts(val wrongPin: String, val lastAttempt: String, val wait: String) {
+    fun afterWrongPin(attemptsLeft: Int): String = if (attemptsLeft == 1) lastAttempt else wrongPin.format(attemptsLeft)
+
+    /** The countdown, with the attempts left under it when they are known. */
+    fun duringWait(clock: String, attemptsLeft: Int?): String {
+        val countdown = wait.format(clock)
+        return if (attemptsLeft == null) countdown else countdown + "\n" + afterWrongPin(attemptsLeft)
     }
 }

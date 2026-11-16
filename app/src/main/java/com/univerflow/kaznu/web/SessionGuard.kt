@@ -29,9 +29,10 @@ class SessionGuard(val loginTimeout: Long = 25_000, private val reauthentication
     // A timeout proves nothing about the password: a later document may try again within the budget.
     private var ambiguous = false
     private var blockedDocument: String? = null
+    private var blockedAt: Long? = null
     private var reauthenticationDocument: String? = null
     private val recovery = RecoveryBackoff()
-    private var refusedChallenges = 0
+    private var loginRefusals = 0
 
     /**
      * A stop that a fresh page of the site ends by itself: a stalled or refused attempt, not the login form's
@@ -40,33 +41,32 @@ class SessionGuard(val loginTimeout: Long = 25_000, private val reauthentication
     val recoverable get() = blocked && ambiguous && !stopped
 
     /** The wait before the next automatic reload of a page whose automation could not finish. */
-    fun recoveryDelay(now: Long) = recovery.delay(now)
+    fun recoveryDelay(now: Long) = maxOf(recovery.delay(now), if (recoverable) (blockedAt ?: now) + 60_000 - now else 0)
     fun recovering(now: Long) = recovery.spend(now)
     val recoveries get() = recovery.attempts
     /** A signed-in page without pending forms: the next failure is recovered quickly again. */
     fun recovered() = recovery.reset()
 
-    private fun block(document: String?, timeout: Boolean) {
+    private fun block(document: String?, now: Long, timeout: Boolean) {
         blocked = true
         ambiguous = timeout
         blockedDocument = document
+        blockedAt = now
     }
 
     /**
      * The site refused an AJAX challenge. A stale dialog key is refused even for a correct password, so automation stops
      * but the full-page form may still sign in once; earlier full-page failures and stops stay as they are.
      */
-    private fun rejectChallenge(document: String?) {
+    private fun rejectChallenge(document: String?, now: Long) {
         if (blocked && !ambiguous) return
-        if (!blocked) refusedChallenges++
-        // Refused again with no sign-in in between that proved the password: that is the password's rejection.
-        block(document, timeout = refusedChallenges < 2)
+        if (!blocked || document != blockedDocument) block(document, now, timeout = true)
     }
 
-    fun reauthenticationRejected(document: String) {
+    fun reauthenticationRejected(document: String, now: Long = lastReauthentication ?: 0) {
         pendingReauthentication = null
         lateReauthentication = null
-        rejectChallenge(document)
+        rejectChallenge(document, now)
     }
 
     private fun loginBudget(now: Long): Boolean {
@@ -80,10 +80,15 @@ class SessionGuard(val loginTimeout: Long = 25_000, private val reauthentication
         return logins.size >= 3
     }
 
-    private fun liftable(document: String) = blocked && ambiguous && !stopped && document != blockedDocument
+    private fun liftable(document: String, now: Long) = blocked && ambiguous && !stopped &&
+        document != blockedDocument && now - (blockedAt ?: now) >= 60_000
+
+    fun continueOnNewDocument(document: String, now: Long) {
+        if (liftable(document, now)) { blocked = false; ambiguous = false; blockedDocument = null; blockedAt = null }
+    }
 
     fun tryLogin(document: String, now: Long): Boolean {
-        if (liftable(document) && loginBudget(now)) { blocked = false; ambiguous = false; blockedDocument = null }
+        if (loginBudget(now)) continueOnNewDocument(document, now)
         if (blocked || pendingDocument != null || pendingReauthentication != null) return false
         // A session that ends again soon after a successful login waits for the budget instead of
         // stopping for good: only a confirmed failure (below) needs the user's Retry.
@@ -100,15 +105,32 @@ class SessionGuard(val loginTimeout: Long = 25_000, private val reauthentication
     fun loginStillVisible(document: String, now: Long): Boolean {
         if (pendingDocument != null) {
             // A new login document after the submit is the site's rejection; the same one is a stall.
-            if (pendingDocument != document) { block(document, timeout = false); pendingDocument = null }
-            else if (now - (lastLogin ?: now) > loginTimeout) { block(document, timeout = true); pendingDocument = null }
+            val submitted = pendingDocument
+            if (submitted != document) {
+                pendingDocument = null
+                if (++loginRefusals >= 2) stop() else block(submitted, now, timeout = true)
+            }
+            else if (now - (lastLogin ?: now) > loginTimeout) { block(document, now, timeout = true); pendingDocument = null }
         }
-        return blocked && !liftable(document)
+        return blocked && !liftable(document, now)
     }
 
     fun authenticated() {
-        if (pendingDocument != null) refusedChallenges = 0
+        loginRefusals = 0
         pendingDocument = null
+    }
+
+    /** The script verified that the form was no longer ready and no click took place. */
+    fun releaseLogin(document: String) {
+        if (pendingDocument != document) return
+        pendingDocument = null; lastLogin = null
+        if (logins.isNotEmpty()) logins.removeLast()
+    }
+
+    fun releaseReauthentication(challenge: String) {
+        if (pendingReauthentication != challenge) return
+        pendingReauthentication = null; lastReauthentication = null
+        if (reauthenticationAttempts.isNotEmpty()) reauthenticationAttempts.removeLast()
     }
 
     /**
@@ -117,11 +139,12 @@ class SessionGuard(val loginTimeout: Long = 25_000, private val reauthentication
      */
     fun authenticatedPage(document: String): Boolean {
         if (!blocked || stopped || document == blockedDocument) return false
-        blocked = false; ambiguous = false; blockedDocument = null
+        blocked = false; ambiguous = false; blockedDocument = null; blockedAt = null; loginRefusals = 0
         return true
     }
 
     fun tryReauthenticate(challenge: String, now: Long, document: String = challenge): Boolean {
+        continueOnNewDocument(document, now)
         if (blocked || pendingReauthentication != null) return false
         if (challenge in completedReauthentications) return false
         while (reauthenticationAttempts.isNotEmpty() && now - reauthenticationAttempts.first() >= 60_000)
@@ -138,18 +161,17 @@ class SessionGuard(val loginTimeout: Long = 25_000, private val reauthentication
     }
 
     /** True when this result lifted a stop that an unanswered (late) request had caused. */
-    fun reauthenticationResult(challenge: String, success: Boolean): Boolean {
+    fun reauthenticationResult(challenge: String, success: Boolean, now: Long = lastReauthentication ?: 0): Boolean {
         val late = lateReauthentication == challenge
         if (pendingReauthentication != challenge && !late) return false
         pendingReauthentication = null
         lateReauthentication = null
-        if (!success) { rejectChallenge(reauthenticationDocument); return false }
-        refusedChallenges = 0
+        if (!success) { rejectChallenge(reauthenticationDocument, now); return false }
         completedReauthentications.add(challenge)
         if (completedReauthentications.size > 64) completedReauthentications.remove(completedReauthentications.first())
         // A slow but verified answer proves the password: only the timeout's own stop is lifted.
         if (late && blocked && ambiguous && !stopped) {
-            blocked = false; ambiguous = false; blockedDocument = null
+            blocked = false; ambiguous = false; blockedDocument = null; blockedAt = null
             return true
         }
         return false
@@ -159,7 +181,7 @@ class SessionGuard(val loginTimeout: Long = 25_000, private val reauthentication
         if (pendingReauthentication != null && now - (lastReauthentication ?: now) > reauthenticationTimeout) {
             lateReauthentication = pendingReauthentication
             pendingReauthentication = null
-            block(reauthenticationDocument, timeout = true)
+            block(reauthenticationDocument, now, timeout = true)
         }
         return blocked
     }
@@ -182,13 +204,23 @@ class SessionGuard(val loginTimeout: Long = 25_000, private val reauthentication
     fun agreementSubmitted(key: String, now: Long) = agreements.submitted(key, now)
     fun observeAgreements(present: Boolean, now: Long) = agreements.observe(present, now)
 
+    /**
+     * The student's Retry or Sign in: a block or a stop is lifted, but the login and reauthentication windows and the
+     * refusal count stay, so pressing it again and again with a wrong saved password never sends more than three logins
+     * in ten minutes, and after two refusals the next refusal stops at once. Other credentials start afresh ([reset]).
+     */
     fun retry() {
         retryVersion++
         blocked = false; pendingDocument = null; pendingReauthentication = null; lateReauthentication = null
         lastLogin = null; lastReauthentication = null
-        stopped = false; ambiguous = false; blockedDocument = null; reauthenticationDocument = null; refusedChallenges = 0
-        logins.clear(); reauthenticationAttempts.clear(); completedReauthentications.clear()
+        stopped = false; ambiguous = false; blockedDocument = null; blockedAt = null; reauthenticationDocument = null
+        completedReauthentications.clear()
         notices.reset(); agreements.reset(); recovery.reset()
+    }
+    /** Another login or password was saved: nothing the old credentials did counts against the new ones. */
+    fun reset() {
+        retry()
+        loginRefusals = 0; logins.clear(); reauthenticationAttempts.clear()
     }
     fun stop() { blocked = true; stopped = true; pendingDocument = null; pendingReauthentication = null; lateReauthentication = null }
 

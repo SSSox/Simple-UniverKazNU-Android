@@ -122,6 +122,7 @@ internal object PptxReader {
         val media = HashMap<String, String>()
         var partsTotal = 0L
         var entries = 0
+        val passed = PassedOver(checkActive)
         java.util.zip.ZipInputStream(input).use { zip ->
             while (true) {
                 checkActive()
@@ -141,6 +142,7 @@ internal object PptxReader {
                         image?.let { store.add(WordHtml.imageType(name)!!, it) }?.let { media[name] = it }
                     }
                 }
+                passed.rest(zip)
             }
         }
         val presentation = parts["ppt/presentation.xml"] ?: throw UnsupportedDocumentException("Not a PowerPoint presentation")

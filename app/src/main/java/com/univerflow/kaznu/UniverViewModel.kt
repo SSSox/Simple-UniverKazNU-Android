@@ -36,7 +36,12 @@ data class AppState(val ready: Boolean = false, val language: AppLanguage = AppL
     /** The protected account exists but the PIN (or biometrics) has not opened it in this run: nothing is loaded or shown. */
     val locked: Boolean = false,
     val theme: AppTheme = AppTheme.SYSTEM,
-    val notices: List<SiteNotice> = emptyList())
+    val notices: List<SiteNotice> = emptyList(),
+    val manualLogin: Boolean = false,
+    /** Links to other sites open in the system browser, not in the app's link window. */
+    val externalLinks: Boolean = false) {
+    val canBrowse: Boolean get() = hasCredentials || manualLogin
+}
 
 class UniverViewModel(private val repository: SessionRepository) : ViewModel() {
     private val mutableState = MutableStateFlow(AppState())
@@ -51,7 +56,7 @@ class UniverViewModel(private val repository: SessionRepository) : ViewModel() {
     val singleSignOnGuard = SessionGuard(loginTimeout = 80_000, reauthenticationTimeout = 80_000)
     /**
      * The site session must still be wiped after an accepted logout or credential change; the Activity clears it once
-     * done. It survives recreation, so a rotation cannot leave the previous account signed in.
+     * done. The storage marker also survives process death, before the next screen opens the site.
      */
     var sessionClearPending = false
         private set
@@ -73,10 +78,12 @@ class UniverViewModel(private val repository: SessionRepository) : ViewModel() {
         try {
             val loaded = repository.load()
             credentials = loaded.credentials
+            sessionClearPending = loaded.sessionClearPending
             persistedLanguage = loaded.language
             mutableState.value = AppState(true, loaded.language, loaded.credentials != null || loaded.lock.enabled, loaded.paused,
                 loaded.storageError, loaded.mobileLayout, loaded.textZoom, loaded.animations, loaded.shortcuts,
-                loaded.lock, locked = loaded.lock.enabled, theme = loaded.theme, notices = loaded.notices)
+                loaded.lock, locked = loaded.lock.enabled, theme = loaded.theme, notices = loaded.notices, manualLogin = loaded.manualLogin,
+                externalLinks = loaded.externalLinks)
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) {
             guard.stop()
@@ -105,18 +112,21 @@ class UniverViewModel(private val repository: SessionRepository) : ViewModel() {
     suspend fun save(login: String, password: String) = sessionChange {
         val next = Credentials(login.trim(), password)
         require(next.login.isNotEmpty() && next.password.isNotEmpty())
-        repository.saveCredentials(next)
         val previous = credentials
-        if (previous == null || previous.login != next.login || previous.password != next.password) sessionClearPending = true
+        val changed = previous == null || previous.login != next.login || previous.password != next.password
+        if (changed) {
+            repository.beginSessionClear()
+            sessionClearPending = true
+        }
+        repository.saveCredentials(next)
+        credentials = next
+        if (changed) { guard.reset(); singleSignOnGuard.reset() } else { guard.retry(); singleSignOnGuard.retry() }
+        mutableState.update { it.copy(hasCredentials = true, paused = false, storageError = false, manualLogin = false) }
         // Another account's notifications are not this one's.
         if (previous?.login != next.login) {
             noticeSession++
             if (mutableState.value.notices.isNotEmpty() || noticesClearPending) clearNotices()
         } else if (noticesClearPending) clearNotices() // a logout whose clear failed: retry it now
-        credentials = next
-        guard.retry()
-        singleSignOnGuard.retry()
-        mutableState.update { it.copy(hasCredentials = true, paused = false, storageError = false) }
     }
 
     suspend fun setLanguage(language: AppLanguage) = retained {
@@ -142,14 +152,22 @@ class UniverViewModel(private val repository: SessionRepository) : ViewModel() {
         mutableState.update { it.copy(paused = true) }
     }
 
+    /** Opens the real site's login without asking the vault for a password. The browser keeps its normal session. */
+    suspend fun startManualLogin() = sessionChange {
+        check(!state.value.hasCredentials && !state.value.lock.enabled && !sessionClearPending)
+        repository.setManualLogin(true)
+        guard.stop(); singleSignOnGuard.stop()
+        mutableState.update { it.copy(manualLogin = true, paused = false, storageError = false) }
+    }
+
     /** Logout (or removal of the saved account) as one accepted transaction; the caller then wipes the session. */
     suspend fun endSession(delete: Boolean) = sessionChange {
         guard.stop()
         singleSignOnGuard.stop()
-        repository.setAutoLoginPaused(true)
+        repository.beginSessionClear()
         sessionClearPending = true
         resumeTarget.url = null; resumeTarget.pending = false
-        mutableState.update { it.copy(paused = true) }
+        mutableState.update { it.copy(paused = true, manualLogin = false) }
         clearNotices()
         if (delete) {
             repository.deleteCredentials()
@@ -160,7 +178,10 @@ class UniverViewModel(private val repository: SessionRepository) : ViewModel() {
         }
     }
 
-    fun sessionCleared() { sessionClearPending = false }
+    suspend fun sessionCleared() = sessionChange {
+        repository.finishSessionClear()
+        sessionClearPending = false
+    }
 
     suspend fun setMobileLayout(enabled: Boolean) = retained {
         changes.withLock {
@@ -181,6 +202,13 @@ class UniverViewModel(private val repository: SessionRepository) : ViewModel() {
         changes.withLock {
             repository.setAnimations(enabled)
             mutableState.update { it.copy(animations = enabled) }
+        }
+    }
+
+    suspend fun setExternalLinks(enabled: Boolean) = retained {
+        changes.withLock {
+            repository.setExternalLinks(enabled)
+            mutableState.update { it.copy(externalLinks = enabled) }
         }
     }
 
@@ -211,7 +239,7 @@ class UniverViewModel(private val repository: SessionRepository) : ViewModel() {
     suspend fun applyNoticeScan(scan: NoticeScan, session: Int = noticeSession): List<SiteNotice> = retained {
         changes.withLock {
             val state = mutableState.value
-            if (session != noticeSession || !state.hasCredentials || state.paused || state.locked) return@withLock emptyList()
+            if (session != noticeSession || !state.canBrowse || state.paused || state.locked) return@withLock emptyList()
             val next = Notices.merge(state.notices, scan, System.currentTimeMillis())
             if (next == state.notices && !noticesClearPending) return@withLock emptyList()
             repository.setNotices(next)
@@ -248,6 +276,13 @@ class UniverViewModel(private val repository: SessionRepository) : ViewModel() {
         catch (_: Exception) { true }
     }
 
+    /**
+     * Loading the site again. A student who signed out stays signed out through Retry, Refresh and a restored page:
+     * only their own "Sign in" ([signIn]) ends that pause. A stop is lifted so sign-in can try again after a failure,
+     * but the attempt limits keep counting (SessionGuard.retry): a wrong saved password is not resent on every press.
+     */
+    suspend fun retrySignIn(signIn: Boolean) { if (signIn || !state.value.paused) resumeAutoLogin() }
+
     suspend fun resumeAutoLogin() = sessionChange {
         repository.setAutoLoginPaused(false)
         guard.retry()
@@ -282,7 +317,18 @@ class UniverViewModel(private val repository: SessionRepository) : ViewModel() {
         return result
     }
 
-    suspend fun unlockWithPin(pin: CharArray): UnlockResult = sessionChange { handle(repository.unlockWithPin(pin)) }
+    /**
+     * The vault reads private copies of the entered digits, taken before anything suspends and erased once the change
+     * is over. The change runs in viewModelScope and outlives a recreated screen (rotation, theme or language change),
+     * which erases its own arrays when its work is cancelled: reading those, a check would guess, or store, blank digits.
+     */
+    private suspend fun <T> withDigits(first: CharArray, second: CharArray?, action: suspend (CharArray, CharArray?) -> T): T {
+        val one = first.copyOf()
+        val two = second?.copyOf()
+        return sessionChange { try { action(one, two) } finally { one.fill('\u0000'); two?.fill('\u0000') } }
+    }
+
+    suspend fun unlockWithPin(pin: CharArray): UnlockResult = withDigits(pin, null) { digits, _ -> handle(repository.unlockWithPin(digits)) }
 
     suspend fun unlockWithBiometric(cipher: javax.crypto.Cipher): UnlockResult = sessionChange { handle(repository.unlockWithBiometric(cipher)) }
 
@@ -305,16 +351,17 @@ class UniverViewModel(private val repository: SessionRepository) : ViewModel() {
     }
 
     /** Protects the saved account with [pin]; the account must be unlocked (entered or opened) at this moment. */
-    suspend fun enableLock(pin: CharArray) = sessionChange {
+    suspend fun enableLock(pin: CharArray) = withDigits(pin, null) { digits, _ ->
         val current = credentials ?: error("No account to protect")
-        repository.enableLock(current, pin)
+        repository.enableLock(current, digits)
         mutableState.update { it.copy(lock = it.lock.copy(enabled = true, offerHandled = true), locked = false) }
     }
 
-    suspend fun changePin(oldPin: CharArray, newPin: CharArray): UnlockResult = sessionChange { handle(repository.changePin(oldPin, newPin)) }
+    suspend fun changePin(oldPin: CharArray, newPin: CharArray): UnlockResult =
+        withDigits(oldPin, newPin) { old, new -> handle(repository.changePin(old, new!!)) }
 
-    suspend fun disableLock(pin: CharArray): UnlockResult = sessionChange {
-        val result = handle(repository.disableLock(pin))
+    suspend fun disableLock(pin: CharArray): UnlockResult = withDigits(pin, null) { digits, _ ->
+        val result = handle(repository.disableLock(digits))
         if (result is UnlockResult.Success) mutableState.update { it.copy(lock = it.lock.copy(enabled = false, biometric = false)) }
         result
     }

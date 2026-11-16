@@ -521,10 +521,10 @@ class WebViewAutomationTest {
         eval("window.source=document.querySelector('table.schedule');window.sourceHtml=window.source.innerHTML")
         phoneWidth(320); mobile()
         assertEquals("2", eval("document.querySelectorAll('.univer-app-lesson').length"))
-        assertEquals("\"09:00–10:50\"", eval("document.querySelector('.univer-app-lesson time').textContent"))
+        assertEquals("\"09:00–10:50\"", eval("document.querySelector('.univer-app-lesson time').getAttribute('aria-label')"))
         // Teacher, room and faculty are separate labelled facts; the course dates wait for the detailed view.
         assertEquals("\"Test Teacher\"", eval("document.querySelector('.univer-app-lesson .univer-app-fact-teacher').lastChild.textContent"))
-        assertEquals("\"Аудитория: Ауд. 205Факультет: факультет ФИТ\"", eval("document.querySelector('.univer-app-lesson .univer-app-fact-place').textContent"))
+        assertEquals("\"Аудитория: Ауд. 205Факультет: ФИТ\"", eval("document.querySelector('.univer-app-lesson .univer-app-fact-place').textContent"))
         assertEquals("\"Long subject name for mobile layout\"", eval("document.querySelector('.univer-app-lesson .univer-app-subject').textContent"))
         assertEquals("true", eval("getComputedStyle(document.querySelector('.univer-app-lesson .univer-app-fact-dates')).display==='none' && !document.querySelector('.univer-app-lesson').innerText.includes('Период') && document.documentElement.scrollWidth<=innerWidth+1"))
         assertEquals("true", eval("!document.querySelector('.univer-app-week-label') && document.getElementById('weekSelect').options[0].textContent.includes('06.09.2026')"))

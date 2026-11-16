@@ -62,13 +62,13 @@
                 var source=clean(cell), parts=source.match(/^(.*?)\s*(\(\[.*?)?\s*(\d{2}\.\d{2}\.\d{4}\s*[-–]\s*\d{2}\.\d{2}\.\d{4})$/);
                 if (!parts || cell.querySelector('form,input,select,button')) return;
                 var original=document.createElement('span'); original.className='univer-app-course-source'; original.hidden=true; original.append(...cell.childNodes);
-                var header=document.createElement('details'); header.className='univer-app-course-heading';
-                var title=document.createElement('summary'); title.className='univer-app-course-title';
+                var header=document.createElement('div'); header.className='univer-app-course-heading';
+                var title=document.createElement('div'); title.className='univer-app-course-title';
                 var name=document.createElement('span'); name.className='univer-app-course-name'; name.textContent=parts[1]; title.appendChild(name);
                 var meta=document.createElement('div'); meta.className='univer-app-course-meta';
-                [parts[3],parts[2]].filter(Boolean).forEach(value=>{var line=document.createElement('span');line.textContent=value;meta.appendChild(line);});
+                [parts[3],parts[2]].filter(Boolean).forEach(value=>{var line=document.createElement('span');line.textContent=value;meta.appendChild(line);});title.appendChild(meta);
                 var button=document.createElement('button');button.type='button';button.className='univer-app-course-syllabus';button.setAttribute('aria-expanded','false');
-                header.append(title,meta,button);cell.append(original,header);
+                header.append(title,button);cell.append(original,header);
                 record={original,header,title,name,button,course:null,link:null};headings.set(cell,record);
                 button.addEventListener('click',event=>{event.stopPropagation();show(button,false,event);});
             }
@@ -76,8 +76,8 @@
             var course=courses?.find(c=>fold(clean(record.original))===fold(c.name) || fold(clean(record.original)).startsWith(fold(c.name)+' ('));
             if (course && !record.link) {
                 record.course=course;
-                var link=anchor(course.href,text().umkd);link.className='univer-app-attendance-course';
-                record.header.querySelector('.univer-app-course-meta').appendChild(link);record.link=link;
+                var link=anchor(course.href,course.name);link.className='univer-app-attendance-course';link.title=text().umkd;
+                record.name.replaceWith(link);record.link=link;
             }
         });
         document.querySelectorAll('#l4 a.syllabus-info').forEach(link=>{
@@ -103,9 +103,7 @@
         }
         if (!record) {
             var panel=document.createElement('section'); panel.className='univer-app-syllabi'; panel.id='univer-syllabi-'+panels.size; panel.setAttribute('aria-label',text().print);
-            var heading=headingFor(link)?.header;
-            if(heading)heading.appendChild(panel);else (link.closest('.ts') || link).after(panel);
-            record={panel,items:null}; panels.set(link,record);
+            (headingFor(link)?.header || link.closest('.ts') || link).after(panel); record={panel,items:null}; panels.set(link,record);
             remember(link); link.setAttribute('aria-controls',panel.id);
         }
         var epoch=generation, panel=record.panel; panel.hidden=false; panel.textContent=''; link.setAttribute('aria-expanded','true');
@@ -125,7 +123,7 @@
                 seen.add(url.href); items.push({href:url.href,name:name||course.name,print});
             });
             var before=panel.getBoundingClientRect().height; window.__univerMotionUI?.stop(panel);
-            record.items=items; panel.replaceChildren();
+            record.items=items; panel.textContent='';
             if (!items.length) { status.className=''; status.textContent=text().empty; panel.appendChild(status); }
             else {
                 var list=document.createElement('ul');
@@ -136,7 +134,7 @@
             if (animate && !panel.hidden) { window.__univerMotionUI?.resize(panel,before); window.__univerMotionUI?.reveal(panel,'content'); }
         } catch (_) {
             if (!enabled || generation!==epoch || !panel.isConnected) return;
-            window.__univerMotionUI?.stop(panel); panel.replaceChildren(); status.className=''; status.textContent=text().failed; panel.appendChild(status);
+            window.__univerMotionUI?.stop(panel); panel.textContent=''; status.className=''; status.textContent=text().failed; panel.appendChild(status);
             var retry=document.createElement('button'); retry.type='button'; retry.textContent=text().retry; retry.addEventListener('click',event=>show(link,true,event));
             panel.append(retry,anchor(courseFor(link)?.href||listHref(),text().umkd));
             if (animate && !panel.hidden) window.__univerMotionUI?.reveal(panel,'content');

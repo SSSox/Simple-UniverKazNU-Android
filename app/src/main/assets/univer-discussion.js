@@ -79,7 +79,7 @@
             /участник|қатысушы|participant/i.test(label) ? (language === 'en' ? 'Participants' : language === 'kz' ? 'Қатысушылар' : 'Участники') :
             label.replace(/\s*\((дд|dd|кк|күні|day)[^)]*\)\s*/i, '').replace(/:$/, '');
     }
-    function linkRows(root) { return Array.from(root.querySelectorAll('table.mt table.inner tr:is(.link,.file)[id]')); }
+    function linkRows(root) { return Array.from(root.querySelectorAll('table.mt table.inner tr.link[id],table.mt table.inner tr.file[id]')); }
     // A list keeps its header in the same table, or (weeks) in a separate one-row table just before it.
     function headerOf(table) {
         var own = ownRows(table).find(function (row) { return row.cells.length > 1 && Array.from(row.cells).every(function (cell) { return cell.tagName === 'TH'; }); });
@@ -107,7 +107,7 @@
     }
     function model(table) {
         var header = headerOf(table), labels = header.row ? Array.from(header.row.cells).map(clean) : [];
-        var rows = ownRows(table).filter(function (row) { return row.matches('tr:is(.link,.file)[id]'); });
+        var rows = ownRows(table).filter(function (row) { return row.matches('tr.link[id],tr.file[id]'); });
         var find = function (pattern) { return labels.findIndex(function (label) { return pattern.test(label); }); };
         var columns = {week:find(columnWeek), start:find(columnStart), end:find(columnEnd), title:find(columnTitle), period:find(columnPeriod)};
         var index = !!termKey();
@@ -254,7 +254,7 @@
         var actions = rowActions.map(function (selector) { return document.querySelector('#l4 ' + selector); }).filter(Boolean);
         lists.forEach(function (record, table) { if (!table.isConnected || !record.view.isConnected) drop(table); });
         document.querySelectorAll('#l4 table.inner').forEach(function (table) {
-            if (!table.closest('#tools,.univer-app-dist-help') && table.querySelector('tr:is(.link,.file)[id]')) adaptList(table, actions);
+            if (!table.closest('#tools,.univer-app-dist-help') && table.querySelector('tr.link[id],tr.file[id]')) adaptList(table, actions);
         });
         if (lists.size) document.querySelectorAll(openers).forEach(function (button) { if (button.closest('#l4')) mark(button, 'univer-app-dist-source'); });
         if (lists.size) actions.forEach(function (action) { mark(action, 'univer-app-dist-source'); });
@@ -408,7 +408,7 @@
         setHidden(status, !status.textContent);
         var signature = due.map(function (item) { return item.href + item.title + item.end; }).join('|') + language;
         if (list.dataset.signature === signature) return;
-        list.dataset.signature = signature; list.replaceChildren();
+        list.dataset.signature = signature; list.textContent = '';
         due.forEach(function (item) {
             // The list item wraps the link, so screen readers still announce a link.
             var entry = el('div'), link = el('a', 'univer-app-dist-due-item'); entry.setAttribute('role', 'listitem'); link.href = item.href;
@@ -478,7 +478,7 @@
                 setText(section.querySelector('.univer-app-dist-due-title'), text().courseTasks + (items.length ? ' · ' + items.length : ''));
                 setText(status, found.some(function (part) { return part === null; }) ? text().partial : items.length ? '' : text().noCourseTasks);
                 setHidden(status, !status.textContent);
-                list.replaceChildren.apply(list, items.map(weekLink));
+                list.textContent = ''; list.append.apply(list, items.map(weekLink));
             };
             window.__univerMobileV1 ? window.__univerMobileV1.mutate(paintTasks) : paintTasks();
         });

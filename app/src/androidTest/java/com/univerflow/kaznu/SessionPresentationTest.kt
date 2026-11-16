@@ -15,6 +15,8 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.ByteArrayInputStream
+import java.io.InputStream
+import java.io.SequenceInputStream
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -30,9 +32,13 @@ class SessionPresentationTest {
         <input id='modal_auth_pass' type='password' name='password'><input id='modal_auth_ajl_btn' type='submit'>
         <input id='modal_auth_key' type='hidden' name='key' value='fixture-key'>
         <input id='cheat_auth' type='hidden' name='cheat' value='0'></form></div>"""
-    private val sample = """window.rawAuthFrames=0;window.rawLoginFrames=0;function sample(){
+    private val openModal = modal.replace("display:none", "display:block")
+    private val framePage = "<p>Current page fixture</p><iframe id='child' src='/fixture/session/frame'></iframe>"
+    private val sample = """window.rawAuthFrames=0;window.rawLoginFrames=0;window.halfFormFrames=0;function sample(){
         var auth=document.getElementById('auth_modal');
-        if(auth&&auth.getClientRects().length&&getComputedStyle(auth).opacity!=='0')window.rawAuthFrames++;
+        if(auth&&!document.getElementById('cheat_auth')&&++window.halfFormFrames===2)new Image().src='/fixture/session/frames-passed';
+        if(auth&&auth.getClientRects().length&&getComputedStyle(auth).opacity!=='0'){window.rawAuthFrames++;
+            window.rawAuthState=document.readyState+' form complete: '+!!document.getElementById('cheat_auth');}
         if(location.pathname==='/user/login'&&document.body&&getComputedStyle(document.body).opacity!=='0')window.rawLoginFrames++;
         requestAnimationFrame(sample);}requestAnimationFrame(sample);"""
 
@@ -62,18 +68,32 @@ class SessionPresentationTest {
         assertTrue("Expected presentation state", ready)
     }
 
+    /** A slow connection: the parser holds half of the form until the page reports that frames went by. */
+    private fun arriving(page: String, framesPassed: CountDownLatch): InputStream {
+        val cut = page.indexOf("<input id='modal_auth_pass'")
+        val rest = object : InputStream() {
+            private val bytes by lazy { framesPassed.await(8, TimeUnit.SECONDS); ByteArrayInputStream(page.drop(cut).toByteArray()) }
+            override fun read() = bytes.read()
+            override fun read(target: ByteArray, offset: Int, length: Int) = bytes.read(target, offset, length)
+        }
+        return SequenceInputStream(ByteArrayInputStream(page.take(cut).toByteArray()), rest)
+    }
+
     private fun load(body: String = "<p id='healthy'>Current page fixture</p>$modal", active: Boolean = true,
-        url: String = SitePolicy.ORIGIN + "/fixture/session") {
+        url: String = SitePolicy.ORIGIN + "/fixture/session", frame: String = openModal, slowFrame: Boolean = false) {
         val done = CountDownLatch(1)
+        val framesPassed = CountDownLatch(1)
         instrumentation.runOnMainSync {
             presentation.setEnabled(active)
             web.webViewClient = object : WebViewClient() {
                 override fun onPageCommitVisible(view: WebView, url: String?) { presentation.apply() }
                 override fun onPageFinished(view: WebView, url: String?) { presentation.apply(); done.countDown() }
                 override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse {
-                    val content = if (request.url.path == "/fixture/session/frame") modal.replace("display:none", "display:block") else body
-                    return WebResourceResponse("text/html", "UTF-8", ByteArrayInputStream(
-                        "<html><head><script>$sample</script></head><body>$content</body></html>".toByteArray()))
+                    if (request.url.path == "/fixture/session/frames-passed") framesPassed.countDown()
+                    val inFrame = request.url.path == "/fixture/session/frame"
+                    val page = "<html><head><script>$sample</script></head><body>${if (inFrame) frame else body}</body></html>"
+                    return WebResourceResponse("text/html", "UTF-8",
+                        if (inFrame && slowFrame) arriving(page, framesPassed) else ByteArrayInputStream(page.toByteArray()))
                 }
             }
             web.loadUrl(url)
@@ -100,11 +120,22 @@ class SessionPresentationTest {
         assertEquals("false", eval("!!document.getElementById('univer-app-session-style')"))
     }
 
+    @Test fun aDialogStillArrivingStaysHiddenUntilItCanBeVerified() {
+        load(framePage, slowFrame = true)
+        assertNotEquals("Frames went by with half of the form", "0", eval("document.getElementById('child').contentWindow.halfFormFrames"))
+        assertEquals(eval("document.getElementById('child').contentWindow.rawAuthState"), "0",
+            eval("document.getElementById('child').contentWindow.rawAuthFrames"))
+        await { eval("var w=document.getElementById('child').contentWindow;w.getComputedStyle(w.document.getElementById('auth_modal')).opacity") == "\"0\"" }
+        load(framePage, slowFrame = true, frame = openModal.replace("action='#'", "action='https://external.test/user/ajl'"))
+        await { eval("var w=document.getElementById('child').contentWindow;w.getComputedStyle(w.document.getElementById('auth_modal')).opacity") == "\"1\"" }
+    }
+
     @Test fun sameOriginFrameUsesTheSameConcealmentAndPauseRestoresIt() {
-        load("<p>Current page fixture</p><iframe id='child' src='/fixture/session/frame'></iframe>")
+        load(framePage)
         await { eval("document.getElementById('child').contentDocument.readyState==='complete'") == "true" }
         await { eval("var w=document.getElementById('child').contentWindow;w.getComputedStyle(w.document.getElementById('auth_modal')).opacity") == "\"0\"" }
-        assertEquals("0", eval("document.getElementById('child').contentWindow.rawAuthFrames"))
+        assertEquals(eval("document.getElementById('child').contentWindow.rawAuthState"), "0",
+            eval("document.getElementById('child').contentWindow.rawAuthFrames"))
         instrumentation.runOnMainSync { presentation.setEnabled(false) }
         await { eval("var w=document.getElementById('child').contentWindow;w.getComputedStyle(w.document.getElementById('auth_modal')).opacity") == "\"1\"" }
     }

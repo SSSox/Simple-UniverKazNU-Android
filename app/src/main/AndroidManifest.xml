@@ -47,7 +47,11 @@
         </activity>
         <activity android:name=".ui.DownloadsActivity" android:exported="false"
             android:parentActivityName=".MainActivity" android:windowSoftInputMode="adjustResize" />
-        <activity android:name=".ui.FileViewerActivity" android:exported="false"
+        <!-- Pages of other sites in the app's own WebView profile; never reachable from other apps. -->
+        <activity android:name=".ui.LinkViewerActivity" android:exported="false" android:parentActivityName=".MainActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
+            android:windowSoftInputMode="adjustResize" />
+        <activity android:name=".ui.FileViewerActivity" android:exported="false" android:theme="@style/Theme.UniverKazNUSimple.FileViewer"
             android:parentActivityName=".MainActivity" />
     </application>
 

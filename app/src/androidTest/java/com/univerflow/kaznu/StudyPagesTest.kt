@@ -346,14 +346,14 @@ class StudyPagesTest {
             "https://univer.kaznu.kz/student/attendance/full/")
         eval("sessionStorage.setItem('univer.mobile.attendance-course.v1:/student/attendance/full/','name:психология')")
         mobile()
-        waitFor("Course picker", "document.querySelector('.univer-app-attendance-courses select')")
-        assertEquals("\"Психология\"", eval("document.querySelector('.univer-app-attendance-courses select').selectedOptions[0].textContent"))
+        waitFor("Course chips", "document.querySelector('.univer-app-attendance-courses button[aria-pressed=true]')")
+        assertEquals("\"Психология\"", eval("document.querySelector('.univer-app-attendance-courses button[aria-pressed=true]').textContent"))
         assertEquals("The name becomes the journal's own course token", "true",
             eval("sessionStorage.getItem('univer.mobile.attendance-course.v1:/student/attendance/full/').startsWith('психология (')"))
         // An unknown name falls back to every course instead of an empty page.
         eval("sessionStorage.setItem('univer.mobile.attendance-course.v1:/student/attendance/full/','name:химия')")
         mobile(false); eval("delete window.__univerAttendanceV1"); mobile()
-        waitFor("Course picker again", "document.querySelector('.univer-app-attendance-courses select')")
-        assertEquals("\"all\"", eval("document.querySelector('.univer-app-attendance-courses select').value"))
+        waitFor("Course chips again", "document.querySelector('.univer-app-attendance-courses button[aria-pressed=true]')")
+        assertEquals("\"all\"", eval("document.querySelector('.univer-app-attendance-courses button[aria-pressed=true]').dataset.course"))
     }
 }

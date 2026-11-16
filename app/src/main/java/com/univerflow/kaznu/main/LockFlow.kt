@@ -11,6 +11,8 @@ import com.univerflow.kaznu.UniverViewModel
 import com.univerflow.kaznu.domain.UnlockResult
 import com.univerflow.kaznu.ui.BiometricUi
 import com.univerflow.kaznu.ui.LockUi
+import com.univerflow.kaznu.ui.attempt
+import com.univerflow.kaznu.ui.launchCatching
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -53,9 +55,20 @@ class LockFlow(private val activity: AppCompatActivity, private val model: Unive
     fun applyWindowSecurity() {
         val state = model.state.value
         val secure = !state.hasCredentials || host.serviceOpen || forceSecure()
-        if (secure) activity.window.addFlags(WindowManager.LayoutParams.FLAG_SECURE) else activity.window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        if (Build.VERSION.SDK_INT >= 33) activity.setRecentsScreenshotEnabled(!state.lock.enabled)
+        // Every render asks; only a change reaches the window manager (a flag set again still relayouts the window).
+        val window = activity.window
+        if (secure != (window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE != 0)) {
+            if (secure) window.addFlags(WindowManager.LayoutParams.FLAG_SECURE) else window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        }
+        val screenshots = !state.lock.enabled
+        if (Build.VERSION.SDK_INT >= 33 && recentsScreenshots != screenshots) {
+            recentsScreenshots = screenshots
+            activity.setRecentsScreenshotEnabled(screenshots)
+        }
     }
+
+    /** What the recent-apps picture was last set to in this screen; null before the first call. */
+    private var recentsScreenshots: Boolean? = null
 
     fun showUnlockScreen(state: AppState) {
         host.dismissDialogs()
@@ -74,7 +87,7 @@ class LockFlow(private val activity: AppCompatActivity, private val model: Unive
         if (unlockBiometric == null) return
         unlockBiometric = null
         biometricAutoShown = false
-        lockUi.hide()
+        lockUi.hide(animated = true)
         host.coverPage(false)
         applyWindowSecurity()
     }
@@ -131,22 +144,18 @@ class LockFlow(private val activity: AppCompatActivity, private val model: Unive
         }, 900)
     }
 
-    private fun answerPinOffer() {
-        activity.lifecycleScope.launch {
-            try { model.markLockOfferHandled() } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { }
-        }
-    }
+    private fun answerPinOffer() { activity.launchCatching { model.markLockOfferHandled() } }
 
     /** New PIN twice, then (when the phone has biometrics) the offer to sign in faster with them. */
     fun startPinSetup() {
         if (model.credentials == null || model.state.value.lock.enabled) return
         lockUi.create(closeable = true, accept = { pin ->
-            try {
+            attempt(false) {
                 model.enableLock(pin)
                 // The PIN screen closes right after this returns; the message and the biometric offer follow it.
                 activity.window.decorView.post { host.message(R.string.pin_enabled_msg); offerBiometric(); applyWindowSecurity() }
                 true
-            } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { false }
+            }
         }, onClose = { applyWindowSecurity() })
         applyWindowSecurity()
     }
@@ -162,15 +171,13 @@ class LockFlow(private val activity: AppCompatActivity, private val model: Unive
     /** Asks for the fingerprint or face that will open the PIN-protected key; [done] runs whatever the outcome. */
     fun enrollBiometric(done: () -> Unit) {
         activity.lifecycleScope.launch {
-            val cipher = try { model.biometricEnrollCipher() }
-            catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { host.message(R.string.bio_unavailable); done(); return@launch }
+            val cipher = attempt<javax.crypto.Cipher?>(null) { model.biometricEnrollCipher() }
+                ?: run { host.message(R.string.bio_unavailable); done(); return@launch }
             BiometricUi.prompt(activity, cipher, host.text(R.string.bio_prompt_title), host.text(R.string.bio_prompt_enroll_subtitle), host.text(R.string.cancel),
                 onSuccess = { ready ->
                     activity.lifecycleScope.launch {
-                        try { model.finishBiometric(ready); host.message(R.string.bio_enabled_msg) }
-                        catch (cancelled: CancellationException) { throw cancelled }
-                        catch (_: Exception) { host.message(R.string.storage_error) }
+                        val enrolled = attempt(false) { model.finishBiometric(ready); true }
+                        host.message(if (enrolled) R.string.bio_enabled_msg else R.string.storage_error)
                         done()
                     }
                 },
@@ -178,11 +185,7 @@ class LockFlow(private val activity: AppCompatActivity, private val model: Unive
         }
     }
 
-    fun removeBiometric() {
-        activity.lifecycleScope.launch {
-            try { model.removeBiometric() } catch (cancelled: CancellationException) { throw cancelled } catch (_: Exception) { host.message(R.string.storage_error) }
-        }
-    }
+    fun removeBiometric() { activity.launchCatching({ host.message(R.string.storage_error) }) { model.removeBiometric() } }
 
     /** Current PIN, then a new one twice. Nothing changes until the new PIN is stored. */
     fun changePin() {
@@ -190,13 +193,11 @@ class LockFlow(private val activity: AppCompatActivity, private val model: Unive
             verify = { model.unlockWithPin(it) }, keepOpen = true, onWiped = { host.message(R.string.lock_wiped) },
             onVerified = { old ->
                 lockUi.create(R.string.lock_new_title, closeable = true, accept = { new ->
-                    try {
-                        when (model.changePin(old, new)) {
-                            is UnlockResult.Success -> { host.message(R.string.pin_changed_msg); true }
-                            UnlockResult.Wiped -> { host.message(R.string.lock_wiped); true }
-                            else -> false
-                        }
-                    } finally { old.fill('\u0000') }
+                    when (changeWithVerifiedPin(old, new) { current, next -> model.changePin(current, next) }) {
+                        is UnlockResult.Success -> { host.message(R.string.pin_changed_msg); true }
+                        UnlockResult.Wiped -> { host.message(R.string.lock_wiped); true }
+                        else -> false
+                    }
                 }, onClose = { old.fill('\u0000'); applyWindowSecurity() })
             }, onClose = { applyWindowSecurity() })
         applyWindowSecurity()
@@ -211,4 +212,24 @@ class LockFlow(private val activity: AppCompatActivity, private val model: Unive
     }
 
     private companion object { const val OFFER_SHOWN = "pin_offer_shown" }
+}
+
+/**
+ * One try of the "new PIN" step with the current PIN [old] checked before it. Every try hands [change] its own copy:
+ * closing the screen (which erases [old]) while the check runs cannot blank the digits still to be read, and a try
+ * that could not store the new PIN leaves [old] for the next one instead of guessing with erased digits, which would
+ * spend attempts toward the wipe. [old] is erased once the change is over: stored, wiped, or the screen's work cancelled.
+ */
+internal suspend fun changeWithVerifiedPin(old: CharArray, new: CharArray, change: suspend (CharArray, CharArray) -> UnlockResult): UnlockResult {
+    val attempt = old.copyOf()
+    try {
+        val result = change(attempt, new)
+        if (result is UnlockResult.Success || result == UnlockResult.Wiped) old.fill('\u0000')
+        return result
+    } catch (cancelled: CancellationException) {
+        old.fill('\u0000')
+        throw cancelled
+    } finally {
+        attempt.fill('\u0000')
+    }
 }

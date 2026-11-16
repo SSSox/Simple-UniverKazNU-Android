@@ -4,53 +4,41 @@ import android.app.DownloadManager
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
-import android.content.res.ColorStateList
-import android.graphics.Typeface
 import android.os.Bundle
 import android.text.SpannableString
 import android.text.Spanned
-import android.text.style.BackgroundColorSpan
-import android.text.style.StyleSpan
+import android.text.style.ForegroundColorSpan
 import android.view.LayoutInflater
 import android.view.MenuItem
-import android.view.ViewGroup
 import android.widget.PopupMenu
-import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.graphics.ColorUtils
 import androidx.core.view.isVisible
 import androidx.core.widget.doAfterTextChanged
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
-import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.ListAdapter
-import androidx.recyclerview.widget.RecyclerView
 import com.univerflow.kaznu.R
 import com.univerflow.kaznu.domain.AppLanguage
 import com.univerflow.kaznu.data.DownloadRepository
 import com.univerflow.kaznu.data.DownloadTextIndex
 import com.univerflow.kaznu.databinding.ActivityDownloadsBinding
-import com.univerflow.kaznu.databinding.ItemDownloadBinding
 import com.univerflow.kaznu.download.DownloadService
 import com.univerflow.kaznu.domain.DownloadList
 import com.univerflow.kaznu.domain.DownloadRecord
 import com.univerflow.kaznu.domain.DownloadState
 import com.univerflow.kaznu.domain.FileKind
 import com.univerflow.kaznu.domain.FileKinds
+import com.univerflow.kaznu.domain.FilePresence
 import com.univerflow.kaznu.domain.TextSearch
 import com.google.android.material.chip.Chip
+import com.google.android.material.color.MaterialColors
 import com.google.android.material.snackbar.Snackbar
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 /**
  * "Downloads": every file saved through the app, with search (by name and course, and optionally inside the files'
@@ -60,7 +48,7 @@ class DownloadsActivity : AppCompatActivity() {
     private lateinit var binding: ActivityDownloadsBinding
     private lateinit var repository: DownloadRepository
     private lateinit var language: AppLanguage
-    private val adapter = Adapter()
+    private lateinit var adapter: DownloadsAdapter
     private var query = ""
     private var filter: FileKind? = null
     private var subject: String? = null
@@ -70,19 +58,15 @@ class DownloadsActivity : AppCompatActivity() {
     private var shown = 0
     private val missing = mutableSetOf<String>()
     private val checked = mutableSetOf<String>()
-    private var searchOpen = false
     private var textSearch = false
     private val textIndex by lazy { DownloadTextIndex(this) }
     // The text of files read so far (bounded, least recently used first out) and the words found in each shown file.
     private val texts = DownloadList.TextCache()
+    private val textScan = DownloadList.TextScan()
     private var snippets: Map<String, TextSearch.Snippet> = emptyMap()
     private var indexJob: Job? = null
     private var indexProgress: Pair<Int, Int>? = null
-    private var subjectNames: List<String> = emptyList()
-    // Back closes an open search before leaving the screen.
-    private val closeSearch = object : OnBackPressedCallback(false) {
-        override fun handleOnBackPressed() = showSearch(false)
-    }
+    private var shownCounts: Map<FileKind, Int>? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -93,20 +77,23 @@ class DownloadsActivity : AppCompatActivity() {
         repository = DownloadRepository.get(this)
         restoreChoices(savedInstanceState)
         binding.downloadsToolbar.setNavigationOnClickListener { finish() }
-        onBackPressedDispatcher.addCallback(this, closeSearch)
         binding.downloadsToolbar.setOnMenuItemClickListener(::menuAction)
+        binding.downloadsSubject.setOnClickListener(::showSubjects)
         binding.downloadsList.layoutManager = LinearLayoutManager(this)
+        adapter = DownloadsAdapter(this, language, localized, Cards())
         binding.downloadsList.adapter = adapter
         binding.downloadsList.itemAnimator?.changeDuration = 0 // Progress updates must not flash the card.
         bindSearch()
-        showSearch(searchOpen, focus = false)
         buildFilters()
         localize()
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
+                // After process death the list starts empty while the saved one loads: a filter or course restored with
+                // the screen must not be pruned against that empty list, and "no downloads" must not flash.
+                repository.awaitLoaded()
                 repository.records.collect { list ->
                     if (isFinishing || AppLockSession.locked) { finish(); return@collect }
-                    records = list; buildSubjects(); render(); verify(list); readTexts()
+                    records = list; showKinds(); showSubject(); render(); verify(list); readTexts()
                 }
             }
         }
@@ -123,7 +110,6 @@ class DownloadsActivity : AppCompatActivity() {
         filter = savedInstanceState?.getString("filter")?.let { runCatching { FileKind.valueOf(it) }.getOrNull() }
         subject = savedInstanceState?.getString("subject")
         textSearch = savedInstanceState?.getBoolean("text_search") ?: false
-        searchOpen = savedInstanceState?.getBoolean("search_open") ?: false || query.isNotEmpty()
         sort = savedInstanceState?.getInt("sort", R.id.downloads_sort_date) ?: R.id.downloads_sort_date
     }
 
@@ -131,7 +117,6 @@ class DownloadsActivity : AppCompatActivity() {
         if (item.itemId in listOf(R.id.downloads_sort_date, R.id.downloads_sort_name, R.id.downloads_sort_size)) {
             sort = item.itemId; item.isChecked = true; render(); return true
         }
-        if (item.itemId == R.id.downloads_search_toggle) { showSearch(!searchOpen); return true }
         if (item.itemId != R.id.downloads_folder) return false
         try { startActivity(Intent(DownloadManager.ACTION_VIEW_DOWNLOADS)) } catch (_: ActivityNotFoundException) { message(R.string.open_failed) }
         return true
@@ -140,13 +125,22 @@ class DownloadsActivity : AppCompatActivity() {
     /** The search field and "also search inside files": each change filters the list and reads missing file texts. */
     private fun bindSearch() {
         binding.downloadsSearch.setText(query)
-        binding.downloadsSearch.doAfterTextChanged { query = it?.toString().orEmpty(); render(); readTexts() }
+        binding.downloadsSearch.doAfterTextChanged {
+            query = it?.toString().orEmpty()
+            showTextSearch(); render(); readTexts()
+        }
         binding.downloadsTextSearch.isChecked = textSearch
         binding.downloadsTextSearch.setOnCheckedChangeListener { _, checked ->
             if (checked == textSearch) return@setOnCheckedChangeListener // Restored after rotation.
             textSearch = checked
             render(); readTexts()
         }
+    }
+
+    /** "Also search inside files" only means something once there is a query. */
+    private fun showTextSearch() {
+        val shown = query.isNotBlank() || textSearch
+        if (binding.downloadsTextSearch.isVisible != shown) { Motion.layout(binding.downloadsRoot); binding.downloadsTextSearch.isVisible = shown }
     }
 
     override fun onStart() {
@@ -169,44 +163,32 @@ class DownloadsActivity : AppCompatActivity() {
         outState.putString("filter", filter?.name)
         outState.putString("subject", subject)
         outState.putBoolean("text_search", textSearch)
-        outState.putBoolean("search_open", searchOpen)
         outState.putInt("sort", sort)
         super.onSaveInstanceState(outState)
     }
 
-    /** The search icon opens the search field and its "inside the files" switch; closing clears the query. */
-    private fun showSearch(open: Boolean, focus: Boolean = true) {
-        searchOpen = open
-        closeSearch.isEnabled = open
-        binding.downloadsSearchLayout.isVisible = open
-        binding.downloadsTextSearch.isVisible = open
-        val keyboard = WindowCompat.getInsetsController(window, binding.downloadsSearch)
-        if (open && focus) {
-            binding.downloadsSearch.requestFocus()
-            keyboard.show(WindowInsetsCompat.Type.ime())
-        } else if (!open) {
-            keyboard.hide(WindowInsetsCompat.Type.ime())
-            if (query.isNotEmpty()) binding.downloadsSearch.setText("")
-        }
-    }
-
-    /** Course chips follow the list: "All courses" plus every course a file came from. */
-    private fun buildSubjects() {
+    /** The course button follows the list: "All courses", or the course chosen while it still has files. */
+    private fun showSubject() {
         val names = FileKinds.subjects(records)
         if (subject != null && subject !in names) subject = null
-        binding.downloadsSubjectsScroll.isVisible = names.isNotEmpty()
-        if (names == subjectNames && binding.downloadsSubjects.childCount == names.size + 1) return
-        subjectNames = names
-        binding.downloadsSubjects.removeAllViews()
-        (listOf<String?>(null) + names).forEach { name ->
-            val chip = LayoutInflater.from(this).inflate(R.layout.item_filter_chip, binding.downloadsSubjects, false) as Chip
-            chip.id = android.view.View.generateViewId()
-            chip.text = name ?: text(R.string.filter_all_subjects)
-            chip.isChecked = name == subject
-            chip.setOnCheckedChangeListener { _, isChecked -> if (isChecked) { subject = name; render() } }
-            binding.downloadsSubjects.addView(chip)
-        }
+        binding.downloadsSubject.isVisible = names.isNotEmpty()
+        binding.downloadsSubject.text = subject ?: text(R.string.filter_all_subjects)
     }
+
+    /** One menu of "All courses" and every course a file came from, each with its file count. */
+    private fun showSubjects(anchor: android.view.View) {
+        val names = listOf<String?>(null) + FileKinds.subjects(records)
+        PopupMenu(this, anchor).apply {
+            names.forEachIndexed { index, name ->
+                val count = if (name == null) records.size else records.count { FileKinds.matchesSubject(it, name) }
+                menu.add(0, index, index, "${name ?: text(R.string.filter_all_subjects)} · $count")
+            }
+            setOnMenuItemClickListener { item -> chooseSubject(names[item.itemId]); true }
+        }.show()
+    }
+
+    /** The course the list shows; null is every course. */
+    internal fun chooseSubject(name: String?) { subject = name; showSubject(); render() }
 
     /**
      * Reads unread file texts one at a time while the search looks inside files. The list is rebuilt only when a file
@@ -214,19 +196,23 @@ class DownloadsActivity : AppCompatActivity() {
      */
     private fun readTexts() {
         if (!textSearch || query.isBlank() || indexJob?.isActive == true) return
-        fun pending() = records.filter { it.id !in texts && it.id !in missing && textIndex.searchable(it) }
-        if (pending().isEmpty()) return
+        fun searchable() = records.filter { it.id !in missing && textIndex.searchable(it) }
+        if (textScan.pending(query, searchable(), texts).isEmpty()) return
         indexJob = lifecycleScope.launch {
-            // Files finished while reading are picked up by the next round.
-            while (true) {
-                val round = pending().takeIf { it.isNotEmpty() } ?: break
+            // Files finished while reading, and a query changed meanwhile, are picked up by the next round.
+            while (textSearch && query.isNotBlank()) {
                 val terms = query
+                val round = textScan.pending(terms, searchable(), texts).takeIf { it.isNotEmpty() } ?: break
                 round.forEachIndexed { index, record ->
                     if (terms != query) return@forEachIndexed // Another query: this round's texts are stale.
                     indexProgress = index to round.size
                     val entry = texts.put(record.id, DownloadList.FileText(textIndex.text(record) ?: ""))
-                    if (TextSearch.matches(entry.folded, terms) || FileKinds.matchesQuery(record, terms)) render()
-                    else renderSubtitle()
+                    textScan.read(record.id)
+                    val matched = TextSearch.matches(entry.folded, terms)
+                    // Kept for this query even when the bounded cache later drops the text itself.
+                    if (matched) TextSearch.snippet(entry.text, entry.folded, terms)?.let { textScan.found(record.id, it) }
+                    if (matched || FileKinds.matchesQuery(record, terms)) render()
+                    else { texts.yieldTo(record.id); renderSubtitle() }
                 }
             }
             indexProgress = null
@@ -251,6 +237,46 @@ class DownloadsActivity : AppCompatActivity() {
         }
     }
 
+    /** Only the kinds the library holds get a filter; one that lost its last file falls back to "All". */
+    private fun showKinds() {
+        val present = records.mapTo(HashSet()) { FileKinds.filterKind(it.kind) }
+        val chips = (0 until binding.downloadsFilters.childCount).map { binding.downloadsFilters.getChildAt(it) as Chip }
+        if (filter != null && filter !in present) chips.first { it.tag == null }.isChecked = true
+        chips.forEach { chip -> chip.isVisible = chip.tag == null || chip.tag in present }
+        binding.downloadsFiltersScroll.isVisible = present.size > 1
+        binding.downloadsSearchLayout.isVisible = records.isNotEmpty()
+    }
+
+    /** Each chip says how many files it would show, in a quieter colour than its name. */
+    private fun showCounts() {
+        val inside = textSearch && query.isNotBlank()
+        val counts = DownloadList.kindCounts(records, query, subject, texts.takeIf { inside }?.snapshot(), textScan.found.takeIf { inside }.orEmpty())
+        // A running download renders the list every 250 ms: chips whose numbers stay are not re-laid out each time.
+        if (counts == shownCounts) return
+        shownCounts = counts
+        val muted = MaterialColors.getColor(binding.root, com.google.android.material.R.attr.colorOnSurfaceVariant)
+        for (index in 0 until binding.downloadsFilters.childCount) {
+            val chip = binding.downloadsFilters.getChildAt(index) as Chip
+            val kind = chip.tag as FileKind?
+            val name = kindName(kind)
+            val count = if (kind == null) counts.values.sum() else counts[kind] ?: 0
+            chip.text = SpannableString("$name  $count").apply {
+                setSpan(ForegroundColorSpan(muted), name.length, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+            chip.contentDescription = "$name: $count"
+        }
+    }
+
+    private fun kindName(kind: FileKind?) = when (kind) {
+        null -> text(R.string.filter_all)
+        FileKind.PDF -> "PDF"
+        FileKind.WORD -> "Word"
+        FileKind.EXCEL -> "Excel"
+        FileKind.POWERPOINT -> "PowerPoint"
+        FileKind.IMAGE -> text(R.string.filter_images)
+        else -> text(R.string.filter_other)
+    }
+
     private fun localize() {
         binding.downloadsToolbar.title = text(R.string.downloads)
         binding.downloadsToolbar.navigationContentDescription = text(R.string.back)
@@ -261,36 +287,47 @@ class DownloadsActivity : AppCompatActivity() {
         }
         binding.downloadsSearch.hint = text(R.string.downloads_search)
         binding.downloadsSearchLayout.endIconContentDescription = text(R.string.clear_search)
-        binding.downloadsToolbar.menu.findItem(R.id.downloads_search_toggle).title = text(R.string.search)
         binding.downloadsTextSearch.text = text(R.string.search_in_text)
-        for (index in 0 until binding.downloadsFilters.childCount) {
-            val chip = binding.downloadsFilters.getChildAt(index) as Chip
-            chip.text = when (chip.tag as FileKind?) {
-                null -> text(R.string.filter_all)
-                FileKind.PDF -> "PDF"
-                FileKind.WORD -> "Word"
-                FileKind.EXCEL -> "Excel"
-                FileKind.POWERPOINT -> "PowerPoint"
-                FileKind.IMAGE -> text(R.string.filter_images)
-                else -> text(R.string.filter_other)
-            }
-        }
+        showTextSearch()
     }
 
     private fun render() {
         if (AppLockSession.locked) { finish(); return }
         val inside = textSearch && query.isNotBlank()
         val order = when (sort) { R.id.downloads_sort_name -> DownloadList.Order.NAME; R.id.downloads_sort_size -> DownloadList.Order.SIZE; else -> DownloadList.Order.DATE }
-        val view = DownloadList.view(records, query, filter, subject, texts.takeIf { inside }?.snapshot(), order)
+        val view = DownloadList.view(records, query, filter, subject, texts.takeIf { inside }?.snapshot(), order,
+            textScan.found.takeIf { inside }.orEmpty())
         val visible = view.records
         shown = visible.size
-        val changedSnippets = view.snippets != snippets
         snippets = view.snippets
-        // Snippets are not part of the records, so cards whose found words changed are redrawn explicitly.
-        adapter.submitList(visible) { if (changedSnippets) adapter.notifyItemRangeChanged(0, adapter.itemCount) }
+        // The found words are part of each row, so the list diff redraws exactly the cards whose words changed.
+        adapter.submitList(rows(visible, order))
+        showCounts()
         renderSubtitle()
-        binding.downloadsEmpty.isVisible = visible.isEmpty()
+        Motion.show(binding.downloadsEmpty, visible.isEmpty())
         binding.downloadsEmptyText.text = text(if (records.isEmpty()) R.string.downloads_empty else R.string.downloads_no_match)
+        binding.downloadsEmptyHint.text = text(R.string.downloads_empty_hint)
+        binding.downloadsEmptyHint.isVisible = records.isEmpty()
+    }
+
+    /** Files by when they arrived, each group one sheet; a search or another order is one sheet of results. */
+    private fun rows(files: List<DownloadRecord>, order: DownloadList.Order): List<DownloadRow> {
+        val now = System.currentTimeMillis()
+        fun period(record: DownloadRecord) = if (order == DownloadList.Order.DATE && query.isBlank()) DownloadList.period(record.finished ?: record.started, now) else null
+        val list = ArrayList<DownloadRow>(files.size + 5)
+        files.forEachIndexed { index, record ->
+            val group = period(record)
+            val first = index == 0 || period(files[index - 1]) != group
+            if (first && group != null) list += DownloadRow.Heading(text(when (group) {
+                DownloadList.Period.TODAY -> R.string.period_today
+                DownloadList.Period.YESTERDAY -> R.string.period_yesterday
+                DownloadList.Period.WEEK -> R.string.period_week
+                DownloadList.Period.MONTH -> R.string.period_month
+                DownloadList.Period.EARLIER -> R.string.period_earlier
+            }))
+            list += DownloadRow.File(record, first, index == files.lastIndex || period(files[index + 1]) != group, snippets[record.id])
+        }
+        return list
     }
 
     /** The count line above the list: how many files are shown, or how much of the library has been read. */
@@ -301,15 +338,32 @@ class DownloadsActivity : AppCompatActivity() {
             else localized.getString(R.string.downloads_shown, shown, records.size)
     }
 
+    /**
+     * Files deleted, moved or renamed in other apps leave the list; each is checked again 1.5 s later, so a file another
+     * app is replacing right now stays. A file the storage does not answer for stays too, marked unavailable.
+     */
     private fun verify(list: List<DownloadRecord>) {
         val pending = list.filter { it.state == DownloadState.COMPLETED && it.id !in checked }
         if (pending.isEmpty()) return
         checked.addAll(pending.map { it.id })
         lifecycleScope.launch {
-            val absent = withContext(Dispatchers.IO) { pending.filterNot { FileActions.exists(this@DownloadsActivity, it) }.map { it.id }.toSet() }
-            val changed = pending.map { it.id }.filter { (it in absent) != (it in missing) }
-            pending.forEach { if (it.id in absent) missing.add(it.id) else missing.remove(it.id) }
+            val found = withContext(Dispatchers.IO) { pending.associateWith { FileActions.locate(this@DownloadsActivity, it) } }
+            // Files saved before places were kept start from the place they have now.
+            val places = withContext(Dispatchers.IO) {
+                found.filter { (record, presence) -> presence == FilePresence.PRESENT && record.place == null }.keys
+                    .mapNotNull { record -> record.uri?.let { FileActions.place(this@DownloadsActivity, android.net.Uri.parse(it)) }?.let { record.id to it } }.toMap()
+            }
+            repository.keepPlaces(places)
+            val unknown = found.filterValues { it == FilePresence.UNKNOWN }.keys.map { it.id }.toSet()
+            val changed = pending.map { it.id }.filter { (it in unknown) != (it in missing) }
+            pending.forEach { if (it.id in unknown) missing.add(it.id) else missing.remove(it.id) }
             if (changed.isNotEmpty()) adapter.notifyItemRangeChanged(0, adapter.itemCount)
+            val first = found.filterValues { it == FilePresence.GONE }.keys
+            if (first.isEmpty()) return@launch
+            delay(RECHECK_MS)
+            val gone = withContext(Dispatchers.IO) { first.filter { FileActions.locate(this@DownloadsActivity, it) == FilePresence.GONE } }
+            repository.removeGone(gone)
+            gone.forEach { textIndex.forget(it.id); texts.remove(it.id); textScan.forget(it.id) }
         }
     }
 
@@ -337,7 +391,10 @@ class DownloadsActivity : AppCompatActivity() {
                     1 -> open(record)
                     2 -> if (!FileActions.openExternal(this@DownloadsActivity, record)) message(R.string.open_failed)
                     3 -> if (!FileActions.share(this@DownloadsActivity, record, language)) message(R.string.open_failed)
-                    4 -> { repository.remove(record.id); textIndex.forget(record.id); texts.remove(record.id); message(R.string.removed_from_list) }
+                    4 -> {
+                        repository.remove(record.id); textIndex.forget(record.id); texts.remove(record.id); textScan.forget(record.id)
+                        message(R.string.removed_from_list)
+                    }
                 }
                 true
             }
@@ -346,91 +403,17 @@ class DownloadsActivity : AppCompatActivity() {
 
     private fun message(id: Int) = Snackbar.make(binding.root, text(id), Snackbar.LENGTH_LONG).show()
 
-    /**
-     * The date and time of a card. `SimpleDateFormat` is not cheap to build and a list of a thousand cards formats
-     * on every scroll, so one formatter lives as long as the screen's language does.
-     */
-    private var dateFormat: SimpleDateFormat? = null
-    private var dateFormatLocale: String? = null
-
-    private fun formatDate(milliseconds: Long): String {
-        val tag = language.localeCode
-        val format = dateFormat?.takeIf { dateFormatLocale == tag }
-            ?: SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.forLanguageTag(tag)).also { dateFormat = it; dateFormatLocale = tag }
-        return format.format(Date(milliseconds))
-    }
-
-    private fun status(record: DownloadRecord): String {
-        val parts = mutableListOf<String>()
-        parts += when (record.state) {
-            DownloadState.RUNNING -> {
-                val received = FileKinds.size(record.received, language)
-                record.progress?.let { localized.getString(R.string.state_running_progress, it, received, FileKinds.size(record.total, language)) }
-                    ?: localized.getString(R.string.state_running_bytes, received)
-            }
-            DownloadState.COMPLETED -> if (record.id in missing) localized.getString(R.string.state_missing)
-                else FileKinds.size(record.total.takeIf { it >= 0 } ?: record.received, language)
-            DownloadState.FAILED -> localized.getString(R.string.state_failed) + ". " + localized.getString(DownloadService.failureMessage(record.failure))
-            DownloadState.CANCELED -> localized.getString(R.string.state_canceled)
-        }
-        parts += formatDate(record.finished ?: record.started)
-        if (record.source.isNotBlank()) parts += record.source
-        return parts.filter { it.isNotBlank() }.joinToString(" · ")
-    }
-
-    private inner class Holder(val item: ItemDownloadBinding) : RecyclerView.ViewHolder(item.root)
-
-    private inner class Adapter : ListAdapter<DownloadRecord, Holder>(object : DiffUtil.ItemCallback<DownloadRecord>() {
-        override fun areItemsTheSame(old: DownloadRecord, new: DownloadRecord) = old.id == new.id
-        override fun areContentsTheSame(old: DownloadRecord, new: DownloadRecord) = old == new
-    }) {
-        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) =
-            Holder(ItemDownloadBinding.inflate(LayoutInflater.from(parent.context), parent, false))
-
-        override fun onBindViewHolder(holder: Holder, position: Int) {
-            val record = getItem(position)
-            val view = holder.item
-            val color = getColor(when (record.kind) {
-                FileKind.PDF -> R.color.kind_pdf
-                FileKind.WORD -> R.color.kind_word
-                FileKind.EXCEL -> R.color.kind_excel
-                FileKind.POWERPOINT -> R.color.kind_powerpoint
-                FileKind.IMAGE -> R.color.kind_image
-                else -> R.color.kind_other
-            })
-            view.downloadBadge.text = FileKinds.badge(record.kind)
-            view.downloadBadge.setTextColor(color)
-            view.downloadBadge.backgroundTintList = ColorStateList.valueOf(ColorUtils.setAlphaComponent(color, 0x24))
-            view.downloadName.text = record.fileName.ifBlank { "…" }
-            val meta = status(record)
-            view.downloadMeta.text = meta
-            val snippet = snippets[record.id]
-            view.downloadSnippet.isVisible = snippet != null
-            if (snippet != null) view.downloadSnippet.text = SpannableString(snippet.text).apply {
-                setSpan(StyleSpan(Typeface.BOLD), snippet.start, snippet.end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-                setSpan(BackgroundColorSpan(ColorUtils.setAlphaComponent(getColor(R.color.kind_word), 0x33)), snippet.start, snippet.end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-            }
-            view.downloadProgress.isVisible = record.state == DownloadState.RUNNING
-            record.progress.let { progress ->
-                view.downloadProgress.isIndeterminate = progress == null
-                if (progress != null) view.downloadProgress.setProgressCompat(progress, false)
-            }
-            view.downloadCard.contentDescription = listOfNotNull(view.downloadName.text.toString(), meta, snippet?.text).joinToString(". ")
-            view.downloadCard.setOnClickListener { open(record) }
-            if (record.state == DownloadState.RUNNING) {
-                view.downloadAction.setIconResource(R.drawable.ic_close)
-                view.downloadAction.contentDescription = text(R.string.cancel_download)
-                view.downloadAction.setOnClickListener { DownloadService.cancel(this@DownloadsActivity, record.id) }
-            } else {
-                view.downloadAction.setIconResource(R.drawable.ic_more)
-                view.downloadAction.contentDescription = text(R.string.file_actions)
-                view.downloadAction.setOnClickListener { showActions(it, record) }
-            }
-        }
+    /** What the list's cards ask of the screen. */
+    private inner class Cards : DownloadsAdapter.Host {
+        override fun missing(id: String) = id in missing
+        override fun open(record: DownloadRecord) = this@DownloadsActivity.open(record)
+        override fun actions(anchor: android.view.View, record: DownloadRecord) = showActions(anchor, record)
+        override fun cancel(record: DownloadRecord) = DownloadService.cancel(this@DownloadsActivity, record.id)
     }
 
     companion object {
         private const val EXTRA_LANGUAGE = "language"
+        private const val RECHECK_MS = 1_500L
         fun intent(context: Context, language: AppLanguage): Intent =
             Intent(context, DownloadsActivity::class.java).putExtra(EXTRA_LANGUAGE, language.siteCode)
     }

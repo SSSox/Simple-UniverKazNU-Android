@@ -42,24 +42,29 @@ class LocalSessionRepository(
     override suspend fun load(): StoredSession = access {
         var storageError = false
         val locked = lockVault?.exists() == true
-        val credentials = if (locked) null else try { vault.read() }
+        val credentials = if (locked || preferences.manualLogin) null else try { vault.read() }
         catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) { storageError = true; null }
         val lock = LockSettings(locked, locked && lockVault?.biometricEnrolled() == true,
             lockPreferences?.autoLockMs ?: LockSettings().autoLockMs, lockPreferences?.offerHandled ?: false)
         StoredSession(credentials, preferences.language, preferences.autoLoginPaused,
-            storageError, preferences.mobileLayout, preferences.textZoom, preferences.animations, preferences.shortcuts, lock, preferences.theme, preferences.notices)
+            storageError, preferences.mobileLayout, preferences.textZoom, preferences.animations, preferences.shortcuts, lock, preferences.theme, preferences.notices,
+            preferences.sessionClearPending, preferences.manualLogin, externalLinks = preferences.externalLinks)
     }
 
     override suspend fun saveCredentials(credentials: Credentials) = access {
         if (lockVault?.exists() == true) lockVault.saveCredentials(credentials) else vault.save(credentials)
-        preferences.autoLoginPaused = false
+        preferences.accountSaved()
     }
 
     override suspend fun deleteCredentials() = access { eraseAccount() }
+    override suspend fun beginSessionClear() = access { preferences.beginSessionClear() }
+    override suspend fun finishSessionClear() = access { preferences.finishSessionClear() }
+    override suspend fun setManualLogin(enabled: Boolean) = access { preferences.manualLogin = enabled }
 
     /** Removes the account everywhere, the lock with it: a PIN without an account protects nothing. */
     private fun eraseAccount() {
+        preferences.beginSessionClear()
         vault.delete()
         lockVault?.delete()
         lockPreferences?.resetKeepingOffer()
@@ -137,6 +142,7 @@ class LocalSessionRepository(
     override suspend fun setMobileLayout(enabled: Boolean) = access { preferences.mobileLayout = enabled }
     override suspend fun setTextZoom(percent: Int) = access { preferences.textZoom = percent }
     override suspend fun setAnimations(enabled: Boolean) = access { preferences.animations = enabled }
+    override suspend fun setExternalLinks(enabled: Boolean) = access { preferences.externalLinks = enabled }
     override suspend fun setTheme(theme: AppTheme) = access { preferences.theme = theme }
     override suspend fun setShortcuts(shortcuts: HomeShortcuts) = access { preferences.shortcuts = shortcuts }
     override suspend fun setNotices(notices: List<SiteNotice>) = access { preferences.notices = notices }

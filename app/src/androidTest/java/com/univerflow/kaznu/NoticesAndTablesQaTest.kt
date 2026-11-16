@@ -18,6 +18,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.univerflow.kaznu.domain.NoticeKind
 import com.univerflow.kaznu.domain.NoticeScan
 import com.univerflow.kaznu.domain.Notices
+import com.univerflow.kaznu.web.ChannelGuard
 import com.univerflow.kaznu.web.MobilePageAdapter
 import com.univerflow.kaznu.web.NoticeBridge
 import org.json.JSONTokener
@@ -91,6 +92,7 @@ class NoticesAndTablesQaTest {
         val scans = LinkedBlockingQueue<NoticeScan>()
         val loaded = CountDownLatch(1)
         var bridge: NoticeBridge? = null
+        var channel: ChannelGuard? = null
         instrumentation.runOnMainSync {
             web = WebView(instrumentation.targetContext)
             web.settings.javaScriptEnabled = true
@@ -104,7 +106,8 @@ class NoticesAndTablesQaTest {
                 }
                 override fun onPageFinished(view: WebView, url: String?) { loaded.countDown() }
             }
-            bridge = NoticeBridge(web) { scan, _ -> scans.add(scan) }
+            channel = ChannelGuard(web)
+            bridge = NoticeBridge(web, channel!!) { scan, _ -> scans.add(scan) }
             web.loadDataWithBaseURL("https://univer.kaznu.kz/student/attendance/full/", page(journal), "text/html", "UTF-8",
                 "https://univer.kaznu.kz/student/attendance/full/")
         }
@@ -166,7 +169,7 @@ class NoticesAndTablesQaTest {
             assertTrue(requested.isEmpty())
             assertTrue(scans.isEmpty())
         } finally {
-            instrumentation.runOnMainSync { bridge?.close(); web.destroyFixture() }
+            instrumentation.runOnMainSync { bridge?.close(); channel?.close(); web.destroyFixture() }
         }
     }
 
@@ -232,6 +235,8 @@ class NoticesAndTablesQaTest {
                 web.webViewClient = object : WebViewClient() {
                     override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest) = if (request.isForMainFrame) null
                         else WebResourceResponse("text/plain", "UTF-8", 404, "Not Found", emptyMap(), ByteArrayInputStream(ByteArray(0)))
+                    // The fixture never leaves for the real website.
+                    override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest) = true
                     override fun onPageFinished(view: WebView, url: String?) { loaded.countDown() }
                 }
                 web.loadDataWithBaseURL("https://univer.kaznu.kz/student/transcript/",

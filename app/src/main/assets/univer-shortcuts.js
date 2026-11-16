@@ -3,17 +3,26 @@
 (function () {
     'use strict';
     if (location.origin !== 'https://univer.kaznu.kz' || window.__univerShortcutsV1) return;
-    var cleanText = window.__univerDomV1.clean;
+    var dom = window.__univerDomV1, cleanText = dom.clean, el = dom.el;
+    // A button of the module's own panels, named for screen readers when its face is only an icon.
+    function control(className, label) {
+        var button = el('button', className); button.type = 'button';
+        if (label) button.setAttribute('aria-label', label);
+        return button;
+    }
+    // A mark drawn by CSS (a plus, an icon) that a screen reader skips.
+    function decor(className) { var mark = el('span', className); mark.setAttribute('aria-hidden', 'true'); return mark; }
     var pins = [], pinsKey = '[]', tileOrder = [], orderKey = '[]', draggedTile = null, language = 'ru', active = false, owned = [], pinButtons = new Set(), menuRows = new Map(), style = null;
     // Built-in tiles the student removed (canonical addresses); a pin button in "All sections" brings them back.
-    var hiddenTiles = [], hiddenKey = '[]', trash = null;
+    var hiddenTiles = [], hiddenKey = '[]', trash = null, adding = null;
     var moodlePath = '/user/loginMoodle';
     var tilePaths = /^\/(student\/(myschedule|attendance\/full|transcript|umkd)|user\/loginMoodle|ssc)$/i;
     // Study tiles in the order students look for them; the site menu supplies their real links and names.
     // The news page menu has no study sections, so the observed routes are used directly there.
     var fixed = [['schedule', '/student/myschedule/'], ['grades', '/student/attendance/full/'], ['transcript', '/student/transcript/'], ['umkd', '/student/umkd/']];
         // Tiles open Главная and Бакалавр; Е-услуги is the services desk reached from its own tile.
-    var homePages = /^\/news\/student\/?$|^\/student\/bachelor\/?$/i;
+    // The site lands on /news/student/1/ after sign-in: page 1 of the news is the home page as well.
+    var homePages = /^\/news\/student(?:\/1)?\/?$|^\/student\/bachelor\/?$/i;
     // The home tiles' stylesheet lives in univer-shortcuts-css.js, loaded just before this file.
     var css = window.__univerShortcutsCssV1 || '';
     // Stroke icons as CSS masks: no network requests, and each family keeps one tint so links are told apart at a glance.
@@ -106,11 +115,14 @@
             "' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M9 4h6l-1 6 4 4H6l4-4z'/><path d='M12 14v7'/></svg>") + '")';
     }
     function text() {
-        return language === 'en' ? {useful:'Useful links', schedule:'Schedule', grades:'Grades', transcript:'Transcript', umkd:'Course materials', moodle:'Moodle LMS', eservices:'E-services', pin:'Pin to home screen', unpin:'Unpin from home screen', remove:'Unpin', trash:'Remove from home', emptyHome:'Nothing here yet'} :
-            language === 'kz' ? {useful:'Пайдалы сілтемелер', schedule:'Сабақ кестесі', grades:'Үлгерім', transcript:'Транскрипт', umkd:'ОӘК', moodle:'Moodle ҚОЖ', eservices:'Е-қызметтер', pin:'Басты бетке бекіту', unpin:'Басты беттен алып тастау', remove:'Бекітуден алу', trash:'Басты беттен алып тастау', emptyHome:'Мұнда әзірге ештеңе жоқ'} :
-            {useful:'Полезные ссылки', schedule:'Расписание', grades:'Успеваемость', transcript:'Транскрипт', umkd:'УМКД', moodle:'СДО Moodle', eservices:'Е-услуги', pin:'Закрепить на главной', unpin:'Открепить с главной', remove:'Открепить', trash:'Убрать с главной', emptyHome:'Здесь пока пусто'};
+        return language === 'en' ? {add:'New section', findSection:'Find a section', close:'Close', sections:'Sections', removed:'Removed from the home screen', noMatch:'No sections found', allPinned:'Every section is already on the home screen', useful:'Useful links', schedule:'Schedule', grades:'Grades', transcript:'Transcript', umkd:'Course materials', moodle:'Moodle LMS', eservices:'E-services', pin:'Pin to home screen', unpin:'Unpin from home screen', remove:'Unpin', trash:'Remove from home'} :
+            language === 'kz' ? {add:'Жаңа бөлім', findSection:'Бөлімді табу', close:'Жабу', sections:'Бөлімдер', removed:'Басты беттен алынғандар', noMatch:'Бөлімдер табылмады', allPinned:'Барлық бөлім басты бетте', useful:'Пайдалы сілтемелер', schedule:'Сабақ кестесі', grades:'Үлгерім', transcript:'Транскрипт', umkd:'ОӘК', moodle:'Moodle ҚОЖ', eservices:'Е-қызметтер', pin:'Басты бетке бекіту', unpin:'Басты беттен алып тастау', remove:'Бекітуден алу', trash:'Басты беттен алып тастау'} :
+            {add:'Новый раздел', findSection:'Найти раздел', close:'Закрыть', sections:'Разделы', removed:'Убрано с главной', noMatch:'Разделы не найдены', allPinned:'Все разделы уже на главной', useful:'Полезные ссылки', schedule:'Расписание', grades:'Успеваемость', transcript:'Транскрипт', umkd:'УМКД', moodle:'СДО Moodle', eservices:'Е-услуги', pin:'Закрепить на главной', unpin:'Открепить с главной', remove:'Открепить', trash:'Убрать с главной'};
     }
     function own(node) { owned.push(node); return node; }
+    // A change of the module's own UI between adapter passes (a tile following the finger, the useful links filter)
+    // must not make the mobile adapter run a whole pass for it.
+    function quiet(action) { var mobile = window.__univerMobileV1; if (mobile?.quiet) mobile.quiet(action); else action(); }
     function path(href) { try { var url = new URL(href, location.href); return url.origin === location.origin ? url.pathname.replace(/\/+$/, '') || '/' : null; } catch (_) { return null; } }
     function pinnable(a) {
         try { var url = new URL(a.href); } catch (_) { return false; }
@@ -134,7 +146,7 @@
     }
     function notify(value) {
         // Only the pin request crosses to native code, which validates and stores it; no callable host objects.
-        if (typeof window.__univerNativeNotify === 'function') window.__univerNativeNotify(value);
+        if (typeof __univerNative === 'function') __univerNative(value);
         else if (window.CefSharp) CefSharp.PostMessage(value);
     }
     function request(event, pin, title, href) {
@@ -207,7 +219,7 @@
             // Kept outside #tools: the site menu's current-page marks and the window title read only real sections.
             menu.insertBefore(box, menu.querySelector(':scope>.univer-app-empty'));
             var search = menu.querySelector('input[type=search]');
-            if (search && !search.__univerUseful) { search.__univerUseful = true; search.addEventListener('input', function () { filterUseful(menu); }); }
+            if (search && !search.__univerUseful) { search.__univerUseful = true; search.addEventListener('input', function () { quiet(function () { filterUseful(menu); }); }); }
         }
         box.querySelectorAll('li').forEach(function (li) { var a = li.querySelector('a'); pinButton(li, a, cleanText(a)); });
         filterUseful(menu);
@@ -233,7 +245,8 @@
         var icon = document.createElement('span'), label = document.createElement('span');
         icon.className = 'univer-app-trash-icon'; label.className = 'univer-app-trash-label';
         trash.append(icon, label);
-        trash.addEventListener('dragover', function (event) { if (!draggedTile) return; event.preventDefault(); event.dataTransfer.dropEffect = 'move'; trash.classList.add('univer-app-trash-hot'); });
+        // dragover repeats while the pointer rests; only a real change writes the class the adapter observes.
+        trash.addEventListener('dragover', function (event) { if (!draggedTile) return; event.preventDefault(); event.dataTransfer.dropEffect = 'move'; if (!trash.classList.contains('univer-app-trash-hot')) trash.classList.add('univer-app-trash-hot'); });
         trash.addEventListener('dragleave', function (event) { if (!trash.contains(event.relatedTarget)) trash.classList.remove('univer-app-trash-hot'); });
         trash.addEventListener('drop', function (event) {
             if (!event.isTrusted || !draggedTile) return;
@@ -295,7 +308,7 @@
             draggedTile = null; showTrash(false);
             document.querySelectorAll('.univer-app-dragging,.univer-app-drop-target').forEach(function (node) { node.classList.remove('univer-app-dragging','univer-app-drop-target'); });
         });
-        span.addEventListener('dragover', function (event) { if (!draggedTile || draggedTile === span) return; event.preventDefault(); event.dataTransfer.dropEffect = 'move'; span.classList.add('univer-app-drop-target'); });
+        span.addEventListener('dragover', function (event) { if (!draggedTile || draggedTile === span) return; event.preventDefault(); event.dataTransfer.dropEffect = 'move'; if (!span.classList.contains('univer-app-drop-target')) span.classList.add('univer-app-drop-target'); });
         span.addEventListener('dragleave', function (event) { if (!span.contains(event.relatedTarget)) span.classList.remove('univer-app-drop-target'); });
         span.addEventListener('drop', function (event) {
             if (!event.isTrusted || !draggedTile || draggedTile === span) return;
@@ -333,7 +346,8 @@
         span.classList.add('univer-app-dragging', 'univer-app-lifted');
         showTrash(true);
         return {
-            move: function (cx, cy) {
+            // Runs for every finger movement: its style and class writes start no adapter pass (quiet).
+            move: function (cx, cy) { quiet(function () {
                 if (Math.abs(cx - x) + Math.abs(cy - y) > 6) span.__univerDragged = true;
                 span.style.setProperty('transform', 'translate(' + (cx - x) + 'px,' + (cy - y) + 'px) scale(1.02)');
                 // Over the bin the tile no longer marks a neighbour: dropping there removes it.
@@ -345,7 +359,7 @@
                     .map(function (node) { return node?.closest?.('.univer-app-tile'); })
                     .find(function (tile) { return tile && tile !== span && tile.parentElement === quick; }) || null;
                 if (target !== under) { target?.classList.remove('univer-app-drop-target'); target = under; target?.classList.add('univer-app-drop-target'); }
-            },
+            }); },
             end: function (drop) {
                 var dropped = span.getBoundingClientRect();
                 span.classList.remove('univer-app-dragging', 'univer-app-lifted'); span.style.removeProperty('transform');
@@ -472,7 +486,179 @@
         render();
     }
     // The built-in tiles (through the menu's own links where it has them) and the student's pins they do not repeat.
+    function homeKey(href) { return path(href) ?? href; }
+    // Everything "All sections" offers that is not on the home screen yet, in the site's own groups.
+    function offered() {
+        var taken = new Set(Array.from(document.querySelectorAll('.univer-app-quick .univer-app-tile>a')).map(function (a) { return homeKey(a.href); }));
+        var groups = [], seen = new Set(), menu = document.querySelector('.univer-app-menu');
+        var add = function (name, link, title) {
+            var key = homeKey(link);
+            if (taken.has(key) || seen.has(key) || (!tileKey(link) && fixedHomeLink(link))) return;
+            seen.add(key);
+            var group = groups.find(function (g) { return g.name === name; });
+            if (!group) { group = {name:name, items:[]}; groups.push(group); }
+            group.items.push({title:title, href:link});
+        };
+        if (menu) builtInTiles(menu).forEach(function (t) { if (hiddenTiles.indexOf(tileKey(t.href)) >= 0) add(text().removed, t.href, t.title); });
+        document.querySelectorAll('.univer-app-menu details.univer-app-category:not(.univer-app-useful)').forEach(function (box) {
+            var name = cleanText(box.querySelector('summary'));
+            box.querySelectorAll('li a[href]').forEach(function (a) { if (pinnable(a) && cleanText(a)) add(name, a.href, cleanText(a)); });
+        });
+        document.querySelectorAll('.univer-app-menu #tools li a[href]').forEach(function (a) { if (pinnable(a) && cleanText(a)) add(text().sections, a.href, cleanText(a)); });
+        document.querySelectorAll('.univer-app-menu .univer-app-useful li>a[href]').forEach(function (a) { if (pinnable(a) && cleanText(a)) add(text().useful, a.href, cleanText(a)); });
+        return groups;
+    }
+    function closeAdd() {
+        if (!adding) return false;
+        var state = adding; adding = null;
+        var done = function () { state.layer.remove(); owned = owned.filter(function (node) { return node !== state.layer; }); };
+        if (window.__univerMotion !== false && !window.__univerMotionUI?.reduced?.() && state.layer.animate) {
+            var out = state.layer.animate([{opacity:1}, {opacity:0}], {duration:140, easing:'ease-out', fill:'forwards'});
+            out.onfinish = out.oncancel = done;
+        } else done();
+        if (state.from.isConnected) state.from.focus({preventScroll:true});
+        return true;
+    }
+    function addRows(state) {
+        var query = dom.fold(state.search.value.trim()), box = state.list, shown = 0;
+        // Not replaceChildren(): Chromium 80-85 lacks it.
+        box.textContent = '';
+        offered().forEach(function (group) {
+            var items = group.items.filter(function (item) { return !query || dom.fold(item.title).includes(query); });
+            if (!items.length) return;
+            box.appendChild(el('p', 'univer-app-add-group', group.name));
+            items.forEach(function (item) {
+                var row = control('univer-app-add-row', text().pin + ': ' + item.title);
+                row.append(linkIcon(item.href, item.title), el('span', 'univer-app-add-name', item.title), decor('univer-app-add-plus'));
+                row.addEventListener('click', function (event) {
+                    if (!event.isTrusted) return;
+                    var at = Array.prototype.indexOf.call(box.querySelectorAll('.univer-app-add-row'), row);
+                    request(event, true, item.title, item.href);
+                    addRows(state);
+                    // The rebuilt list removed the focused row: focus stays in the dialog, on the row now in its place
+                    // (or the panel itself, without raising the keyboard), so pinning several sections keeps the place.
+                    if (adding !== state) return;
+                    var rows = box.querySelectorAll('.univer-app-add-row');
+                    (rows[Math.min(at, rows.length - 1)] || state.panel).focus({preventScroll:true});
+                });
+                box.appendChild(row); shown++;
+            });
+        });
+        if (!shown) box.appendChild(el('p', 'univer-app-add-empty', query ? text().noMatch : text().allPinned));
+    }
+    // The sheet follows a finger pulled down from its top or from a list already scrolled to the top, and closes when
+    // pulled a third of the way or flicked; otherwise it springs back. Touch events, not pointer events: a vertical
+    // drag over the scrolling list would end in pointercancel as soon as the WebView took it for a scroll.
+    function swipeDown(state) {
+        var panel = state.panel, layer = state.layer, drag = null, swallow = 0;
+        var still = function () { return window.__univerMotion === false || !!window.__univerMotionUI?.reduced?.(); };
+        var settle = function (y, then) {
+            var ease = 'transform .22s cubic-bezier(.32,.72,0,1)';
+            if (still()) { panel.style.transition = layer.style.transition = 'none'; }
+            else { panel.style.transition = ease; layer.style.transition = 'background-color .22s ease-out'; }
+            panel.style.transform = y ? 'translateY(' + y + 'px)' : '';
+            layer.style.backgroundColor = y ? 'rgba(16,28,44,0)' : '';
+            if (!then) return;
+            // A sheet closed and reopened meanwhile is a new sheet: the old timer leaves it alone.
+            if (still()) then(); else setTimeout(function () { if (adding === state) then(); }, 220);
+        };
+        panel.addEventListener('touchstart', function (event) {
+            // A new touch ends the swallow window: a deliberate tap always starts with one.
+            swallow = 0;
+            if (adding !== state || event.touches.length !== 1) {
+                // A second finger on a moving sheet puts it back instead of leaving it halfway down.
+                if (drag && drag.moved && adding === state) settle(0);
+                drag = null; return;
+            }
+            var inList = state.list.contains(event.target);
+            // A finger on the list scrolls it unless the list is at its top; the search field keeps its own gestures.
+            if (event.target === state.search || (inList && state.list.scrollTop > 0)) { drag = null; return; }
+            var touch = event.touches[0];
+            drag = {y:touch.clientY, x:touch.clientX, moved:false, samples:[{y:touch.clientY, t:event.timeStamp}]};
+        }, {passive:true});
+        panel.addEventListener('touchmove', function (event) {
+            if (!drag || adding !== state) return;
+            var touch = event.touches[0], dy = touch.clientY - drag.y;
+            if (!drag.moved) {
+                if (Math.abs(touch.clientX - drag.x) > Math.abs(dy) || dy < 0) { if (Math.abs(dy) > 8 || Math.abs(touch.clientX - drag.x) > 8) drag = null; return; }
+                if (dy < 8) return;
+                drag.moved = true; drag.y = touch.clientY; dy = 0;
+                panel.getAnimations?.().forEach(function (animation) { animation.cancel(); });
+                panel.style.transition = layer.style.transition = 'none';
+            }
+            event.preventDefault();
+            // 1:1 down; upward past the start the sheet resists instead of stopping dead.
+            var y = dy > 0 ? dy : dy / 5, height = panel.getBoundingClientRect().height || 1;
+            panel.style.transform = 'translateY(' + y + 'px)';
+            layer.style.backgroundColor = 'rgba(16,28,44,' + (0.32 * Math.max(0, 1 - Math.max(0, y) / height)).toFixed(3) + ')';
+            drag.samples.push({y:touch.clientY, t:event.timeStamp});
+            if (drag.samples.length > 6) drag.samples.shift();
+        }, {passive:false});
+        var end = function (event) {
+            var was = drag; drag = null;
+            if (!was || !was.moved || adding !== state) return;
+            swallow = event.timeStamp;
+            var height = panel.getBoundingClientRect().height || 1;
+            var match = /translateY\((-?[\d.]+)px\)/.exec(panel.style.transform), y = match ? parseFloat(match[1]) : 0;
+            var first = was.samples[0], last = was.samples[was.samples.length - 1], speed = last.t > first.t ? (last.y - first.y) / (last.t - first.t) : 0;
+            if (event.type !== 'touchcancel' && (y > height / 3 || (speed > 0.5 && y > 24))) settle(height, closeAdd);
+            else settle(0);
+        };
+        panel.addEventListener('touchend', end); panel.addEventListener('touchcancel', end);
+        // A pulled row must not pin itself when the finger lifts over it.
+        panel.addEventListener('click', function (event) {
+            if (swallow && event.timeStamp - swallow < 400) { event.preventDefault(); event.stopPropagation(); }
+            swallow = 0;
+        }, true);
+    }
+    // A sheet from the bottom of the screen. The keyboard stays down until the student taps the search field: the list
+    // is what they came for, and Back closes the sheet (MobilePageAdapter.dismissNavigation).
+    function openAdd(from) {
+        if (adding) return;
+        var layer = own(el('div', 'univer-app-add-layer')), panel = el('section', 'univer-app-add-panel');
+        panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-modal', 'true'); panel.setAttribute('aria-label', text().add); panel.tabIndex = -1;
+        var head = el('div', 'univer-app-add-head'), close = control('univer-app-add-close', text().close);
+        head.append(el('h2', '', text().add), close);
+        var search = el('input', 'univer-app-add-search'); search.type = 'search'; search.placeholder = text().findSection;
+        search.setAttribute('aria-label', text().findSection); search.autocomplete = 'off';
+        var list = el('div', 'univer-app-add-list');
+        panel.append(decor('univer-app-add-grip'), head, search, list); layer.appendChild(panel); document.body.appendChild(layer);
+        var state = {layer:layer, panel:panel, search:search, list:list, from:from};
+        adding = state; addRows(state); swipeDown(state);
+        search.addEventListener('input', function () { addRows(state); });
+        close.addEventListener('click', closeAdd);
+        layer.addEventListener('pointerdown', function (event) { if (event.target === layer) closeAdd(); });
+        // A modal sheet keeps the keyboard inside it: Escape closes it like Back, and Tab wraps around its controls
+        // instead of moving to the page hidden behind it.
+        layer.addEventListener('keydown', function (event) {
+            if (adding !== state || event.isComposing) return;
+            if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeAdd(); return; }
+            if (event.key !== 'Tab') return;
+            var stops = Array.from(panel.querySelectorAll('button,input,a[href],[tabindex]:not([tabindex="-1"])'))
+                .filter(function (node) { return !node.disabled && node.getClientRects().length; });
+            if (!stops.length) return;
+            var at = document.activeElement, first = stops[0], last = stops[stops.length - 1];
+            if (event.shiftKey ? (at === first || at === panel) : at === last) {
+                event.preventDefault(); (event.shiftKey ? last : first).focus({preventScroll:true});
+            }
+        });
+        window.__univerMotionUI?.reveal(panel, 'popup');
+        panel.focus({preventScroll:true});
+    }
+    function addButton() {
+        var button = control('univer-app-add-tile');
+        button.append(decor('univer-app-add-icon'), el('span', 'univer-app-add-label'));
+        button.addEventListener('click', function (event) { if (event.isTrusted) openAdd(button); });
+        return button;
+    }
     function homeTiles(menu) {
+        var tiles = builtInTiles(menu);
+        var taken = tiles.map(function (t) { return path(t.href) ?? t.href; }).concat(['/ssc/UserServiceList', '/ssc/StatementList']);
+        // Built-in tiles the student removed stay out of the bar until they are pinned again.
+        return {tiles:tiles.filter(function (t) { return hiddenTiles.indexOf(tileKey(t.href)) < 0; }),
+            extra:pins.filter(function (p) { return taken.indexOf(path(p.url) ?? p.url) < 0; })};
+    }
+    function builtInTiles(menu) {
         var links = Array.from(menu.querySelectorAll('#tools a[href]')).filter(function (a) { return !a.closest('.univer-app-useful'); });
         var tiles = fixed.map(function (item) {
             var target = item[1].replace(/\/$/, ''), a = links.find(function (link) { return path(link.href) === target; });
@@ -482,10 +668,7 @@
         tiles.push({title:moodle ? cleanText(moodle) : text().moodle, href:location.origin + moodlePath});
         // One Е-услуги tile opens the services desk, where the catalogue and the student's requests live together.
         tiles.push({title:text().eservices, href:location.origin + '/ssc/'});
-        var taken = tiles.map(function (t) { return path(t.href) ?? t.href; }).concat(['/ssc/UserServiceList', '/ssc/StatementList']);
-        // Built-in tiles the student removed stay out of the bar until they are pinned again in "All sections".
-        return {tiles:tiles.filter(function (t) { return hiddenTiles.indexOf(tileKey(t.href)) < 0; }),
-            extra:pins.filter(function (p) { return taken.indexOf(path(p.url) ?? p.url) < 0; })};
+        return tiles;
     }
     // Mounts the wanted tiles in the saved order. Unchanged tiles (and keyboard focus) stay mounted; new pins animate in.
     function syncTiles(quick, tiles, extra, first) {
@@ -503,6 +686,9 @@
         extra.forEach(function (p) { append(p.title, p.url, true); });
         var rank = function (node) { var at = tileOrder.indexOf(node.querySelector('a').href); return at < 0 ? tileOrder.length : at; };
         wanted.sort(function (a, b) { return rank(a) - rank(b); });
+        quick.__univerAdd = quick.__univerAdd || addButton();
+        quick.__univerAdd.querySelector('.univer-app-add-label').textContent = text().add;
+        wanted.push(quick.__univerAdd);
         var reconcile = function () {
             wanted.forEach(function (node, index) { if (quick.children[index] !== node) quick.insertBefore(node, quick.children[index] || null); });
             Array.from(quick.children).slice(wanted.length).forEach(function (node) { window.__univerMotionUI?.stop(node); node.remove(); });
@@ -527,11 +713,24 @@
         if (body.firstElementChild !== quick) body.prepend(quick);
         var first = !quick.__univerKey;
         quick.__univerKey = key; quick.setAttribute('aria-label', cleanText(menu.querySelector('summary')) || 'Univer');
-        // With every tile removed the bar says how to bring them back.
-        quick.setAttribute('data-empty', text().emptyHome);
         // The bin waits, hidden, next to the tiles; it only shows while one is dragged.
         trashZone().querySelector('.univer-app-trash-label').textContent = text().trash;
         syncTiles(quick, tiles, extra, first);
+        watchTiles(quick);
+    }
+    // A word is never split: when a name cannot stand beside its icon, every name goes under its icon, so the grid stays even.
+    function stackTiles(quick) {
+        quick.classList.remove('univer-app-quick-stacked');
+        var tight = Array.from(quick.querySelectorAll('.univer-app-tile>a')).some(function (link) { return link.scrollWidth > link.clientWidth; });
+        quick.classList.toggle('univer-app-quick-stacked', tight);
+    }
+    function watchTiles(quick) {
+        stackTiles(quick);
+        if (quick.__univerFit || !window.ResizeObserver) return;
+        quick.__univerFit = new ResizeObserver(function () {
+            if (window.__univerMobileV1) window.__univerMobileV1.mutate(function () { stackTiles(quick); }); else stackTiles(quick);
+        });
+        quick.__univerFit.observe(quick);
     }
 
     // Tab pages: Главная has the tiles, Бакалавр leads with the GPA, Е-услуги switches between the service catalogue
@@ -568,6 +767,12 @@
         else if (node.getAttribute(name) !== value) node.setAttribute(name, value);
         marked.add(node);
     }
+    // A bold line of its own is a heading; a bold name inside a sentence stays in that sentence.
+    function inlineBold(cell) {
+        Array.from(cell.children).forEach(function (bold) {
+            if (bold.tagName === 'B' && bold.previousSibling?.nodeType === 3 && bold.previousSibling.textContent.trim()) mark(bold, 'univer-app-inline-bold');
+        });
+    }
     function content(node) { return node && !node.closest('#tools,.univer-app-menu,.univer-app-header,.univer-app-quick,#l5,.univer-app-overview,.univer-app-overview-grid,.univer-app-credentials,.univer-app-ssc-nav'); }
     function tabIcons() {
         document.querySelectorAll('.univer-app-tabs>a[href],#l3 td.center>a[href]').forEach(function (a) {
@@ -600,7 +805,7 @@
             if (!heads.length || heads[0] !== cells[0]) return;
             mark(table, 'univer-app-panel');
             cells.forEach(function (cell) {
-                if (heads.indexOf(cell) < 0) { mark(cell, 'univer-app-panel-body'); return; }
+                if (heads.indexOf(cell) < 0) { mark(cell, 'univer-app-panel-body'); inlineBold(cell); return; }
                 var t = cleanText(cell).toLocaleLowerCase();
                 var pick = /личн|жеке|personal/.test(t) ? ['person', 'violet'] : /бюллет|bulletin|хабарланд/.test(t) ? ['news', 'amber'] : /обуч|оқу|study|learning/.test(t) ? ['cap', 'brand'] :
                     /услуг|қызмет|service/.test(t) ? ['services', 'teal'] : ['book', 'brand'];
@@ -658,18 +863,24 @@
     }
     function credentials() {
         // The sign-in line is a list item on Е-услуги, or a whole cell under its own section title.
-        document.querySelectorAll('li, #l4 td:is(.ct,.tt):not(.univer-app-panel-head)').forEach(function (li) {
+        // A plain selector list: Chromium before 88 cannot parse :is().
+        document.querySelectorAll('li, #l4 td.ct:not(.univer-app-panel-head), #l4 td.tt:not(.univer-app-panel-head)').forEach(function (li) {
             if (li.closest('#tools,.univer-app-menu,.univer-app-quick,.univer-app-overview,.univer-app-credentials,.univer-app-credential-original,.univer-app-useful,.univer-app-ssc-nav') ||
                 li.classList.contains('univer-app-credentials-source') || li.classList.contains('univer-app-credentials-host')) return;
             var cell = li.tagName === 'TD';
             if (cell && li.querySelector('form')) return;
             var found = readCredentials(li); if (!found) return;
+            // The cell opens with the site's greeting; the list item inside it names the credentials by itself.
+            var line = cell && Array.from(li.querySelectorAll('li')).map(readCredentials).find(Boolean);
+            if (line) found.heading = line.heading;
             var cells = cell ? Array.from(li.closest('table').querySelectorAll('td.ct,td.tt')).filter(function (c) { return c.closest('table') === li.closest('table'); }) : [], title = cells[cells.indexOf(li) - 1];
             if (!/print\.kaznu|wi-?fi/i.test(found.heading) && !(cell && title && /print\.kaznu|wi-?fi/i.test(cleanText(title)))) return;
-            if (title && title.classList.contains('univer-app-panel-head')) { wifiTitle(title); if (!found.heading) found.heading = cleanText(title).replace(/[\s.:]+$/, ''); }
+            // Е-услуги title their panel just "Услуги", so there the card has to say what the login opens.
+            var named = cell && title && /print\.kaznu|wi-?fi/i.test(cleanText(title));
+            if (named && title.classList.contains('univer-app-panel-head')) { wifiTitle(title); if (!found.heading) found.heading = cleanText(title).replace(/[\s.:]+$/, ''); }
             // The original line keeps its place and comes back in Original mode.
             mark(li, cell ? 'univer-app-credentials-host' : 'univer-app-credentials-source');
-            var panel = credentialPanel(found, !title);
+            var panel = credentialPanel(found, !named);
             if (cell) { wrapCredentialSource(li); li.appendChild(panel); }
             else { hidePresentation(li); (li.closest('ul,ol') || li).before(panel); }
         });
@@ -813,7 +1024,7 @@
     }
     function releaseHubs() {
         marked.forEach(function (node) {
-            ['univer-app-tab-icon','univer-app-tab-hidden','univer-app-panel','univer-app-panel-head','univer-app-panel-body','univer-app-gpa-source','univer-app-gpa-source-table','univer-app-home-body','univer-app-service-card','univer-app-service-hidden','univer-app-status','univer-app-credentials-source','univer-app-credentials-host','univer-app-after-credentials'].forEach(function (name) { node.classList.remove(name); });
+            ['univer-app-tab-icon','univer-app-tab-hidden','univer-app-panel','univer-app-panel-head','univer-app-panel-body','univer-app-inline-bold','univer-app-gpa-source','univer-app-gpa-source-table','univer-app-home-body','univer-app-service-card','univer-app-service-hidden','univer-app-status','univer-app-credentials-source','univer-app-credentials-host','univer-app-after-credentials'].forEach(function (name) { node.classList.remove(name); });
             ['data-univer-hint','data-univer-tone'].forEach(function (name) { node.removeAttribute(name); });
             node.classList.remove('univer-app-request-table', 'univer-app-service-table');
             if (node.__univerOpen) { node.removeEventListener('click', node.__univerOpen); node.__univerOpen = null; }
@@ -827,6 +1038,7 @@
         if (!style || !style.isConnected) {
             style = document.createElement('style'); style.id = 'univer-shortcuts-style';
             var source = ':root{--univer-pin-icon:' + pinIcon(false) + ';--univer-pinned-icon:' + pinIcon(true) + ';--univer-close-icon:' + svg("<path d='M6 6l12 12M18 6L6 18'/>") +
+                ';--univer-plus-icon:' + svg("<path d='M12 5v14M5 12h14'/>") +
                 ';--univer-reorder-icon:' + svg("<circle cx='8' cy='6' r='1'/><circle cx='16' cy='6' r='1'/><circle cx='8' cy='12' r='1'/><circle cx='16' cy='12' r='1'/><circle cx='8' cy='18' r='1'/><circle cx='16' cy='18' r='1'/>") +
                 ';--univer-trash-icon:' + svg("<path d='M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6'/>") +
                 ';--univer-doc-icon:' + svg("<path d='M14 3H6v18h12V7z'/><path d='M14 3v4h4M9 13h6M9 17h6'/>") + ';--univer-eye-icon:' + svg("<path d='M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z'/><circle cx='12' cy='12' r='3'/>") + ';}' + css;
@@ -852,9 +1064,11 @@
             if (key === pinsKey && nextOrderKey === orderKey && nextHiddenKey === hiddenKey) return;
             pins = next; pinsKey = key; tileOrder = nextOrder; orderKey = nextOrderKey; hiddenTiles = nextHidden; hiddenKey = nextHiddenKey; render();
         },
+        close: closeAdd,
         release: function () {
             active = false;
             draggedTile = null;
+            adding = null;
             document.documentElement.classList.remove('univer-app-tile-drag');
             restoreCredentialSources();
             pinButtons.forEach(function (button) { button.remove(); }); pinButtons.clear();

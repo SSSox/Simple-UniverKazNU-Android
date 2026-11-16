@@ -21,6 +21,9 @@ class AppLockViewModelTest {
 
     /** A repository where the account is readable only through the right PIN, like the real protected record. */
     private class ProtectedRepository(val account: Credentials, val pin: String, var enabled: Boolean) : SessionRepository {
+        override suspend fun beginSessionClear() { setAutoLoginPaused(true) }
+        override suspend fun finishSessionClear() { }
+        override suspend fun setManualLogin(enabled: Boolean) { }
         var failures = 0
         var locked = 0
         var erased = false
@@ -32,6 +35,7 @@ class AppLockViewModelTest {
         override suspend fun setMobileLayout(enabled: Boolean) {}
         override suspend fun setTextZoom(percent: Int) {}
         override suspend fun setAnimations(enabled: Boolean) {}
+        override suspend fun setExternalLinks(enabled: Boolean) {}
         override suspend fun setTheme(theme: AppTheme) {}
         override suspend fun setShortcuts(shortcuts: HomeShortcuts) {}
         override suspend fun enableLock(credentials: Credentials, pin: CharArray) { enabled = true }

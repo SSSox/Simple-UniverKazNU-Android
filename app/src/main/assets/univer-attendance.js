@@ -10,9 +10,9 @@
     var expanded = new Map(), focusToggle = null;
     var TYPES = ['lecture', 'seminar', 'sro'];
     var WORDS = {
-        en: {all:'All classes', lecture:'Lectures', seminar:'Seminars', sro:'Independent work', filter:'Show classes', totals:'Totals by class type', overall:'Overall course total', empty:'No classes of this type', ungraded:'No grades yet', none:'none', note:'The overall course total includes every class type.', lectureLabel:'Lecture', seminarLabel:'Seminar', sroLabel:'Independent work', overview:'Course summary', showDetails:'Show class log', hideDetails:'Hide class log', courses:'Courses', allCourses:'All', noClasses:'No classes yet'},
-        kz: {all:'Барлық сабақтар', lecture:'Дәрістер', seminar:'Семинарлар', sro:'СӨЖ', filter:'Сабақтарды көрсету', totals:'Сабақ түрлері бойынша қорытынды', overall:'Пән бойынша жалпы қорытынды', empty:'Бұл түрдегі сабақтар жоқ', ungraded:'Бағалар әлі қойылмаған', none:'жоқ', note:'Пән бойынша жалпы қорытынды сабақтардың барлық түрін қамтиды.', lectureLabel:'Дәріс', seminarLabel:'Семинар', sroLabel:'СӨЖ', overview:'Пәндер бойынша қорытынды', showDetails:'Сабақ журналын көрсету', hideDetails:'Сабақ журналын жасыру', courses:'Пәндер', allCourses:'Барлығы', noClasses:'Сабақтар әлі жоқ'},
-        ru: {all:'Все занятия', lecture:'Лекции', seminar:'Семинары', sro:'СРО', filter:'Показывать занятия', totals:'Итоги по видам занятий', overall:'Общий итог предмета', empty:'Нет занятий этого вида', ungraded:'Оценки пока не выставлены', none:'нет', note:'Общий итог предмета учитывает все виды занятий.', lectureLabel:'Лекция', seminarLabel:'Семинар', sroLabel:'СРО / СРОП', overview:'Сводка по предметам', showDetails:'Показать журнал занятий', hideDetails:'Скрыть журнал занятий', courses:'Предметы', allCourses:'Все', noClasses:'Занятия пока не добавлены'}
+        en: {all:'All classes', lecture:'Lectures', seminar:'Seminars', sro:'Independent work', filter:'Class type', kind:'Class type', total:'Total', outOf:'of', totals:'Totals by class type', overall:'Overall course total', empty:'No classes of this type', ungraded:'No grades yet', none:'none', note:'The overall course total includes every class type.', lectureLabel:'Lecture', seminarLabel:'Seminar', sroLabel:'Independent work', overview:'Course summary', showDetails:'Show class log', hideDetails:'Hide class log', courses:'Courses', allCourses:'All', noClasses:'No classes yet'},
+        kz: {all:'Барлық сабақтар', lecture:'Дәрістер', seminar:'Семинарлар', sro:'СӨЖ', filter:'Сабақ түрі', kind:'Сабақ түрі', total:'Барлығы', outOf:'/', totals:'Сабақ түрлері бойынша қорытынды', overall:'Пән бойынша жалпы қорытынды', empty:'Бұл түрдегі сабақтар жоқ', ungraded:'Бағалар әлі қойылмаған', none:'жоқ', note:'Пән бойынша жалпы қорытынды сабақтардың барлық түрін қамтиды.', lectureLabel:'Дәріс', seminarLabel:'Семинар', sroLabel:'СӨЖ', overview:'Пәндер бойынша қорытынды', showDetails:'Сабақ журналын көрсету', hideDetails:'Сабақ журналын жасыру', courses:'Пәндер', allCourses:'Барлығы', noClasses:'Сабақтар әлі жоқ'},
+        ru: {all:'Все занятия', lecture:'Лекции', seminar:'Семинары', sro:'СРО', filter:'Тип занятий', kind:'Вид занятий', total:'Итого', outOf:'из', totals:'Итоги по видам занятий', overall:'Общий итог предмета', empty:'Нет занятий этого вида', ungraded:'Оценки пока не выставлены', none:'нет', note:'Общий итог предмета учитывает все виды занятий.', lectureLabel:'Лекция', seminarLabel:'Семинар', sroLabel:'СРО / СРОП', overview:'Сводка по предметам', showDetails:'Показать журнал занятий', hideDetails:'Скрыть журнал занятий', courses:'Предметы', allCourses:'Все', noClasses:'Занятия пока не добавлены'}
     };
     try { var saved = sessionStorage.getItem(key); if (/^(all|lecture|seminar|sro)$/.test(saved)) selected = saved; } catch (_) {}
     try { var course = sessionStorage.getItem(courseKey); if (course && course.length <= 1000) selectedCourse = course; } catch (_) {}
@@ -23,26 +23,69 @@
         while ((match = pattern.exec(value))) found.push({label:match[1].replace(/\s+/g, ''), max:match[2] || '', value:match[3] || ''});
         return found;
     }
-    function scoreTiles(list, compact) {
-        var box = el('div', 'univer-app-attendance-scores' + (compact ? ' univer-app-attendance-scores-compact' : ''));
+    // The chip the home screen shows, so a grade looks alike wherever it is read.
+    function gradeChips(list) {
+        var box = el('span', 'univer-app-overview-scores');
         list.forEach(item => {
-            var tile = el('div', 'univer-app-score');
-            tile.setAttribute('role', 'group');
-            tile.setAttribute('aria-label', item.label + (item.max ? ' (' + item.max + ')' : '') + ': ' + (item.value || text().none));
-            tile.append(el('span', 'univer-app-score-label', item.label), el('span', 'univer-app-score-value', item.value || text().none));
-            if (item.max) {
-                tile.appendChild(el('span', 'univer-app-score-max', '/ ' + item.max));
-                var ratio = Number(item.value.replace(',', '.')) / Number(item.max.replace(',', '.'));
-                if (!compact && item.value && isFinite(ratio)) {
-                    var bar = el('span', 'univer-app-score-bar');
-                    bar.style.setProperty('--univer-score', (Math.round(Math.max(0, Math.min(1, ratio)) * 1000) / 10) + '%'); tile.appendChild(bar);
-                }
-            }
-            // The tile's label is what a screen reader announces; its parts are for the eye only.
-            Array.from(tile.children).forEach(child => child.setAttribute('aria-hidden', 'true'));
-            box.appendChild(tile);
+            var chip = el('span', 'univer-app-overview-score');
+            chip.setAttribute('role', 'group');
+            // The eye reads a dash for a missing grade; a screen reader says the word ("нет", "none", "жоқ").
+            chip.setAttribute('aria-label', item.label + ': ' + (item.value || text().none) + (item.max ? ' / ' + item.max : ''));
+            chip.append(el('span', 'univer-app-overview-score-label', item.label), el('span', 'univer-app-overview-score-value', item.value || '–'));
+            var bar = scoreBar('univer-app-overview-score-bar', item.value, item.max); if (bar) chip.appendChild(bar);
+            // The chip's label is what a screen reader announces; its parts are for the eye only.
+            Array.from(chip.children).forEach(child => child.setAttribute('aria-hidden', 'true'));
+            box.appendChild(chip);
         });
         return box;
+    }
+    // A grade's share of its maximum as a filled bar ("12,5" of "25" fills half); null when either is not a number.
+    function scoreBar(className, value, max) {
+        var ratio = max && value ? Number(value.replace(',', '.')) / Number(max.replace(',', '.')) : NaN;
+        if (!isFinite(ratio)) return null;
+        var bar = el('span', className); bar.setAttribute('aria-hidden', 'true');
+        bar.style.setProperty('--univer-score', Math.round(Math.max(0, Math.min(1, ratio)) * 1000) / 10 + '%');
+        return bar;
+    }
+    function withRole(node, role) { node.setAttribute('role', role); return node; }
+    function cell(className, content) { return withRole(el('span', className, content), 'cell'); }
+    // A period's name without its "(100)".
+    function periodKey(value) { return value.replace(/\s*\(.*$/, '').replace(/\s+/g, ''); }
+    // Rows are class types, columns the control periods, the last row the course total: one number per place.
+    function scoreTable(columns, rows, periods) {
+        var t = text(), table = withRole(el('div', 'univer-app-score-table'), 'table'), head = withRole(el('div', 'univer-app-score-head'), 'row');
+        table.setAttribute('aria-label', t.totals);
+        table.style.setProperty('--univer-columns', String(columns.length));
+        head.appendChild(withRole(el('span', '', t.kind), 'columnheader'));
+        columns.forEach(column => {
+            var name = withRole(el('span', '', column.label), 'columnheader');
+            if (column.max) name.appendChild(el('small', '', t.outOf + ' ' + column.max));
+            head.appendChild(name);
+        });
+        table.appendChild(head);
+        rows.forEach(item => {
+            var row = withRole(el('div', 'univer-app-type-row'), 'row');
+            row.dataset.kind = item.type; row.appendChild(withRole(el('span', 'univer-app-type-label', t[item.type]), 'rowheader'));
+            columns.forEach(column => {
+                var value = item.values.get(column.key)?.value || '', score = cell('univer-app-score', value || '–');
+                score.setAttribute('aria-label', column.label + (column.max ? ' (' + column.max + ')' : '') + ': ' + (value || t.none));
+                row.appendChild(score);
+            });
+            table.appendChild(row);
+        });
+        if (periods.length) {
+            var total = withRole(el('div', 'univer-app-score-total'), 'row');
+            total.appendChild(withRole(el('span', '', t.total), 'rowheader'));
+            columns.forEach(column => {
+                var found = periods.find(p => periodKey(p.label) === column.key), value = found?.value || '', score = cell('univer-app-score');
+                score.setAttribute('aria-label', t.total + ', ' + column.label + ': ' + (value || t.none) + (found?.max ? ' / ' + found.max : ''));
+                score.appendChild(el('b', 'univer-app-score-value', value || '–'));
+                var bar = scoreBar('univer-app-score-bar', value, found?.max); if (bar) score.appendChild(bar);
+                total.appendChild(score);
+            });
+            table.appendChild(total);
+        }
+        return table;
     }
     function id(node) { if (!identities.has(node)) identities.set(node, ++sequence); return identities.get(node); }
     function kind(value) {
@@ -150,10 +193,12 @@
         }
         var record = labels.get(link), source = clean(link), signature = language + '|' + source;
         if (record.signature === signature) return;
-        record.signature = signature;
         var parts = source.match(/^(.+?)\s+[-–—]\s+(.+)$/);
-        if (!parts) { record.caption.textContent = source; return; }
-        record.caption.replaceChildren(el('strong', '', text()[kind(source) + 'Label']), el('span', '', parts[2]));
+        // Emptied and refilled rather than replaceChildren(), which Chromium 80-85 lacks.
+        record.caption.textContent = parts ? '' : source;
+        if (parts) record.caption.append(el('strong', '', text()[kind(source) + 'Label']), el('span', '', parts[2]));
+        // Only a caption that was really written counts as current.
+        record.signature = signature;
     }
     function restoreLabels() {
         labels.forEach((record, link) => {
@@ -179,28 +224,15 @@
     }
     function removeOwned() { owned.forEach(node => { window.__univerMotionUI?.stop(node); node.remove(); }); owned = []; }
     function revealOwned(direction) { owned.filter(node => !node.closest('[hidden]')).forEach(node => window.__univerMotionUI?.reveal(node, direction)); }
-    // A passive copy of the server's course total; Original restores the unchanged server nodes in their place.
-    function overallBlock(group) {
-        var source = clean(group.overall), block = el('div', 'univer-app-attendance-overall-block');
-        var value = el('p', 'univer-app-attendance-overall-value', source);
-        block.append(el('p', 'univer-app-attendance-overall', text().overall), value);
-        // Recognized periods are shown as tiles; the server wording stays the fallback for anything else.
-        var periods = scores(source);
-        if (periods.length) { block.insertBefore(scoreTiles(periods, false), value); value.hidden = true; }
-        return block;
-    }
-    // One class type of a course: a coloured type label, then a compact score chip per control period.
-    function typeRow(lessons, type) {
-        var values = new Map();
+    // The sums of one class type by control period, keyed by the period's name.
+    function typeTotals(lessons) {
+        var values = new Map(), totals = new Map();
         lessons.forEach(lesson => lesson.tables.forEach(table => sums(table).forEach(entry => {
             if (!values.has(entry.period)) values.set(entry.period, []);
             values.get(entry.period).push(entry.value);
         })));
-        var row = el('div', 'univer-app-type-row'), content = [];
-        row.dataset.kind = type; row.appendChild(el('span', 'univer-app-type-label', text()[type]));
-        values.forEach((items, period) => content.push({label:period, max:'', value:periodTotal(items) || ''}));
-        row.appendChild(content.length ? scoreTiles(content, true) : el('span', 'univer-app-type-empty', text().ungraded));
-        return row;
+        values.forEach((items, period) => totals.set(periodKey(period), {period, value:periodTotal(items) || ''}));
+        return totals;
     }
     function detailsToggle(group, open) {
         var toggle = el('button', 'univer-app-attendance-details-toggle', open ? text().hideDetails : text().showDetails);
@@ -214,22 +246,32 @@
         return toggle;
     }
     function summary(group, open) {
-        var box = el('section', 'univer-app-attendance-summary');
+        var box = el('section', 'univer-app-attendance-summary'), periods = [], rows = [], any = false, t = text();
         // The server's total is always hidden: with all classes its passive copy is shown, while a class-type
         // filter is about the class log, where the course total would only repeat what the filter hides.
         if (group.overall) {
             setHidden(boundary(group.overall), true);
-            if (selected === 'all') box.appendChild(overallBlock(group));
+            if (selected === 'all') periods = scores(clean(group.overall));
         }
-        var typesBox = el('div', 'univer-app-attendance-type-totals'), title = el('p', 'univer-app-attendance-summary-title', text().totals), any = false;
-        box.appendChild(typesBox); typesBox.appendChild(title);
         (selected === 'all' ? TYPES : [selected]).forEach(type => {
             var lessons = group.lessons.filter(l => l.type === type); if (!lessons.length) return;
-            any = true; typesBox.appendChild(typeRow(lessons, type));
+            any = true; rows.push({type, values:typeTotals(lessons)});
         });
-        if (!any) typesBox.appendChild(el('p', '', selected === 'all' ? text().noClasses : text().empty));
-        // Nothing to total: one quiet line instead of an empty two-column card.
-        if (!any && !group.overall) { box.classList.add('univer-app-attendance-summary-empty'); title.remove(); }
+        var columns = periods.map(p => ({key:periodKey(p.label), label:p.label, max:p.max}));
+        rows.forEach(row => row.values.forEach((entry, name) => {
+            if (!columns.some(c => c.key === name)) columns.push({key:name, label:name, max:entry.period.match(/\(\s*(\d+(?:[.,]\d+)?)\s*\)/)?.[1] || ''});
+        }));
+        if (columns.length) box.appendChild(scoreTable(columns, rows, periods));
+        else rows.forEach(item => {
+            var row = el('div', 'univer-app-type-row'); row.dataset.kind = item.type;
+            row.append(el('span', 'univer-app-type-label', t[item.type]), el('span', 'univer-app-type-empty', t.ungraded));
+            box.appendChild(row);
+        });
+        // Anything the server wrote that is not a recognised period stays readable as its own line.
+        if (group.overall && selected === 'all' && !periods.length) box.appendChild(el('p', 'univer-app-attendance-overall-value', clean(group.overall)));
+        if (!any) box.appendChild(el('p', 'univer-app-attendance-nothing', selected === 'all' ? t.noClasses : t.empty));
+        // Nothing to total: one quiet line instead of an empty card.
+        if (!any && !group.overall) box.classList.add('univer-app-attendance-summary-empty');
         if (group.heading && group.lessons.length && selected === 'all') {
             box.appendChild(detailsToggle(group, open));
             if (focusToggle === group.token) { focusToggle = null; box.dataset.univerFocus = 'true'; }
@@ -240,14 +282,14 @@
     function redraw() { var action = () => render(model()); if (window.__univerMobileV1) window.__univerMobileV1.mutate(action); else action(); }
     function overview(groups) {
         var list = state.overview, courses = groups.filter(group => group.heading), t = text();
-        list.replaceChildren(); list.hidden = selectedCourse !== 'all' || courses.length < 2 || selected !== 'all';
+        list.textContent = ''; list.hidden = selectedCourse !== 'all' || courses.length < 2 || selected !== 'all';
         if (list.hidden) return;
         var rows = el('ul', 'univer-app-attendance-overview-list');
         courses.forEach(group => {
             var row = el('li'), name = el('button', 'univer-app-attendance-overview-name', group.name);
             name.type = 'button'; name.addEventListener('click', event => chooseCourse(group.token, event)); row.appendChild(name);
             var periods = group.overall ? scores(clean(group.overall)) : [];
-            row.appendChild(periods.length ? scoreTiles(periods, true)
+            row.appendChild(periods.length ? gradeChips(periods)
                 : el('span', 'univer-app-attendance-overview-empty', group.overall ? clean(group.overall) : t.ungraded));
             rows.appendChild(row);
         });
@@ -255,8 +297,16 @@
     }
     function saveCourse() { try { if (selectedCourse === 'all') sessionStorage.removeItem(courseKey); else sessionStorage.setItem(courseKey, selectedCourse); } catch (_) {} }
     function chooseCourse(token, event) {
+        // A name in the course summary is removed by the redraw (the summary hides once one course is chosen).
+        var fromOverview = !!state && state.overview.contains(document.activeElement);
         selectedCourse = token; saveCourse(); redraw();
         if (event?.detail > 0) revealOwned('forward');
+        // Keyboard and TalkBack focus moves to the chosen course's chip instead of falling back to the page.
+        var at = document.activeElement;
+        if (fromOverview && state && (!at || at === document.body || !at.isConnected)) {
+            var chip = token === 'all' ? state.allCourse : state.courseButtons.get(token);
+            if (chip?.isConnected) chip.focus({preventScroll:true});
+        }
         if (state.host.getBoundingClientRect().top < 0) state.host.scrollIntoView?.({block:'start'});
     }
     function chooseType(type, event) {
@@ -273,18 +323,37 @@
         if (selectedCourse !== 'all' && !courses.some(group => group.token === selectedCourse)) { selectedCourse = 'all'; saveCourse(); }
         state.courses.hidden = !courses.length; state.courses.setAttribute('aria-label', t.courses);
         setText(state.courseCaption, t.courses); setText(state.allCourse, t.allCourses);
+        state.allCourse.setAttribute('aria-pressed', String(selectedCourse === 'all'));
         var keep = new Set();
         courses.forEach((group, index) => {
             keep.add(group.token);
-            var option = state.courseOptions.get(group.token);
-            if (!option) { option = el('option'); option.value = group.token; state.courseOptions.set(group.token, option); }
-            setText(option, group.name);
-            var position = state.courseSelect.children[index + 1];
-            if (position !== option) state.courseSelect.insertBefore(option, position || null);
+            var button = state.courseButtons.get(group.token);
+            if (!button) {
+                button = el('button'); button.type = 'button'; button.dataset.course = group.token;
+                button.addEventListener('click', event => chooseCourse(group.token, event)); state.courseButtons.set(group.token, button);
+            }
+            setText(button, group.name); button.setAttribute('aria-pressed', String(selectedCourse === group.token));
+            var position = state.courseList.children[index + 1];
+            if (position !== button) state.courseList.insertBefore(button, position || null);
         });
-        state.courseOptions.forEach((option, token) => { if (!keep.has(token)) { option.remove(); state.courseOptions.delete(token); } });
-        state.courseSelect.value = selectedCourse;
-        state.courseSelect.setAttribute('aria-label', t.courses);
+        state.courseButtons.forEach((button, token) => { if (!keep.has(token)) { button.remove(); state.courseButtons.delete(token); } });
+        // The row scrolls sideways on a phone; a new choice is brought into sight. Only a new one: a late AJAX redraw
+        // must not snap back a row the student has just swiped to look at the other courses.
+        var chosen = state.courseList.querySelector('button[aria-pressed=true]');
+        if (chosen && state.courseShown !== selectedCourse) {
+            // The first pass runs before the app style turns the chips into one scrolling row: a course chosen on another
+            // page (the home overview, Текущая аттестация) is centred once the row can scroll, not lost on the wrapped one.
+            var list = state.courseList, wanted = selectedCourse, owner = state;
+            var centre = function () {
+                if (state !== owner || selectedCourse !== wanted || owner.courseShown === wanted || !chosen.isConnected) return;
+                if (!chosen.offsetWidth || list.scrollWidth <= list.clientWidth) return; // Hidden or wrapped: nothing to scroll yet.
+                owner.courseShown = wanted;
+                list.scrollLeft = Math.max(0, chosen.offsetLeft - (list.clientWidth - chosen.offsetWidth) / 2);
+            };
+            centre();
+            if (typeof requestAnimationFrame === 'function') requestAnimationFrame(centre);
+            setTimeout(centre, 120); // A hidden WebView throttles animation frames.
+        }
     }
     // Hides the outermost [elements] wholly inside [start, end) (and before [last], when given).
     function hideRange(elements, start, end, exclude, last) {
@@ -316,32 +385,28 @@
         state.bar.querySelectorAll('button').forEach(button => { button.textContent = t[button.dataset.kind]; button.setAttribute('aria-pressed', String(selected === button.dataset.kind)); });
         state.bar.setAttribute('aria-label', t.filter);
         // The note explains a type filter, so it appears only while one is active.
-        state.caption.textContent = t.filter; state.note.hidden = true;
-        state.optionsCaption.textContent = selected === 'all' ? t.filter : t[selected];
+        state.caption.textContent = t.filter; state.note.textContent = t.note; state.note.hidden = selected === 'all';
         var focused = root.querySelector('.univer-app-attendance-summary[data-univer-focus] .univer-app-attendance-details-toggle');
         if (focused) { focused.closest('.univer-app-attendance-summary').removeAttribute('data-univer-focus'); focused.focus?.({preventScroll:true}); }
     }
-    // Course choice, the class-type filter in a disclosure and the course overview, above the first course.
+    // The course chips, the class-type segment and the course overview, above the first course.
     function buildTools(groups) {
-        var bar = el('div', 'univer-app-attendance-filters'), caption = el('span', 'univer-app-attendance-filter-caption');
-        bar.setAttribute('role', 'group'); bar.appendChild(caption);
+        var bar = el('div', 'univer-app-attendance-filters'), caption = el('p', 'univer-app-attendance-filter-caption');
+        bar.setAttribute('role', 'group');
         ['all'].concat(TYPES).forEach(type => {
             var button = el('button'); button.type = 'button'; button.dataset.kind = type;
             button.addEventListener('click', event => chooseType(type, event)); bar.appendChild(button);
         });
         var courses = el('nav', 'univer-app-attendance-courses'), courseCaption = el('p', 'univer-app-attendance-course-caption');
-        var courseList = el('div', 'univer-app-attendance-course-list'), courseSelect = el('select'), allCourse = el('option');
-        courseSelect.addEventListener('change', () => chooseCourse(courseSelect.value));
-        allCourse.value = 'all'; courseSelect.appendChild(allCourse); courseList.appendChild(courseSelect);
-        courses.append(courseCaption, courseList);
-        var options = el('details', 'univer-app-attendance-options'), optionsCaption = el('summary'), optionsBody = el('div');
+        var courseList = el('div', 'univer-app-attendance-course-list'), allCourse = el('button');
+        allCourse.type = 'button'; allCourse.dataset.course = 'all'; allCourse.addEventListener('click', event => chooseCourse('all', event));
+        courseList.appendChild(allCourse); courses.append(courseCaption, courseList);
         var note = el('p', 'univer-app-attendance-filter-note'), summaryList = el('section', 'univer-app-attendance-overview');
-        optionsBody.append(bar, note); options.append(optionsCaption, optionsBody);
-        var tools = el('div', 'univer-app-attendance-tools'); tools.append(courses, options, summaryList);
+        var tools = el('div', 'univer-app-attendance-tools'); tools.append(courses, caption, bar, note, summaryList);
         insertAfterCell(groups[0].heading || groups[0].lessons[0].cell, tools, true);
         // The filter bar has its own lifetime; summary rebuilds must not remove it.
         var host = owned.pop();
-        state = {bar, host, caption, note, courses, courseCaption, courseList, courseSelect, optionsCaption, allCourse, courseOptions:new Map(), overview:summaryList, signature:null};
+        state = {bar, host, caption, note, courses, courseCaption, courseList, allCourse, courseButtons:new Map(), overview:summaryList, signature:null};
     }
     // Language and every course, lesson and grade table with its text: polling rerenders only when one changes.
     function signatureOf(groups) {
@@ -358,7 +423,8 @@
         if (!groups.length) return;
         var signature = signatureOf(groups);
         if (!state) buildTools(groups);
-        if (state.signature !== signature) { state.signature = signature; render(groups); }
+        // The signature is kept only after a complete render, so a failed one is retried on the next pass.
+        if (state.signature !== signature) { render(groups); state.signature = signature; }
     }
     function release() {
         resetVisibility(); removeOwned(); restoreLabels();

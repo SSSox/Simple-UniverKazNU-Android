@@ -31,6 +31,7 @@ import org.junit.runner.RunWith
 import java.io.ByteArrayInputStream
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 /** All requests, including credential POSTs, are intercepted; no synthetic data leaves the fixture. */
@@ -62,6 +63,9 @@ class MoodleSignOnTest {
         val landing = CountDownLatch(1)
         val failed = CountDownLatch(1)
         val submissions = AtomicInteger()
+        val retried = AtomicBoolean()
+        val freshEntry = AtomicBoolean()
+        val staleSubmissions = AtomicInteger()
         val landings = AtomicInteger()
         val entries = AtomicInteger()
         var requestMethod: String? = null
@@ -114,7 +118,14 @@ class MoodleSignOnTest {
                     web.webViewClient = object : WebViewClient() {
                         override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse {
                             val html = if (request.isForMainFrame && request.url.path == "/user/loginMoodle") {
-                                if (request.url.query != null) submissions.incrementAndGet()
+                                if (request.url.query != null) {
+                                    submissions.incrementAndGet()
+                                    if (retried.get() && !freshEntry.get()) staleSubmissions.incrementAndGet()
+                                } else if (retried.get()) {
+                                    // A slow answer keeps the failed form on screen after Retry.
+                                    Thread.sleep(1_500)
+                                    freshEntry.set(true)
+                                }
                                 // After a Univer login the entry hands off directly, as for a signed-in account.
                                 if (entries.incrementAndGet() > 1 && method == "DETOUR")
                                     "<html><body><script>location.href='https://dl.kaznu.edu.kz/my/';</script></body></html>"
@@ -152,11 +163,13 @@ class MoodleSignOnTest {
                     scenario.onActivity {
                         assertEquals(android.view.View.VISIBLE, host.findViewById<android.view.View>(R.id.document_error).visibility)
                         assertEquals(SingleSignOnPolicy.ENTRY, viewer.save()!!.getString("service_entry"))
+                        retried.set(true)
                         host.findViewById<android.view.View>(R.id.document_retry).performClick()
                     }
                     val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15)
                     while (submissions.get() < 2 && System.nanoTime() < deadline) Thread.sleep(100)
                     assertEquals("Explicit retry permits exactly one more submission", 2, submissions.get())
+                    assertEquals("Retry signs in from the fresh form, not the one being replaced", 0, staleSubmissions.get())
                 } else {
                     assertTrue("Automatic Moodle hand-off completed", landing.await(20, TimeUnit.SECONDS))
                     assertEquals(if (method == "POST") "POST" else "GET", requestMethod)
@@ -225,7 +238,8 @@ class MoodleSignOnTest {
                         waitFor { closed == 1 }
                         assertEquals(1, signedOut)
                         assertEquals("No new hand-off after the user's own logout", 1, entries.get())
-                        scenario.onActivity { assertEquals(1, host.childCount); source.destroyFixture() }
+                        waitFor { host.childCount == 1 }
+                        scenario.onActivity { source.destroyFixture() }
                         return@use
                     }
                     scenario.onActivity {
@@ -265,7 +279,9 @@ class MoodleSignOnTest {
                     assertEquals(2, host.childCount)
                     viewer.close()
                     assertEquals(1, closed)
-                    assertEquals(1, host.childCount)
+                }
+                waitFor { host.childCount == 1 }
+                scenario.onActivity {
                     assertSame(source, host.getChildAt(0))
                     source.destroyFixture()
                 }

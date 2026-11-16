@@ -9,6 +9,10 @@ import com.univerflow.kaznu.preview.WordFlow.Item
 internal object WordBinary {
     private const val CHAR_LIMIT = 4_000_000
     private const val PICTURE_LIMIT = 32 * 1024 * 1024
+    /** Paragraphs and their items kept for one document: as objects, marks cost far more than as characters. */
+    private const val FLOW_LIMIT = 500_000
+    /** Fields nested deeper than this are passed over: only their marks are counted. */
+    private const val FIELD_DEPTH = 64
 
     /** The body of the reading view, drawn by [WordHtml] like .docx. */
     fun html(bytes: ByteArray, checkActive: () -> Unit = {}, media: PreviewMedia = PreviewMedia.inline()): String =
@@ -23,7 +27,7 @@ internal object WordBinary {
     /** Plain text for the search: the body, then footnotes, headers, comments, endnotes and text boxes. */
     fun text(bytes: ByteArray, checkActive: () -> Unit = {}): String {
         val document = Document(CompoundFile(bytes), checkActive, null)
-        return WordFlow.text(document.paragraphs(document.allLength))
+        return WordFlow.text(document.paragraphs(document.allLength, forText = true))
     }
 
     private data class CharProps(
@@ -96,18 +100,22 @@ internal object WordBinary {
                         val start = position + 5
                         val count = (size - 4) / 12
                         if (count <= 0 || !table.has(start, size)) throw UnsupportedDocumentException("Bad piece table")
+                        // Pieces follow one another. One that starts before the end of those already read adds only
+                        // what lies past them, so overlapping pieces copy each character once.
+                        var covered = 0
                         for (index in 0 until count) {
                             val cpStart = table.i32(start + index * 4).coerceAtLeast(0)
                             val cpEnd = table.i32(start + (index + 1) * 4).coerceAtMost(allLength)
                             val raw = table.u32(start + (count + 1) * 4 + index * 8 + 2)
                             val compressed = raw and 0x40000000L != 0L
                             val offset = (raw and 0x3FFFFFFFL).let { if (compressed) it / 2 else it }.toInt()
-                            for (cp in cpStart until cpEnd) {
+                            for (cp in maxOf(cpStart, covered) until cpEnd) {
                                 val at = if (compressed) offset + (cp - cpStart) else offset + (cp - cpStart) * 2
                                 if (!fib.has(at, if (compressed) 1 else 2)) break
                                 text[cp] = if (compressed) WINDOWS_1252[fib.u8(at)] else fib.u16(at).toChar()
                                 positions[cp] = at
                             }
+                            covered = maxOf(covered, cpEnd)
                             if (index % 256 == 0) checkActive()
                         }
                         return
@@ -123,9 +131,11 @@ internal object WordBinary {
             val (fc, lcb) = fcLcb(index) ?: return emptyList()
             val count = (lcb - 4) / 8
             val result = mutableListOf<Range<T>>()
+            val read = HashSet<Int>()
             for (slot in 0 until count) {
                 val page = (table.i32(fc + (count + 1) * 4 + slot * 4) and 0x3FFFFF) * 512
-                if (!fib.has(page, 512)) continue
+                // A page holds each of its ranges once, however many slots of a damaged file name it.
+                if (!fib.has(page, 512) || !read.add(page)) continue
                 val runs = fib.u8(page + 511)
                 for (entry in 0 until runs) {
                     val value = runCatching { parse(page, entry, runs) }.getOrNull() ?: continue
@@ -233,46 +243,72 @@ internal object WordBinary {
             return null
         }
 
-        /** Splits the first [length] characters into paragraphs; field codes are dropped, their results kept. */
-        fun paragraphs(length: Int): List<WordFlow.Paragraph> {
+        /**
+         * Splits the first [length] characters into paragraphs; field codes are dropped, their results kept. Past
+         * [FLOW_LIMIT] paragraphs and items the view is refused, while the search ([forText]) keeps what it has; the
+         * search also stops at [TextExtract.LIMIT] characters that are not blank, since it keeps no more than that.
+         */
+        fun paragraphs(length: Int, forText: Boolean = false): List<WordFlow.Paragraph> {
             val result = mutableListOf<WordFlow.Paragraph>()
             var items = mutableListOf<Item>()
             val run = StringBuilder()
             var runStyle = RunStyle()
             val fields = ArrayDeque<Field>()
+            // The innermost field still in its instruction, and the fields nested past FIELD_DEPTH.
+            var instruction: Field? = null
+            var ignoredFields = 0
+            // Paragraphs and items in result, and the characters added that are not blank.
+            var kept = 0
+            var visible = 0
+            val textLimit = if (forText) TextExtract.LIMIT else Int.MAX_VALUE
             fun flush() { if (run.isNotEmpty()) { items += Item.Text(run.toString(), runStyle); run.setLength(0) } }
             fun add(value: String, style: RunStyle) {
                 if (run.isNotEmpty() && style != runStyle) flush()
                 if (run.isEmpty()) runStyle = style
                 run.append(value)
+                visible += value.count { !it.isWhitespace() }
             }
             fun end(position: Int, cellEnd: Boolean) {
                 flush()
                 // A link left open by a damaged field still closes with its paragraph.
                 fields.filter { it.link }.forEach { items += Item.LinkEnd; it.link = false }
-                result += WordFlow.Paragraph(items, find(paragraphProps, position) ?: WordFlow.Props(), cellEnd)
+                result += WordFlow.Paragraph(items, find(paragraphProps, position) ?: DEFAULT_PROPS, cellEnd)
+                kept += items.size + 1
                 items = mutableListOf()
             }
             for (cp in 0 until minOf(length, text.size)) {
                 if (cp % 4096 == 0) checkActive()
+                if (kept + items.size >= FLOW_LIMIT || visible >= textLimit) { if (forText) break; throw PreviewLimitException() }
                 val char = text[cp]
                 val position = positions[cp]
                 if (position < 0) continue
                 val props = find(characters, position) ?: CharProps()
                 when (char.code) {
                     // Fields: begin, separator (the instruction ends, the shown result starts), end.
-                    0x13 -> { flush(); fields.addLast(Field()); continue }
+                    0x13 -> {
+                        flush()
+                        if (fields.size >= FIELD_DEPTH) ignoredFields++ else { val field = Field(); fields.addLast(field); instruction = field }
+                        continue
+                    }
                     0x14 -> {
+                        if (ignoredFields > 0) continue
                         val field = fields.lastOrNull() ?: continue
                         field.result = true
+                        instruction = fields.lastOrNull { !it.result }
                         val target = HYPERLINK.find(field.instruction)?.groupValues?.get(1)
                         if (target != null && fields.all { it.result }) { flush(); items += Item.LinkStart(target); field.link = true }
                         continue
                     }
-                    0x15 -> { val field = fields.removeLastOrNull() ?: continue; if (field.link) { flush(); items += Item.LinkEnd }; continue }
+                    0x15 -> {
+                        if (ignoredFields > 0) { ignoredFields--; continue }
+                        val field = fields.removeLastOrNull() ?: continue
+                        instruction = fields.lastOrNull { !it.result }
+                        if (field.link) { flush(); items += Item.LinkEnd }
+                        continue
+                    }
                 }
-                val instruction = fields.lastOrNull { !it.result }
-                if (instruction != null) { if (instruction.instruction.length < 2048) instruction.instruction.append(char); continue }
+                val current = instruction
+                if (current != null) { if (current.instruction.length < 2048) current.instruction.append(char); continue }
                 when (char.code) {
                     0x0D, 0x0C -> end(position, cellEnd = false)
                     0x07 -> end(position, cellEnd = true)
@@ -287,22 +323,39 @@ internal object WordBinary {
             return result
         }
 
-        /** An inline picture: PICF in the Data stream, then OfficeArt records holding the BLIP. */
+        /** The picture looked up last: a run of picture characters points to one record, which is read once. */
+        private var lastLocation = -1
+        private var lastPicture: Item.Picture? = null
+        /** Bytes of picture records read so far. */
+        private var pictureBytes = 0L
+
         private fun picture(location: Int): Item.Picture? {
             val stream = data ?: return null
-            return runCatching {
-                if (location < 0 || location + 8L > stream.size) return null
-                val total = LittleEndian(stream.read(location.toLong(), 8)).i32(0)
-                if (total <= 8 || location.toLong() + total > stream.size || total > PICTURE_LIMIT + 4096) return null
-                // Only this picture's record is read from the stream.
-                val bytes = LittleEndian(stream.read(location.toLong(), total))
-                val header = bytes.u16(4)
-                if (total <= header) return null
-                var start = header
-                if (bytes.i16(6) == 0x66) start += 1 + bytes.u8(start) // MM_SHAPEFILE has a picture name.
-                val blip = Blips.find(bytes, start, total) ?: return null
-                media?.add(blip.type, blip.bytes)?.let { Item.Picture(it) }
-            }.getOrNull()
+            if (location != lastLocation) {
+                checkActive()
+                lastPicture = runCatching { readPicture(stream, location) }.getOrNull()
+                lastLocation = location
+            }
+            return lastPicture
+        }
+
+        /** An inline picture: PICF in the Data stream, then OfficeArt records holding the BLIP. */
+        private fun readPicture(stream: StreamReader, location: Int): Item.Picture? {
+            if (location < 0 || location + 8L > stream.size) return null
+            val total = LittleEndian(stream.read(location.toLong(), 8)).i32(0)
+            if (total <= 8 || location.toLong() + total > stream.size || total > PICTURE_LIMIT + 4096) return null
+            // Pictures that do not overlap add up to the stream's size at most. Overlapping records stop at that size
+            // and one picture more, instead of reading the stream again and again.
+            if (pictureBytes + total > stream.size + PICTURE_LIMIT) return null
+            pictureBytes += total
+            // Only this picture's record is read from the stream.
+            val bytes = LittleEndian(stream.read(location.toLong(), total))
+            val header = bytes.u16(4)
+            if (total <= header) return null
+            var start = header
+            if (bytes.i16(6) == 0x66) start += 1 + bytes.u8(start) // MM_SHAPEFILE has a picture name.
+            val blip = Blips.find(bytes, start, total) ?: return null
+            return media?.add(blip.type, blip.bytes)?.let { Item.Picture(it) }
         }
     }
 
@@ -337,6 +390,9 @@ internal object WordBinary {
     private const val CLX = 33
 
     private val HYPERLINK = Regex("^\\s*HYPERLINK\\s+(?:\\\\[a-z]\\s+)*\"?([^\"\\s]+)", RegexOption.IGNORE_CASE)
+
+    /** The properties of a paragraph without its own, shared by all such paragraphs (they never change). */
+    private val DEFAULT_PROPS = WordFlow.Props()
 
     /** Characters 0x80–0x9F of Windows-1252 differ from ISO-8859-1; the rest map one to one. */
     private val WINDOWS_1252 = CharArray(256) { it.toChar() }.also { table ->

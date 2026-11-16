@@ -45,6 +45,7 @@ class FindBar(private val window: android.view.Window, private val binding: Acti
     /** Opens the bar with [query] found; an empty query brings up the keyboard. */
     fun open(query: String) {
         if (!available) return
+        Motion.layout(binding.viewerRoot)
         binding.viewerFindBar.isVisible = true
         if (binding.viewerFind.text?.toString() != query) binding.viewerFind.setText(query) else find(query)
         binding.viewerFind.setSelection(binding.viewerFind.text?.length ?: 0)
@@ -53,6 +54,7 @@ class FindBar(private val window: android.view.Window, private val binding: Acti
     }
 
     fun close() {
+        Motion.layout(binding.viewerRoot)
         binding.viewerFindBar.isVisible = false
         binding.viewerWeb.clearMatches()
         WindowCompat.getInsetsController(window, binding.viewerFind).hide(WindowInsetsCompat.Type.ime())

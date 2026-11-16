@@ -32,12 +32,12 @@ class NoticeLoadingOverlayTest {
                     loading.status(AutomationStatus.NOTICE_CONFIRMING)
                     assertEquals(View.VISIBLE, overlay.visibility)
                     loading.status(AutomationStatus.IDLE)
-                    assertEquals(View.GONE, overlay.visibility)
+                    assertFalse(loading.covering)
                     assertEquals(View.IMPORTANT_FOR_ACCESSIBILITY_YES, web.importantForAccessibility)
                     for (failure in listOf(AutomationStatus.NOTICE_FAILED, AutomationStatus.LOGIN_FAILED,
                         AutomationStatus.LANGUAGE_FAILED, AutomationStatus.AGREEMENT_FAILED)) {
                         loading.beginStartup(); loading.status(failure)
-                        assertEquals(View.GONE, overlay.visibility)
+                        assertFalse(loading.covering)
                         assertEquals(View.IMPORTANT_FOR_ACCESSIBILITY_YES, web.importantForAccessibility)
                     }
                 } finally { loading.close(); web.destroyFixture() }

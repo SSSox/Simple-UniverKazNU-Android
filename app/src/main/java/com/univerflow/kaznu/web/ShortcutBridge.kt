@@ -11,23 +11,26 @@ import org.json.JSONObject
 import org.json.JSONTokener
 
 /**
- * Receives home-tile pin and order taps from the site's main frame.
- * Only data crosses: a listener limited to the exact Univer origin, no callable host objects.
+ * Receives home-tile pin and order taps and a UMKD section's «Скачать все» from the site's main frame.
+ * Only data crosses: a listener limited to the exact Univer origin, no callable host objects, and only messages
+ * carrying [channel]'s key: the site's own scripts cannot pin a tile or start downloads.
  */
-class ShortcutBridge(private val web: WebView, private val onRequest: (ShortcutRequest) -> Unit) {
+class ShortcutBridge(private val web: WebView, private val channel: ChannelGuard, private val onDownloadAll: (DownloadBatch) -> Unit = {}, private val onRequest: (ShortcutRequest) -> Unit) {
     private var closed = false
 
     init {
         if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) WebViewCompat.addWebMessageListener(web, CHANNEL, setOf(SitePolicy.ORIGIN)) { _, message, origin, mainFrame, _ ->
             if (closed || !mainFrame || origin.toString() != SitePolicy.ORIGIN) return@addWebMessageListener
-            parse(runCatching { message.data }.getOrNull())?.let(onRequest)
+            val data = channel.unwrap(runCatching { message.data }.getOrNull()) ?: return@addWebMessageListener
+            if (data.startsWith(DownloadBatch.MESSAGE_PREFIX)) DownloadBatch.parse(data)?.let(onDownloadAll)
+            else parse(data)?.let(onRequest)
         }
     }
 
     /** Sends the stored list back; the page renders only this validated data. */
     fun configure(shortcuts: HomeShortcuts) {
         if (closed || !SitePolicy.trusted(web.url)) return
-        web.evaluateJavascript("(function(){if(location.origin===${JSONObject.quote(SitePolicy.ORIGIN)})" +
+        web.evaluateJavascript("(function(){if(location.origin===${jsString(SitePolicy.ORIGIN)})" +
             "window.__univerShortcutsV1&&window.__univerShortcutsV1.configure(${script(shortcuts)});})()", null)
     }
 

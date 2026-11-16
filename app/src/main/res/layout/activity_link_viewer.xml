@@ -1,0 +1,36 @@
+<!-- The link window: the bar of the Moodle document panel (close, page title over the site's address, reload, browser),
+     then the page with a thin progress line and the panel's own error view. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/link_root" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:background="?android:attr/colorBackground" android:orientation="vertical">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="56dp" android:background="@color/app_bar"
+        android:gravity="center_vertical" android:orientation="horizontal" android:paddingStart="4dp" android:paddingEnd="4dp">
+        <com.google.android.material.button.MaterialButton android:id="@+id/link_close"
+            style="@style/Widget.Material3.Button.IconButton" android:layout_width="48dp" android:layout_height="48dp"
+            app:icon="@drawable/ic_close" app:iconTint="?attr/colorOnSurfaceVariant" />
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+            android:layout_marginStart="4dp" android:orientation="vertical">
+            <TextView android:id="@+id/link_title" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:ellipsize="end" android:maxLines="1" android:textAppearance="@style/Univer.TextAppearance.ToolbarTitle"
+                android:textColor="?attr/colorOnSurface" />
+            <TextView android:id="@+id/link_host" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:ellipsize="middle" android:maxLines="1" android:textAppearance="?attr/textAppearanceBodySmall"
+                android:textColor="?attr/colorOnSurfaceVariant" />
+        </LinearLayout>
+        <com.google.android.material.button.MaterialButton android:id="@+id/link_reload"
+            style="@style/Widget.Material3.Button.IconButton" android:layout_width="48dp" android:layout_height="48dp"
+            app:icon="@drawable/ic_refresh" app:iconTint="?attr/colorOnSurfaceVariant" />
+        <com.google.android.material.button.MaterialButton android:id="@+id/link_browser"
+            style="@style/Widget.Material3.Button.IconButton" android:layout_width="48dp" android:layout_height="48dp"
+            app:icon="@drawable/ic_open_in_new" app:iconTint="?attr/colorOnSurfaceVariant" />
+    </LinearLayout>
+    <FrameLayout android:id="@+id/link_frame" android:layout_width="match_parent" android:layout_height="0dp"
+        android:layout_weight="1">
+        <include android:id="@+id/link_error" layout="@layout/view_document_error" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:layout_gravity="center" />
+        <com.google.android.material.progressindicator.LinearProgressIndicator android:id="@+id/link_progress"
+            android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_gravity="top"
+            android:visibility="invisible" app:trackThickness="3dp" app:showAnimationBehavior="outward"
+            app:hideAnimationBehavior="inward" />
+    </FrameLayout>
+</LinearLayout>

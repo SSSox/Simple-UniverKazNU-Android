@@ -16,7 +16,7 @@ import org.json.JSONTokener
  * Runs univer-notices.js on each finished page; sections are fetched at most every [fetchIntervalMillis]. Only bounded
  * data from the Univer origin comes back, tagged with its session so [onScan] can drop an outdated read.
  */
-class NoticeBridge(private val web: WebView, private val fetchIntervalMillis: Long = 10 * 60_000L,
+class NoticeBridge(private val web: WebView, private val channel: ChannelGuard, private val fetchIntervalMillis: Long = 10 * 60_000L,
     private val onScan: (scan: NoticeScan, session: Int) -> Unit) {
     private val script by lazy(LazyThreadSafetyMode.NONE) {
         web.context.assets.open("univer-notices.js").bufferedReader().use { it.readText() }
@@ -29,7 +29,8 @@ class NoticeBridge(private val web: WebView, private val fetchIntervalMillis: Lo
     init {
         if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) WebViewCompat.addWebMessageListener(web, CHANNEL, setOf(SitePolicy.ORIGIN)) { _, message, origin, mainFrame, _ ->
             if (closed || !mainFrame || origin.toString() != SitePolicy.ORIGIN) return@addWebMessageListener
-            val json = decode(runCatching { message.data }.getOrNull()) ?: return@addWebMessageListener
+            // Only the app's notices script holds the key, so the site cannot post a list of its own (see ChannelGuard).
+            val json = decode(channel.unwrap(runCatching { message.data }.getOrNull())) ?: return@addWebMessageListener
             // A message without the session it was started for is never trusted to be the current one.
             val from = json.opt("g") as? Int ?: return@addWebMessageListener
             parse(json, section = true)?.let { onScan(it, from) }
@@ -47,7 +48,7 @@ class NoticeBridge(private val web: WebView, private val fetchIntervalMillis: Lo
         val now = SystemClock.elapsedRealtime()
         // A check on the same interval is not skipped for arriving a little early.
         val fetch = messages && (refresh || lastFetch == Long.MIN_VALUE || now - lastFetch >= fetchIntervalMillis - 30_000)
-        web.evaluateJavascript("$script($fetch, $session)") { result ->
+        web.evaluateJavascript("$script($fetch, $session, ${channel.senders()})") { result ->
             if (closed || url != web.url) return@evaluateJavascript
             val json = decode(runCatching { JSONTokener(result).nextValue() as? String }.getOrNull()) ?: return@evaluateJavascript
             // The interval starts when the page really began fetching (it had section links to read).

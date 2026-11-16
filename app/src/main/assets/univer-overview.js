@@ -3,42 +3,68 @@
 (function () {
     'use strict';
     if (location.origin !== 'https://univer.kaznu.kz' || window.__univerOverviewV1) return;
-    var dom = window.__univerDomV1, clean = dom.clean;
+    var dom = window.__univerDomV1, clean = dom.clean, ownRows = dom.ownRows, el = dom.el;
     var language = 'ru', active = false, owned = [], loads = new Map(), generation = 0, scheduleTimer;
-    function text() {
-        return language === 'en' ? {schedule:'Schedule', none:'none', today:'Today', tomorrow:'Tomorrow', grades:'Grades', requests:'My requests', loading:'Loading…', failed:'Could not load. Open the page itself.', noClasses:'No classes today',
-                allSchedule:'Full schedule', allGrades:'All grades', allRequests:'All requests', noRequests:'No requests yet', now:'Now', next:'Next', done:'Finished', noGrades:'No grades yet', showAll:'Show all', collapse:'Show less', nextClasses:'Next classes', open:'Open request',
-                days:['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']} :
-            language === 'kz' ? {schedule:'Сабақ кестесі', none:'жоқ', today:'Бүгін', tomorrow:'Ертең', grades:'Үлгерім', requests:'Менің өтінімдерім', loading:'Жүктелуде…', failed:'Жүктеу мүмкін болмады. Бетті ашыңыз.', noClasses:'Бүгін сабақ жоқ',
-                allSchedule:'Толық кесте', allGrades:'Барлық бағалар', allRequests:'Барлық өтінімдер', noRequests:'Өтінімдер әлі жоқ', now:'Қазір', next:'Келесі', done:'Аяқталды', noGrades:'Бағалар әлі жоқ', showAll:'Барлығын көрсету', collapse:'Жасыру', nextClasses:'Келесі сабақтар', open:'Өтінімді ашу',
-                days:['Жексенбі','Дүйсенбі','Сейсенбі','Сәрсенбі','Бейсенбі','Жұма','Сенбі']} :
-            {schedule:'Расписание', none:'нет', today:'Сегодня', tomorrow:'Завтра', grades:'Успеваемость', requests:'Мои заявки', loading:'Загрузка…', failed:'Не удалось загрузить. Откройте страницу целиком.', noClasses:'Сегодня пар нет',
-                allSchedule:'Всё расписание', allGrades:'Вся успеваемость', allRequests:'Все заявки', noRequests:'Заявок пока нет', now:'Идёт', next:'Следующая', done:'Прошла', noGrades:'Оценок пока нет', showAll:'Показать все', collapse:'Свернуть', nextClasses:'Ближайшие пары', open:'Открыть заявку',
-                days:['Воскресенье','Понедельник','Вторник','Среда','Четверг','Пятница','Суббота']};
+    // Bounds of one page read (its size and its wait) and the clock that keeps the today panel current.
+    var MAX_HTML = 4 * 1024 * 1024, READ_TIMEOUT = 12000, REFRESH = 30000;
+    var WORDS = {
+        en: {schedule:'Schedule', none:'none', today:'Today', tomorrow:'Tomorrow', grades:'Grades', requests:'My requests', loading:'Loading…', failed:'Could not load. Open the page itself.', noClasses:'No classes today',
+            finished:'Today’s classes have finished',
+            allSchedule:'Full schedule', allGrades:'All grades', allRequests:'All requests', noRequests:'No requests yet', now:'Now', next:'Next', done:'Finished', noGrades:'No grades yet', showAll:'Show all', collapse:'Show less', nextClasses:'Next classes', open:'Open request',
+            days:['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']},
+        kz: {schedule:'Сабақ кестесі', none:'жоқ', today:'Бүгін', tomorrow:'Ертең', grades:'Үлгерім', requests:'Менің өтінімдерім', loading:'Жүктелуде…', failed:'Жүктеу мүмкін болмады. Бетті ашыңыз.', noClasses:'Бүгін сабақ жоқ',
+            finished:'Бүгінгі сабақтар аяқталды',
+            allSchedule:'Толық кесте', allGrades:'Барлық бағалар', allRequests:'Барлық өтінімдер', noRequests:'Өтінімдер әлі жоқ', now:'Қазір', next:'Келесі', done:'Аяқталды', noGrades:'Бағалар әлі жоқ', showAll:'Барлығын көрсету', collapse:'Жасыру', nextClasses:'Келесі сабақтар', open:'Өтінімді ашу',
+            days:['Жексенбі','Дүйсенбі','Сейсенбі','Сәрсенбі','Бейсенбі','Жұма','Сенбі']},
+        ru: {schedule:'Расписание', none:'нет', today:'Сегодня', tomorrow:'Завтра', grades:'Успеваемость', requests:'Мои заявки', loading:'Загрузка…', failed:'Не удалось загрузить. Откройте страницу целиком.', noClasses:'Сегодня пар нет',
+            finished:'Сегодняшние пары закончились',
+            allSchedule:'Всё расписание', allGrades:'Вся успеваемость', allRequests:'Все заявки', noRequests:'Заявок пока нет', now:'Идёт', next:'Следующая', done:'Прошла', noGrades:'Оценок пока нет', showAll:'Показать все', collapse:'Свернуть', nextClasses:'Ближайшие пары', open:'Открыть заявку',
+            days:['Воскресенье','Понедельник','Вторник','Среда','Четверг','Пятница','Суббота']}
+    };
+    // The line before today's list: the class under way and what follows it, or when the next one starts.
+    Object.assign(WORDS.en, {upNow:'Class in progress', upNext:'Next class', upThen:'Then', upLast:'Last class today', upRoom:'Room'});
+    Object.assign(WORDS.kz, {upNow:'Сабақ жүріп жатыр', upNext:'Келесі сабақ', upThen:'Содан кейін', upLast:'Бүгінгі соңғы сабақ', upRoom:'Дәрісхана'});
+    Object.assign(WORDS.ru, {upNow:'Идёт пара', upNext:'Следующая пара', upThen:'Затем', upLast:'Это последняя пара сегодня', upRoom:'Ауд.'});
+    function text() { return language === 'en' ? WORDS.en : language === 'kz' ? WORDS.kz : WORDS.ru; }
+    // The schedule page's countdown words: "через 2 ч 15 мин", "ещё 25 мин".
+    function duration(m) {
+        var u = language === 'en' ? ['d','h','min'] : language === 'kz' ? ['күн','сағ','мин'] : ['д','ч','мин'];
+        if (m < 60) return m + ' ' + u[2];
+        if (m < 1440) return Math.floor(m / 60) + ' ' + u[1] + (m % 60 ? ' ' + m % 60 + ' ' + u[2] : '');
+        var hours = Math.floor(m % 1440 / 60);
+        return Math.floor(m / 1440) + ' ' + u[0] + (hours ? ' ' + hours + ' ' + u[1] : '');
     }
-    function element(tag, cls, content) { var e = document.createElement(tag); if (cls) e.className = cls; if (content != null) e.textContent = content; return e; }
+    function until(m) { return language === 'en' ? 'in ' + duration(m) : language === 'kz' ? duration(m) + ' кейін' : 'через ' + duration(m); }
+    function left(m) { return language === 'en' ? duration(m) + ' left' : language === 'kz' ? duration(m) + ' қалды' : 'ещё ' + duration(m); }
+    // A label that counts down to a moment; the clock tick rewrites only its words, so the panel does not redraw every minute.
+    function counter(node, prefix, kind, moment) { node.dataset.univerCountAt = String(moment); node.dataset.univerCountKind = kind; node.dataset.univerCountPrefix = prefix; tick(node, +new Date()); return node; }
+    function tick(node, now) {
+        var m = Math.max(1, Math.ceil((+node.dataset.univerCountAt - now) / 60000)), value = node.dataset.univerCountPrefix + (node.dataset.univerCountKind === 'left' ? left(m) : until(m));
+        if (node.textContent !== value) node.textContent = value;
+    }
+    function tickCounts(root) { var now = +new Date(); root.querySelectorAll('[data-univer-count-at]').forEach(function (node) { tick(node, now); }); }
+
+    /* Site pages, each read once per visit. */
     async function read(url) {
-        var abort = new AbortController(), timeout = setTimeout(function () { abort.abort(); }, 12000);
+        var abort = new AbortController(), timeout = setTimeout(function () { abort.abort(); }, READ_TIMEOUT);
         try {
             var response = await fetch(url, {credentials:'same-origin', cache:'no-store', signal:abort.signal});
             var final = new URL(response.url, location.origin);
             if (response.status !== 200 || final.origin !== location.origin || /^\/user\/login/i.test(final.pathname)) throw new Error('Unavailable');
-            var html = await response.text(); if (html.length > 4 * 1024 * 1024) throw new Error('Oversized');
+            var html = await response.text(); if (html.length > MAX_HTML) throw new Error('Oversized');
             var doc = new DOMParser().parseFromString(html, 'text/html');
             if (doc.querySelector('#login_frm')) throw new Error('Session expired');
             return doc;
         } finally { clearTimeout(timeout); }
     }
     function once(key, url) { if (!loads.has(key)) loads.set(key, read(url)); return loads.get(key); }
+
+    /* The weekly schedule table, read the same way as the schedule page itself. */
     function minutes(value) { var m = value.split(':'); return +m[0] * 60 + +m[1]; }
     function clock(value) { return String(Math.floor(value / 60)).padStart(2, '0') + ':' + String(value % 60).padStart(2, '0'); }
-    // Today's column of the weekly table, rowspans resolved, the same reading as the schedule page itself.
-    function lessonsToday(doc, now) { return lessonsOn(doc, now.getDay() === 0 ? -1 : now.getDay()); }
     function columns(doc) { var table = doc.querySelector('table.schedule'); return table && table.rows[0] ? table.rows[0].cells.length : 0; }
-    function lessonsOn(doc, column) {
-        var table = doc.querySelector('table.schedule'); if (!table) return null;
-        var rows = Array.from(table.rows).filter(function (r) { return r.closest('table') === table; }), header = rows[0];
-        if (!header || column < 1 || column >= header.cells.length) return [];
+    // Every row's cells by column with rowspans and colspans resolved: the cell with its first and last row.
+    function scheduleGrid(rows) {
         var grid = [];
         rows.forEach(function (row, r) {
             grid[r] = grid[r] || []; var c = 0;
@@ -48,63 +74,69 @@
                 c += cell.colSpan;
             });
         });
-        var lessons = [];
+        return grid;
+    }
+    // The minutes a slot spans, from the times in the first column of its first and last rows; null without them.
+    function slotTime(grid, slot) {
+        var from = clean(grid[slot.start]?.[0]?.cell).match(/\d{1,2}:\d{2}/g) || [], to = clean(grid[Math.min(slot.end, grid.length - 1)]?.[0]?.cell).match(/\d{1,2}:\d{2}/g) || [];
+        return from.length && to.length ? {start:minutes(from[0]), end:minutes(to[to.length - 1])} : null;
+    }
+    // A schedule cell's lessons: each subgroup (or the whole cell) with its subject and the rest as details.
+    function cellLessons(cell, time) {
+        var lessons = [], groups = Array.from(cell.querySelectorAll('.groups>div')); if (!groups.length) groups = [cell];
+        groups.forEach(function (group) {
+            var parts = Array.from(group.querySelectorAll('p')); if (!parts.length) parts = [group];
+            var texts = parts.map(function (p) { return p.classList.contains('params') ? Array.from(p.childNodes).map(clean).filter(Boolean).join(' / ') : clean(p); }).filter(Boolean);
+            if (texts.length) lessons.push({start:time.start, end:time.end, subject:texts[0], details:texts.slice(1).join(' · '), info:window.__univerLesson?.read(group)});
+        });
+        return lessons;
+    }
+    function lessonsOn(doc, column) {
+        var table = doc.querySelector('table.schedule'); if (!table) return null;
+        var rows = ownRows(table), header = rows[0];
+        if (!header || column < 1 || column >= header.cells.length) return [];
+        var grid = scheduleGrid(rows), lessons = [];
         grid.slice(1).forEach(function (line, i) {
             var slot = line[column]; if (!slot || slot.start !== i + 1 || !clean(slot.cell)) return;
-            var from = clean(grid[slot.start]?.[0]?.cell).match(/\d{1,2}:\d{2}/g) || [], to = clean(grid[Math.min(slot.end, grid.length - 1)]?.[0]?.cell).match(/\d{1,2}:\d{2}/g) || [];
-            if (!from.length || !to.length) return;
-            var groups = Array.from(slot.cell.querySelectorAll('.groups>div')); if (!groups.length) groups = [slot.cell];
-            groups.forEach(function (group) {
-                var parts = Array.from(group.querySelectorAll('p')); if (!parts.length) parts = [group];
-                var texts = parts.map(function (p) { return p.classList.contains('params') ? Array.from(p.childNodes).map(clean).filter(Boolean).join(' / ') : clean(p); }).filter(Boolean);
-                if (texts.length) lessons.push({start:minutes(from[0]), end:minutes(to[to.length - 1]), subject:texts[0], details:texts.slice(1).join(' · '), info:window.__univerLesson?.read(group)});
-            });
+            var time = slotTime(grid, slot); if (!time) return;
+            lessons.push(...cellLessons(slot.cell, time));
         });
         return lessons.sort(function (a, b) { return a.start - b.start; });
     }
+    // Today's column of the weekly table, rowspans resolved, the same reading as the schedule page itself.
+    function lessonsToday(doc, now) { return lessonsOn(doc, now.getDay() === 0 ? -1 : now.getDay()); }
     function weekRange(value) {
         var dates = (value || '').match(/\d{1,2}\.\d{1,2}\.\d{4}/g) || [];
         return dates.length >= 2 ? dates.map(function (d) { var p = d.split('.'); return new Date(+p[2], +p[1] - 1, +p[0]); }) : null;
     }
-    // On a day without classes: the next day with classes later this week, or the first one of the following week.
-    // The following week is the site's own week link (the week selector's option address), read like the current one.
-    async function nextClasses(doc, now) {
-        for (var column = now.getDay() === 0 ? 7 : now.getDay() + 1; column < columns(doc); column++) {
-            var found = lessonsOn(doc, column);
-            if (found && found.length) return {date:new Date(now.getFullYear(), now.getMonth(), now.getDate() + column - now.getDay()), lessons:found};
+    // The first day with classes in [doc]'s week from [column] on, dated from [base], the day of column [baseColumn].
+    function firstClassDay(doc, column, base, baseColumn) {
+        for (; column < columns(doc); column++) {
+            var lessons = lessonsOn(doc, column);
+            if (lessons && lessons.length) return {date:new Date(base.getFullYear(), base.getMonth(), base.getDate() + column - baseColumn), lessons:lessons};
         }
+        return null;
+    }
+    // The week after the one selected in [doc]'s week selector: its schedule option and dates, or null.
+    function followingWeek(doc) {
         var select = doc.getElementById('weekSelect'); if (!select) return null;
         var options = Array.from(select.options), current = options.find(function (o) { return o.selected || o.hasAttribute('selected'); }) || options[0];
         var range = current && weekRange(current.value + ' ' + current.textContent); if (!range) return null;
         var next = options.map(function (o) { return {option:o, range:weekRange(o.value + ' ' + o.textContent)}; })
             .filter(function (o) { return o.range && o.range[0] > range[range.length - 1]; }).sort(function (a, b) { return a.range[0] - b.range[0]; })[0];
-        if (!next || !/^\/student\/myschedule\//.test(next.option.value)) return null;
+        return next && /^\/student\/myschedule\//.test(next.option.value) ? next : null;
+    }
+    // On a day without classes: the next day with classes later this week, or the first one of the following week.
+    // The following week is the site's own week link (the week selector's option address), read like the current one.
+    async function nextClasses(doc, now) {
+        var later = firstClassDay(doc, now.getDay() === 0 ? 7 : now.getDay() + 1, now, now.getDay());
+        if (later) return later;
+        var next = followingWeek(doc); if (!next) return null;
         var following = await once('schedule:' + next.option.value, next.option.value);
-        for (var c = 1; c < columns(following); c++) {
-            var lessons = lessonsOn(following, c);
-            if (lessons && lessons.length) return {date:new Date(next.range[0].getFullYear(), next.range[0].getMonth(), next.range[0].getDate() + c - 1), lessons:lessons};
-        }
-        return null;
+        return firstClassDay(following, 1, next.range[0], 1);
     }
-    // Long lists show their first items; the rest open in place with the same motion as other disclosures.
-    function limit(list, count) {
-        // A button that only reveals one more item is clutter: collapse only when at least two would hide.
-        var items = Array.from(list.children); if (items.length <= count + 1) return null;
-        items.slice(count).forEach(function (li) { li.hidden = true; });
-        var button = element('button', 'univer-app-overview-more'); button.type = 'button'; button.setAttribute('aria-expanded', 'false');
-        var paint = function (open) { button.textContent = open ? text().collapse : text().showAll + ' (' + items.length + ')'; button.setAttribute('aria-expanded', String(open)); };
-        button.addEventListener('click', function (event) {
-            var open = button.getAttribute('aria-expanded') !== 'true';
-            var before = list.getBoundingClientRect().height; window.__univerMotionUI?.stop(list);
-            items.slice(count).forEach(function (li, index) {
-                window.__univerMotionUI?.stop(li); li.hidden = !open;
-                if (open && event.detail > 0) window.__univerMotionUI?.reveal(li, 'content', Math.min(index, 2) * 24);
-            });
-            if (event.detail > 0) window.__univerMotionUI?.resize(list, before, open ? 220 : 180);
-            paint(open);
-        });
-        paint(false); return button;
-    }
+
+    /* Grades and requests. */
     function scores(value) {
         var found = [], pattern = /((?:РК|RK|МБ|АБ)\s*[12]|(?:Экз|Exam|Емтихан|Итог|Total)\p{L}*)\s*(?:\(\s*(\d+(?:[.,]\d+)?)\s*\))?\s*:\s*(-?\d+(?:[.,]\d+)?)?/giu, match;
         while ((match = pattern.exec(value))) found.push({label:match[1].replace(/\s+/g, ''), max:match[2] || '', value:match[3] || ''});
@@ -143,18 +175,52 @@
         return /заверш|выполн|готов|выдан|аяқта|орында|дайын|complete|done|ready|issued/.test(v) ? 'done' : /отклон|отказ|аннул|бас тарт|reject|declin|cancel/.test(v) ? 'fail' :
             /обработ|рассмотр|нов|ожида|қаралу|өңде|process|review|pending|new/.test(v) ? 'wait' : '';
     }
+
+    /* Panels. */
     function panel(cls, title, href, linkText) {
-        var box = element('section', 'univer-app-overview ' + cls); box.setAttribute('aria-label', title);
-        var head = element('div', 'univer-app-overview-head'), h = element('h2', '', title), link = element('a', 'univer-app-overview-link', linkText);
+        var box = el('section', 'univer-app-overview ' + cls); box.setAttribute('aria-label', title);
+        var head = el('div', 'univer-app-overview-head'), h = el('h2', '', title), link = el('a', 'univer-app-overview-link', linkText);
         link.href = href; head.append(h, link); box.appendChild(head);
-        var body = element('div', 'univer-app-overview-body'); body.appendChild(element('p', 'univer-app-pending', text().loading)); box.appendChild(body);
+        var body = el('div', 'univer-app-overview-body'); body.appendChild(el('p', 'univer-app-pending', text().loading)); box.appendChild(body);
         return {box:box, body:body};
     }
     function settled(body, render) {
         if (window.__univerMotionUI) window.__univerMotionUI.change(body, render, 'content'); else render();
     }
-    function fail(body) { settled(body, function () { body.replaceChildren(element('p', 'univer-app-overview-empty', text().failed)); }); }
-    function dayName(date) { return text().days[date.getDay()] + ', ' + date.toLocaleDateString(language === 'en' ? 'en-GB' : 'ru-RU', {day:'numeric', month:'long'}); }
+    function fail(body) { settled(body, function () { body.textContent = ''; body.append(el('p', 'univer-app-overview-empty', text().failed)); }); }
+    // Long lists show their first items; the rest open in place with the same motion as other disclosures.
+    function limit(list, count) {
+        // A button that only reveals one more item is clutter: collapse only when at least two would hide.
+        var items = Array.from(list.children); if (items.length <= count + 1) return null;
+        items.slice(count).forEach(function (li) { li.hidden = true; });
+        var button = el('button', 'univer-app-overview-more'); button.type = 'button'; button.setAttribute('aria-expanded', 'false');
+        var paint = function (open) { button.textContent = open ? text().collapse : text().showAll + ' (' + items.length + ')'; button.setAttribute('aria-expanded', String(open)); };
+        button.addEventListener('click', function (event) {
+            var open = button.getAttribute('aria-expanded') !== 'true';
+            var before = list.getBoundingClientRect().height; window.__univerMotionUI?.stop(list);
+            items.slice(count).forEach(function (li, index) {
+                window.__univerMotionUI?.stop(li); li.hidden = !open;
+                if (open && event.detail > 0) window.__univerMotionUI?.reveal(li, 'content', Math.min(index, 2) * 24);
+            });
+            if (event.detail > 0) window.__univerMotionUI?.resize(list, before, open ? 220 : 180);
+            paint(open);
+        });
+        paint(false); return button;
+    }
+    // Adds [list] to [body], with a button that shows the items past the first [count] when it has many.
+    function appendList(body, list, count) { body.appendChild(list); var more = limit(list, count); if (more) body.appendChild(more); }
+
+    /* Today's classes. */
+    function minuteOf(date) { return date.getHours() * 60 + date.getMinutes(); }
+    // No classes that day, or every one of them over by minute [at].
+    function noneLeft(lessons, at) { return !lessons || !lessons.length || lessons.every(function (l) { return l.end <= at; }); }
+    function span(lesson) { return clock(lesson.start) + '–' + clock(lesson.end); }
+    // Kazakh month names from our own list: whether Chromium 109 and old Android WebViews format 'kk' dates was never checked.
+    var KZ_MONTHS = ['қаңтар','ақпан','наурыз','сәуір','мамыр','маусым','шілде','тамыз','қыркүйек','қазан','қараша','желтоқсан'];
+    function dayName(date) {
+        return text().days[date.getDay()] + ', ' + (language === 'kz' ? date.getDate() + ' ' + KZ_MONTHS[date.getMonth()] :
+            date.toLocaleDateString(language === 'en' ? 'en-GB' : 'ru-RU', {day:'numeric', month:'long'}));
+    }
     // "Сегодня, понедельник, 2 ноября", "Завтра, вторник, 3 ноября" or the date alone for a later day.
     function dayCaption(date, now) {
         var shift = Math.round((new Date(date.getFullYear(), date.getMonth(), date.getDate()) - new Date(now.getFullYear(), now.getMonth(), now.getDate())) / 86400000);
@@ -162,84 +228,139 @@
         if (!relative) return name;
         return relative + ', ' + (language === 'en' ? name : name.charAt(0).toLocaleLowerCase() + name.slice(1));
     }
-    function renderToday(body, lessons, upcoming) {
-        body.replaceChildren();
-        var now = new Date(), at = now.getHours() * 60 + now.getMinutes(), shown = now;
-        if (!lessons || !lessons.length || lessons.every(function (l) { return l.end <= at; })) {
-            var finished = lessons && lessons.length;
-            if (!upcoming) {
-                body.appendChild(element('p', 'univer-app-overview-caption', dayCaption(now, now)));
-                body.appendChild(element('p', 'univer-app-overview-empty', finished ? (language === 'en' ? 'Today’s classes have finished' : language === 'kz' ? 'Бүгінгі сабақтар аяқталды' : 'Сегодняшние пары закончились') : text().noClasses));
-                return;
-            }
-            // After today's classes (or on a day off) the panel shows the next day with classes, named as such.
-            lessons = upcoming.lessons; at = -1; shown = upcoming.date;
+    function lessonItem(lesson, state, moment) {
+        var li = el('li', 'univer-app-overview-lesson' + (state ? ' univer-app-overview-' + state : ''));
+        if (lesson.info && window.__univerLesson) {
+            // The same labelled card as the schedule page: type, teacher, room and faculty, without course dates.
+            var info = Object.assign({}, lesson.info, {dates:[]});
+            var card = window.__univerLesson.card(info, span(lesson), language);
+            if (state === 'done') card.querySelector('.univer-app-subject').appendChild(stateBadge(lesson, state, moment));
+            li.appendChild(card);
+        } else {
+            var time = el('time', '', span(lesson)), main = el('div', 'univer-app-overview-lesson-main');
+            main.appendChild(el('b', '', lesson.subject)); if (lesson.details) main.appendChild(el('span', '', lesson.details));
+            li.append(time, main);
+            if (state === 'done') li.appendChild(stateBadge(lesson, state, moment));
         }
-        body.appendChild(element('p', 'univer-app-overview-caption', dayCaption(shown, now)));
-        var next = lessons.find(function (l) { return l.start > at; });
-        var list = element('ol', 'univer-app-overview-lessons');
+        return li;
+    }
+    // The line above the list already counts down to the class under way or the next one; its row is only highlighted,
+    // so the time is never said twice. A finished class keeps its quiet "Прошла".
+    function stateBadge(lesson, state) { return el('span', 'univer-app-overview-state', text()[state]); }
+    function renderToday(body, lessons, upcoming) {
+        body.textContent = '';
+        var now = new Date(), at = minuteOf(now), day = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+        body.appendChild(el('p', 'univer-app-overview-caption', dayCaption(now, now)));
+        if (noneLeft(lessons, at)) {
+            var finished = lessons && lessons.length;
+            body.appendChild(el('p', 'univer-app-overview-empty', finished ? text().finished : text().noClasses));
+            if (!upcoming) return;
+            // After today's classes (or on a day off) the first classes of the next day follow, with their day.
+            body.appendChild(el('p', 'univer-app-overview-next-day', text().nextClasses + ' · ' + dayCaption(upcoming.date, now)));
+            lessons = upcoming.lessons; at = -1; day = new Date(upcoming.date.getFullYear(), upcoming.date.getMonth(), upcoming.date.getDate()).getTime();
+        }
+        var next = lessons.find(function (l) { return l.start > at; }), live = lessons.find(function (l) { return l.start <= at && at < l.end; });
+        var moment = function (minutes) { return day + minutes * 60000; }, t = text();
+        // "What now" in one line before the list: the class under way and what follows it, or when the next one starts.
+        if (live || next) {
+            var up = el('div', 'univer-app-overview-upnext'); up.dataset.state = live ? 'now' : 'next'; up.setAttribute('role', 'status');
+            up.appendChild(live ? counter(el('b'), t.upNow + ' · ', 'left', moment(live.end)) : counter(el('b'), t.upNext + ' ', 'until', moment(next.start)));
+            var then = live ? lessons.find(function (l) { return l.start >= live.end; }) : null;
+            var room = next && next.info && next.info.room ? t.upRoom + ' ' + next.info.room : '';
+            up.appendChild(el('span', '', live ? (then ? t.upThen + ': ' + then.subject + ', ' + clock(then.start) : t.upLast) : [next.subject, span(next), room].filter(Boolean).join(' · ')));
+            body.appendChild(up);
+        }
+        var list = el('ol', 'univer-app-overview-lessons');
         lessons.forEach(function (lesson) {
             var state = lesson.start <= at && at < lesson.end ? 'now' : lesson === next ? 'next' : lesson.end <= at ? 'done' : '';
-            var li = element('li', 'univer-app-overview-lesson' + (state ? ' univer-app-overview-' + state : ''));
-            if (lesson.info && window.__univerLesson) {
-                // The same labelled card as the schedule page: type, teacher, room and faculty, without course dates.
-                var info = Object.assign({}, lesson.info, {dates:[]});
-                var card = window.__univerLesson.card(info, clock(lesson.start) + '–' + clock(lesson.end), language);
-                if (state) card.querySelector('time').after(element('span', 'univer-app-overview-state', text()[state]));
-                li.appendChild(card);
-            } else {
-                var time = element('time', '', clock(lesson.start) + '–' + clock(lesson.end)), main = element('div', 'univer-app-overview-lesson-main');
-                main.appendChild(element('b', '', lesson.subject)); if (lesson.details) main.appendChild(element('span', '', lesson.details));
-                li.append(time, main);
-                if (state) li.appendChild(element('span', 'univer-app-overview-state', text()[state]));
-            }
-            list.appendChild(li);
+            list.appendChild(lessonItem(lesson, state, moment));
         });
-        body.appendChild(list); var more = limit(list, 4); if (more) body.appendChild(more);
+        appendList(body, list, 4);
+    }
+    // Draws the panel again, keeping its list expanded and its focus when it had them.
+    function repaintToday(body, lessons, upcoming) {
+        var expanded = body.querySelector('button[aria-expanded=true]'), focused = body.contains(document.activeElement);
+        settled(body, function () { renderToday(body, lessons, upcoming); });
+        var more = body.querySelector('button');
+        if (expanded && more) more.click();
+        if (focused && more) more.focus();
+    }
+    // The panel's clock tick: a new day reads the schedule again, and the panel is drawn only when what it shows changes.
+    function todayUpdater(body, doc, epoch) {
+        var signature = '', updating = false, loadedDay = new Date().toDateString(), scheduleDoc = doc;
+        return async function update() {
+            if (updating || epoch !== generation || (signature && document.hidden)) return;
+            updating = true;
+            try {
+                var now = new Date();
+                if (loadedDay !== now.toDateString()) {
+                    try { scheduleDoc = await once('schedule-day:' + now.toDateString(), '/student/myschedule/'); loadedDay = now.toDateString(); }
+                    catch (_) { if (epoch === generation && signature !== 'unavailable') { signature = 'unavailable'; fail(body); } return; }
+                }
+                var lessons = lessonsToday(scheduleDoc, now), upcoming = null, at = minuteOf(now);
+                if (noneLeft(lessons, at)) { try { upcoming = await nextClasses(scheduleDoc, now); } catch (_) { upcoming = null; } }
+                var key = now.toDateString() + JSON.stringify([lessons, upcoming, (lessons || []).map(function (l) { return at < l.start ? 'next' : at < l.end ? 'now' : 'done'; })]);
+                if (epoch === generation && key !== signature) { signature = key; repaintToday(body, lessons, upcoming); }
+                else if (epoch === generation) tickCounts(body);
+            } finally { updating = false; }
+        };
+    }
+
+    /* Grades and requests lists. */
+    function scoreChip(score) {
+        var chip = el('span', 'univer-app-overview-score'), ratio = score.max && score.value ? Number(score.value.replace(',', '.')) / Number(score.max.replace(',', '.')) : NaN;
+        chip.setAttribute('role', 'img'); chip.setAttribute('aria-label', score.label + ': ' + (score.value || text().none) + (score.max ? ' / ' + score.max : ''));
+        chip.append(el('span', 'univer-app-overview-score-label', score.label), el('span', 'univer-app-overview-score-value', score.value || text().none));
+        if (isFinite(ratio)) { var bar = el('span', 'univer-app-overview-score-bar'); bar.style.setProperty('--univer-score', Math.round(Math.max(0, Math.min(1, ratio)) * 100) + '%'); chip.appendChild(bar); }
+        Array.from(chip.children).forEach(function (c) { c.setAttribute('aria-hidden', 'true'); });
+        return chip;
+    }
+    function courseItem(course) {
+        var li = el('li', ''), name = el('a', 'univer-app-overview-course-link', course.name), chips = el('span', 'univer-app-overview-scores');
+        name.href = '/student/attendance/full/';
+        name.addEventListener('click', function () {
+            try {
+                sessionStorage.setItem('univer.mobile.attendance-course.v1:/student/attendance/full/', course.token);
+                sessionStorage.setItem('univer.mobile.attendance-course.v1:/student/attendance/full', course.token);
+            } catch (_) { }
+        });
+        course.scores.forEach(function (score) { chips.appendChild(scoreChip(score)); });
+        li.append(name, chips);
+        return li;
     }
     function renderGrades(body, courses) {
-        body.replaceChildren();
+        body.textContent = '';
         var graded = courses.filter(function (c) { return c.scores.length; });
-        if (!graded.length) { body.appendChild(element('p', 'univer-app-overview-empty', text().noGrades)); return; }
-        var list = element('ul', 'univer-app-overview-courses');
-        graded.forEach(function (course) {
-            var li = element('li', ''), name = element('a', 'univer-app-overview-course-link', course.name), chips = element('span', 'univer-app-overview-scores');
-            name.href = '/student/attendance/full/';
-            name.addEventListener('click', function () {
-                try {
-                    sessionStorage.setItem('univer.mobile.attendance-course.v1:/student/attendance/full/', course.token);
-                    sessionStorage.setItem('univer.mobile.attendance-course.v1:/student/attendance/full', course.token);
-                } catch (_) { }
-            });
-            course.scores.forEach(function (score) {
-                var chip = element('span', 'univer-app-overview-score'), ratio = score.max && score.value ? Number(score.value.replace(',', '.')) / Number(score.max.replace(',', '.')) : NaN;
-                chip.setAttribute('role', 'img'); chip.setAttribute('aria-label', score.label + ': ' + (score.value || text().none) + (score.max ? ' / ' + score.max : ''));
-                chip.append(element('span', 'univer-app-overview-score-label', score.label), element('span', 'univer-app-overview-score-value', score.value || text().none));
-                if (isFinite(ratio)) { var bar = element('span', 'univer-app-overview-score-bar'); bar.style.setProperty('--univer-score', Math.round(Math.max(0, Math.min(1, ratio)) * 100) + '%'); chip.appendChild(bar); }
-                Array.from(chip.children).forEach(function (c) { c.setAttribute('aria-hidden', 'true'); });
-                chips.appendChild(chip);
-            });
-            li.append(name, chips); list.appendChild(li);
-        });
-        body.appendChild(list); var more = limit(list, 5); if (more) body.appendChild(more);
+        if (!graded.length) { body.appendChild(el('p', 'univer-app-overview-empty', text().noGrades)); return; }
+        var list = el('ul', 'univer-app-overview-courses');
+        graded.forEach(function (course) { list.appendChild(courseItem(course)); });
+        appendList(body, list, 5);
+    }
+    // Each request opens the site's own request page.
+    function requestItem(item) {
+        var li = el('li', ''), link = el('a', 'univer-app-overview-request'), main = el('span', 'univer-app-overview-lesson-main'), status = el('span', 'univer-app-status', item.status);
+        link.href = item.href; link.setAttribute('aria-label', text().open + ': ' + item.service + ', ' + item.date + ', ' + item.status);
+        main.append(el('b', '', item.service), el('span', '', item.date));
+        var t = tone(item.status); if (t) status.setAttribute('data-univer-tone', t);
+        link.append(main, status); li.appendChild(link);
+        return li;
     }
     function renderRequests(body, items) {
-        body.replaceChildren();
-        if (!items.length) { body.appendChild(element('p', 'univer-app-overview-empty', text().noRequests)); return; }
-        var list = element('ul', 'univer-app-overview-requests');
-        items.forEach(function (item) {
-            // Each request opens the site's own request page.
-            var li = element('li', ''), link = element('a', 'univer-app-overview-request'), main = element('span', 'univer-app-overview-lesson-main'), status = element('span', 'univer-app-status', item.status);
-            link.href = item.href; link.setAttribute('aria-label', text().open + ': ' + item.service + ', ' + item.date + ', ' + item.status);
-            main.append(element('b', '', item.service), element('span', '', item.date));
-            var t = tone(item.status); if (t) status.setAttribute('data-univer-tone', t);
-            link.append(main, status); li.appendChild(link); list.appendChild(li);
-        });
-        body.appendChild(list); var more = limit(list, 4); if (more) body.appendChild(more);
+        body.textContent = '';
+        if (!items.length) { body.appendChild(el('p', 'univer-app-overview-empty', text().noRequests)); return; }
+        var list = el('ul', 'univer-app-overview-requests');
+        items.forEach(function (item) { list.appendChild(requestItem(item)); });
+        appendList(body, list, 4);
+    }
+
+    /* The tab pages. */
+    // Draws the page read once under [key] into [body], or the failure note; a release in between leaves [body] alone.
+    function fill(body, key, url, epoch, render) {
+        once(key, url).then(function (doc) { if (epoch === generation) settled(body, function () { render(doc); }); }, function () { if (epoch === generation) fail(body); });
     }
     function bachelor() {
         if (document.querySelector('.univer-app-overview-grid')) return;
-        var grid = element('div', 'univer-app-overview-grid'); owned.push(grid);
+        var grid = el('div', 'univer-app-overview-grid'); owned.push(grid);
         var today = panel('univer-app-overview-today', text().schedule, '/student/myschedule/', text().allSchedule);
         var grades = panel('univer-app-overview-grades', text().grades, '/student/attendance/full/', text().allGrades);
         grid.append(today.box, grades.box);
@@ -247,42 +368,21 @@
         if (!anchor) return; if (anchor.classList.contains('univer-app-gpa')) anchor.after(grid); else anchor.before(grid);
         var epoch = generation;
         once('schedule', '/student/myschedule/').then(async function (doc) {
-            var signature = '', updating = false, loadedDay = new Date().toDateString(), scheduleDoc = doc;
-            async function update() {
-                if (updating || epoch !== generation || (signature && document.hidden)) return;
-                updating = true;
-                try {
-                    var now = new Date();
-                    if (loadedDay !== now.toDateString()) {
-                        try { scheduleDoc = await once('schedule-day:' + now.toDateString(), '/student/myschedule/'); loadedDay = now.toDateString(); }
-                        catch (_) { if (epoch === generation && signature !== 'unavailable') { signature = 'unavailable'; fail(today.body); } return; }
-                    }
-                    var lessons = lessonsToday(scheduleDoc, now), upcoming = null, at = now.getHours() * 60 + now.getMinutes();
-                    if (!lessons || !lessons.length || lessons.every(function (l) { return l.end <= at; })) { try { upcoming = await nextClasses(scheduleDoc, now); } catch (_) { upcoming = null; } }
-                    var key = now.toDateString() + JSON.stringify([lessons, upcoming, (lessons || []).map(function (l) { return at < l.start ? 'next' : at < l.end ? 'now' : 'done'; })]);
-                    if (epoch === generation && key !== signature) {
-                        signature = key;
-                        var expanded = today.body.querySelector('button[aria-expanded=true]'), focused = today.body.contains(document.activeElement);
-                        settled(today.body, function () { renderToday(today.body, lessons, upcoming); });
-                        var more = today.body.querySelector('button');
-                        if (expanded && more) more.click();
-                        if (focused && more) more.focus();
-                    }
-                } finally { updating = false; }
-            }
+            var update = todayUpdater(today.body, doc, epoch);
             await update();
-            if (epoch === generation) scheduleTimer = setInterval(update, 30000);
+            // A grid built again in the same generation (the site replaced the old one) keeps a single clock.
+            if (epoch === generation) { clearInterval(scheduleTimer); scheduleTimer = setInterval(update, REFRESH); }
         }, function () { if (epoch === generation) fail(today.body); });
-        once('grades', '/student/attendance/full/').then(function (doc) { if (epoch === generation) settled(grades.body, function () { renderGrades(grades.body, courseScores(doc)); }); }, function () { if (epoch === generation) fail(grades.body); });
+        fill(grades.body, 'grades', '/student/attendance/full/', epoch, function (doc) { renderGrades(grades.body, courseScores(doc)); });
     }
     function desk() {
         if (document.querySelector('.univer-app-overview-requests-panel')) return;
         var box = panel('univer-app-overview-requests-panel', text().requests, '/ssc/StatementList', text().allRequests); owned.push(box.box);
         var anchor = document.querySelector('.univer-app-desk-cards') || document.querySelector('#l4 .univer-app-service-card')?.closest('.ts') || document.querySelector('.univer-app-credentials') || document.querySelector('.univer-app-ssc-nav');
         if (!anchor) return; anchor.after(box.box);
-        var epoch = generation;
-        once('requests', '/ssc/StatementList').then(function (doc) { if (epoch === generation) settled(box.body, function () { renderRequests(box.body, requests(doc)); }); }, function () { if (epoch === generation) fail(box.body); });
+        fill(box.body, 'requests', '/ssc/StatementList', generation, function (doc) { renderRequests(box.body, requests(doc)); });
     }
+    function release() { active = false; generation++; clearInterval(scheduleTimer); owned.forEach(function (node) { window.__univerMotionUI?.stop(node); node.remove(); }); owned = []; }
     window.__univerOverviewV1 = {
         apply: function (lang) {
             if (lang !== language) { language = lang || 'ru'; if (active) this.release(); }
@@ -290,7 +390,7 @@
             if (/^\/student\/bachelor\/?$/i.test(location.pathname)) bachelor();
             else if (/^\/ssc\/?$/i.test(location.pathname)) desk();
         },
-        release: function () { active = false; generation++; clearInterval(scheduleTimer); owned.forEach(function (node) { window.__univerMotionUI?.stop(node); node.remove(); }); owned = []; },
+        release: release,
         // Test hooks: the same readers on a supplied document.
         // A site page read once per visit (GET, same origin), shared with the tab-page helpers.
         page: function (url) { return once(url, url); },

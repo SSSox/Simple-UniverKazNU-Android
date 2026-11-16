@@ -24,6 +24,12 @@
             !form.querySelector('input#cheat_auth[type="hidden"][name="cheat"]')) return null;
         return form;
     }
+    // Half of a dialog can't be verified yet. It waits out of sight until the parser is done: then it is the known form
+    // or it comes back.
+    function arrivingDialog() {
+        var box = document.readyState === 'loading' ? document.getElementById('auth_modal') : null;
+        return visible(box) ? box : null;
+    }
     function restore(element, allowAgain) {
         var record = records.get(element);
         if (!record) return;
@@ -73,14 +79,14 @@
                 if (document.body) conceal(document.body);
             }
             var form = authForm();
-            var box = form?.closest('#auth_modal');
+            var box = form?.closest('#auth_modal') || arrivingDialog();
             var container = form?.closest('#simplemodal-container');
             var overlay = container && document.getElementById('simplemodal-overlay');
             records.forEach(function (_, element) {
                 if (element !== document.body && (!element.isConnected || (element !== box && element !== container && element !== overlay)))
                     restore(element, true);
             });
-            if (form) { conceal(box); conceal(container); conceal(overlay); }
+            conceal(box); conceal(container); conceal(overlay);
             frames(function (child) {
                 if (!child.__univerSessionPresentationV1 && child.document.readyState !== 'loading')
                     child.eval('(' + install.toString() + ')()');

@@ -20,6 +20,8 @@ class DownloadsTest {
         assertEquals(FileKind.WORD, FileKinds.of("method.docx"))
         assertEquals(FileKind.EXCEL, FileKinds.of("grades.csv"))
         assertEquals(FileKind.POWERPOINT, FileKinds.of("slides.ppsx"))
+        listOf("xltx", "xltm").forEach { assertEquals(FileKind.EXCEL, FileKinds.of("template.$it")) }
+        listOf("potx", "potm", "ppsm").forEach { assertEquals(FileKind.POWERPOINT, FileKinds.of("template.$it")) }
         assertEquals(FileKind.IMAGE, FileKinds.of("scan.jpeg"))
         assertEquals(FileKind.ARCHIVE, FileKinds.of("work.7z"))
         assertEquals(FileKind.PDF, FileKinds.of("server-name", "application/pdf; charset=binary"))

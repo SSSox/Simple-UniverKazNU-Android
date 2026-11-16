@@ -1,18 +1,47 @@
 [Русский](README.md) · [Қазақша](README.kz.md) · **English**
 
-# Univer · KazNU
+# Simple Univer for Android
 
-An unofficial Android app for the [Univer KazNU](https://univer.kaznu.kz/) student portal. It opens the site in a built-in WebView, signs in by itself with the saved data and makes the pages convenient on a phone. The app is not affiliated with Al-Farabi KazNU and has no server, analytics or ads of its own.
+> **Unofficial app.** It is not affiliated with Al-Farabi KazNU and is not supported by the university. Sign-in, data and forms stay on [univer.kaznu.kz](https://univer.kaznu.kz/): the app opens the real site in a built-in WebView and makes it convenient on a phone.
+
+An app for the [Univer KazNU](https://univer.kaznu.kz/) student account with the same features as [Simple Univer for Windows](https://github.com/SSSox/Simple-UniverKazNU-Desktop). On the phone it is called "Univer · KazNU". It has no server, analytics or ads of its own, and the interface is in Russian, Kazakh and English.
+
+[![Release](https://img.shields.io/github/v/release/SSSox/Simple-UniverKazNU-Android?label=release)](https://github.com/SSSox/Simple-UniverKazNU-Android/releases/latest) [![Downloads](https://img.shields.io/github/downloads/SSSox/Simple-UniverKazNU-Android/total?label=downloads)](https://github.com/SSSox/Simple-UniverKazNU-Android/releases) [![Android](https://img.shields.io/badge/Android-7.0%2B-3ddc84)](#installation) [![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](LICENSE)
+
+**[Download the latest version](https://github.com/SSSox/Simple-UniverKazNU-Android/releases/latest)** · [Installation](#installation) · [Privacy](PRIVACY.en.md) · [Security](SECURITY.en.md)
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/SSSox/Simple-UniverKazNU-Android/main/.github/readme/home.png" width="240" alt="Home: section tiles, search and news">
+  <img src="https://raw.githubusercontent.com/SSSox/Simple-UniverKazNU-Android/main/.github/readme/schedule.png" width="240" alt="Schedule by day with class type and room">
+  <img src="https://raw.githubusercontent.com/SSSox/Simple-UniverKazNU-Android/main/.github/readme/downloads.png" width="240" alt="Downloads: search and filters by course and file type">
+</p>
 
 ## Features
 
+### The account, easier to use
+
 - **Sign-in without retyping.** The login and password are stored only on the phone, encrypted. When the site session ends, the app signs in again through the site's own form.
-- **Mobile layout of the site.** Schedule, grades, assessment, UMKD and distance-course tables are shown as cards. The "Original" switch returns the site's own page unchanged.
-- **Downloads and file viewer.** Course materials are saved to the phone's Downloads folder. PDF, Word (.docx, .doc, .rtf), Excel (.xlsx, .xls), PowerPoint (.pptx, .ppt), OpenDocument, web pages, images and text open inside the app. File text can be searched.
+- **Mobile layout of the site.** Schedule, grades, assessment, UMKD and distance-course tables are shown as cards. The look follows the Windows version: section tiles, segmented controls with a sliding thumb, grade chips, one lesson layout on the home page and in the schedule. The "Original" switch returns the site's own page unchanged.
 - **Site notifications.** The bell collects the site's marks, for example "Анкетирование студентов (2)" (student questionnaires). Questionnaires the student has already answered are not shown.
 - **Moodle (СДО Moodle)** opens inside the app: sign-in through Univer, attaching files and photos to assignments.
-- **Updates from GitHub.** The app checks for new versions by itself, offers them at sign-in and installs them in a couple of taps.
+- **Links inside the app.** A teacher's page, Google Drive or a library opens in a separate window with its own cookies, apart from your Univer sign-in. The external browser can be turned on in Settings.
 - **PIN code and biometrics** (optional), Russian, Kazakh and English, light and dark theme, text size.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/SSSox/Simple-UniverKazNU-Android/main/.github/readme/sections.png" width="240" alt="All sections: search and pinning to the home page">
+</p>
+
+### Schedule and studies
+
+- **Study pages fitted to the phone.** The exam and Midterm timetable is laid out by day: the next exam comes first with the days left, each slot shows its time, type, teacher and room, and an open exam starts from its own button. Questionnaires show the answer scale and how many are filled in; the advisor gets a card with Write and Call buttons when the site lists contacts. The GPA calculator keeps the result at the bottom of the screen and folds the grade table into an expandable scale. Long memos fold, and empty lists of debts, FX retakes, GPA raising and appeals say plainly that they have no entries.
+- **Class topics and independent work.** The schedule uses the printed syllabus for your own programme and academic year. Classes are matched against all weeks of the group schedule; when the group's seminars fall on other weeks than in the syllabus, the nearest week is used, and the plan found is kept for the term. Independent work (СРО) appears beside the nearest seminar; consultations (СРОП) are omitted. Switches and collapsible sections have touch targets. The week list has "‹ ›" arrows, and the schedule block on the Bachelor page says when today's classes are over.
+
+### Files and updates
+
+- **Downloads and file viewer.** UMKD files go to Downloads/Univer УМКД/course/section when the page identifies the course and section. The "Download all" button on a UMKD section saves every file of that section you do not have yet, without the teacher's links. Deleted, moved and renamed files leave the Downloads list by themselves. PDF, Word (.docx, .doc, .rtf), Excel (.xlsx, .xls), PowerPoint (.pptx, .ppt), web pages, images and text open inside the app. OpenDocument text is extracted for search; full viewing of those formats is not available. Names and types are checked against headers and content; each download is limited to 1 GiB.
+- **Updates from GitHub.** The app checks for new versions by itself, offers them and installs them in a couple of taps.
+
+The screenshots use demo data; no personal data is shown.
 
 ## Installation
 
@@ -32,13 +61,13 @@ Steps:
    sha256sum Simple-UniverKazNU.apk                           # Linux, macOS: shasum -a 256
    ```
 3. Open the file on the phone and allow installation from this source when Android asks.
-4. On the first start enter your Univer login and password and tap "Save and sign in".
+4. On first start choose between saving your Univer login and password for automatic sign-in and signing in manually on the website without saving a password.
 
 **Signature.** Releases are signed with the "SOX Team" key: certificate `CN=SOX Team, O=SOX Team, C=KZ`, SHA-256 `0aa54a2d4714db17bc71b9a0a4d4bc7818cb57d91f10685200416bd2094732b9`. Check it with `apksigner verify --print-certs Simple-UniverKazNU.apk` from Android SDK Build Tools: the `certificate SHA-256 digest` line must match.
 
-**Updating.** The app checks for new versions on GitHub by itself. At sign-in it shows a dialog with "Later" and "Install", and Settings has an "Updates" section with a check button. After "Install" the file is downloaded, verified and handed to the Android installer; the first time, Android asks you to allow installing from this app. The "Don't show again" checkbox hides the dialog for this version: checks go on, the version stays in Settings, and the next version is offered again. A new APK installs over the old one and keeps the data. A debug build (`app-debug.apk`) has to be uninstalled before installing the release: they have different signatures. Builds released before 4 November 2026 are signed with the previous key, and the new version will not install over them: Android reports that the app was not installed because it conflicts with an existing package. Uninstall the old app, install the new one and sign in again. The saved sign-in, PIN code and downloads list have to be set up again; downloaded files stay in Downloads.
+**Updating.** The app checks for new versions on GitHub by itself. At sign-in it shows a dialog with "Later" and "Install", and Settings has an "Updates" section with a check button. After "Install" the file is downloaded, verified and handed to the Android installer; the first time, Android asks you to allow installing from this app. The "Don't show again" checkbox hides the dialog for this version: checks go on, the version stays in Settings, and the next version is offered again. A new APK installs over the old one and keeps the data. On Android 9 and 10, version 2.3.1 cannot update itself: its check wrongly reports a different signature. Download the new version from the Releases page and install it over the old app; there is no need to uninstall. A debug build (`app-debug.apk`) has to be uninstalled before installing the release: they have different signatures. Builds released before 4 November 2026 are signed with the previous key, and the new version will not install over them: Android reports that the app was not installed because it conflicts with an existing package. Uninstall the old app, install the new one and sign in again. The saved sign-in, PIN code and downloads list have to be set up again; downloaded files stay in Downloads.
 
-**Removing data.** "Settings" → "Sign out" clears the site's cookies, cache and history. "Delete saved credentials" also erases the encrypted login and password. Uninstalling the app removes everything.
+**Removing data.** "Settings" → "Sign out" pauses automatic sign-in and clears cookies, website storage, cache and history. "Delete saved credentials" also deletes the encrypted login and password. Uninstalling removes app data; files in the shared Downloads folder remain.
 
 ## Security and privacy
 
@@ -55,7 +84,7 @@ You need:
 - [Android Studio](https://developer.android.com/studio) with its bundled JDK (`jbr`);
 - Android SDK Platform 37 and Platform Tools (installed through the SDK Manager).
 
-Gradle 9.8.0 is downloaded by the `gradlew` wrapper itself; JDK 25 for the Gradle daemon is picked automatically ([gradle/gradle-daemon-jvm.properties](gradle/gradle-daemon-jvm.properties)). Android Gradle Plugin 9.5.0, with Kotlin built in. All dependencies are pinned in [gradle/libs.versions.toml](gradle/libs.versions.toml): only AndroidX, Material Components and kotlinx-coroutines.
+Gradle 9.9.0 is downloaded by the `gradlew` wrapper itself; JDK 25 for the Gradle daemon is picked automatically ([gradle/gradle-daemon-jvm.properties](gradle/gradle-daemon-jvm.properties)). Android Gradle Plugin 9.5.1, with Kotlin built in. All dependencies are pinned in [gradle/libs.versions.toml](gradle/libs.versions.toml): only AndroidX, Material Components and kotlinx-coroutines.
 
 **In Android Studio:** File → Open → the project folder, wait for Gradle Sync, choose the `app` configuration and press Run.
 
@@ -117,16 +146,16 @@ The app shows the real site: pages are neither copied nor replaced. The mobile l
 | [UniverViewModel.kt](app/src/main/java/com/univerflow/kaznu/UniverViewModel.kt) | app state (StateFlow), sign-out, account change, lock |
 | [domain/](app/src/main/java/com/univerflow/kaznu/domain) | plain Kotlin without Android: rules for the PIN, notifications, downloads, home tiles |
 | [data/](app/src/main/java/com/univerflow/kaznu/data) | storage: Keystore encryption ([CredentialVault.kt](app/src/main/java/com/univerflow/kaznu/data/CredentialVault.kt)), PIN ([LockVault.kt](app/src/main/java/com/univerflow/kaznu/data/LockVault.kt), [LockCrypto.kt](app/src/main/java/com/univerflow/kaznu/data/LockCrypto.kt)), settings |
-| [web/](app/src/main/java/com/univerflow/kaznu/web) | address policy ([SitePolicy.kt](app/src/main/java/com/univerflow/kaznu/web/SitePolicy.kt)), WebView settings ([SecureWebSettings.kt](app/src/main/java/com/univerflow/kaznu/web/SecureWebSettings.kt)), sign-in automation and its limits ([AutomationController.kt](app/src/main/java/com/univerflow/kaznu/web/AutomationController.kt), [SessionGuard.kt](app/src/main/java/com/univerflow/kaznu/web/SessionGuard.kt)), mobile layout |
+| [web/](app/src/main/java/com/univerflow/kaznu/web) | address policy ([SitePolicy.kt](app/src/main/java/com/univerflow/kaznu/web/SitePolicy.kt)), WebView settings ([SecureWebSettings.kt](app/src/main/java/com/univerflow/kaznu/web/SecureWebSettings.kt)), sign-in automation and its limits ([AutomationController.kt](app/src/main/java/com/univerflow/kaznu/web/AutomationController.kt), [SessionGuard.kt](app/src/main/java/com/univerflow/kaznu/web/SessionGuard.kt)), mobile layout, the client that stands in while a WebView closes ([RetiredWebViewClient.kt](app/src/main/java/com/univerflow/kaznu/web/RetiredWebViewClient.kt)), running page scripts and quoting JS strings ([PageEvaluation.kt](app/src/main/java/com/univerflow/kaznu/web/PageEvaluation.kt)) |
 | [download/](app/src/main/java/com/univerflow/kaznu/download) | downloads to the phone's Downloads folder with a check of the server's response |
 | [update/](app/src/main/java/com/univerflow/kaznu/update), [Updates.kt](app/src/main/java/com/univerflow/kaznu/domain/Updates.kt) | checking and installing updates from GitHub: versions, allowed addresses, SHA-256 and signature |
-| [preview/](app/src/main/java/com/univerflow/kaznu/preview) | the app's own document readers: PDF, Word, Excel, PowerPoint, OpenDocument, HTML |
-| [ui/](app/src/main/java/com/univerflow/kaznu/ui), [main/](app/src/main/java/com/univerflow/kaznu/main) | native screens: "Downloads", file viewer, PIN, settings, notifications |
-| [assets/](app/src/main/assets) | JavaScript for the site's pages: sign-in ([univer-automation.js](app/src/main/assets/univer-automation.js)), mobile layout, notifications ([univer-notices.js](app/src/main/assets/univer-notices.js)) |
+| [preview/](app/src/main/java/com/univerflow/kaznu/preview) | built-in PDF, Word, Excel, PowerPoint and HTML readers; OpenDocument text extraction for search |
+| [ui/](app/src/main/java/com/univerflow/kaznu/ui), [main/](app/src/main/java/com/univerflow/kaznu/main) | native screens: "Downloads", file viewer, PIN, settings, notifications, the status strip under the app bar ([StatusBanner.kt](app/src/main/java/com/univerflow/kaznu/main/StatusBanner.kt)), screen coroutines: a failure becomes a message, cancellation is no error ([Coroutines.kt](app/src/main/java/com/univerflow/kaznu/ui/Coroutines.kt)), the Downloads cards ([DownloadsAdapter.kt](app/src/main/java/com/univerflow/kaznu/ui/DownloadsAdapter.kt)), the document window frame ([DocumentPanel.kt](app/src/main/java/com/univerflow/kaznu/ui/DocumentPanel.kt)), two-finger zoom in the file viewer ([LayoutPinch.kt](app/src/main/java/com/univerflow/kaznu/ui/LayoutPinch.kt)), the site notification check ([NoticeFlow.kt](app/src/main/java/com/univerflow/kaznu/main/NoticeFlow.kt)), network tracking ([NetworkWatch.kt](app/src/main/java/com/univerflow/kaznu/main/NetworkWatch.kt)), erasing the site data on logout ([SiteData.kt](app/src/main/java/com/univerflow/kaznu/main/SiteData.kt)) |
+| [assets/](app/src/main/assets) | JavaScript for the site's pages: sign-in ([univer-automation.js](app/src/main/assets/univer-automation.js)), mobile layout and its styling ([univer-style.js](app/src/main/assets/univer-style.js), segment thumbs in [univer-kit.js](app/src/main/assets/univer-kit.js)), notifications ([univer-notices.js](app/src/main/assets/univer-notices.js)), phone study pages ([univer-screens.js](app/src/main/assets/univer-screens.js)) |
 | [res/xml/network_security_config.xml](app/src/main/res/xml/network_security_config.xml) | trusted certificates: the system ones, plus Sectigo R46 for `univer.kaznu.kz` only and ISRG Root X1 only for update files on `*.githubusercontent.com` |
 | [app/src/test](app/src/test), [app/src/androidTest](app/src/androidTest) | unit tests and emulator tests with synthetic pages |
 
-Sign-in goes through the site's own form: the script fills the visible `#login_frm` fields and presses its button, so the site's password encryption and handlers are not bypassed. The number of attempts is limited; if the site rejected the password, the app stops and waits until it is corrected in the settings or "Retry" is tapped.
+Sign-in uses the site's own form: the script fills the visible `#login_frm` fields and clicks its button, preserving password encryption and handlers. Limits are three full sign-ins per ten minutes and three AJAX renewals per minute. A first full-form refusal, AJAX refusal or timeout can recover on a newer document after at least one minute; an exhausted budget waits. Two consecutive full-form refusals, an account mismatch, unreadable credentials or explicit sign-out require user action. Recovery loads a safe GET and never replays a submitted POST.
 
 ## Limitations
 

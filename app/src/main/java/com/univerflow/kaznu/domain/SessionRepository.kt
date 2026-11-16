@@ -44,6 +44,10 @@ data class StoredSession(
     val theme: AppTheme = AppTheme.SYSTEM,
     /** Notifications read from the site's own marks; they belong to the signed-in account. */
     val notices: List<SiteNotice> = emptyList(),
+    /** A previous process accepted logout or an account change before its WebView profile was erased. */
+    val sessionClearPending: Boolean = false,
+    val manualLogin: Boolean = false,
+    val externalLinks: Boolean = false,
 )
 
 /** Persistence owns dispatching and serialization; callers never access the Keystore directly. */
@@ -51,6 +55,9 @@ interface SessionRepository {
     suspend fun load(): StoredSession
     suspend fun saveCredentials(credentials: Credentials)
     suspend fun deleteCredentials()
+    suspend fun beginSessionClear()
+    suspend fun finishSessionClear()
+    suspend fun setManualLogin(enabled: Boolean)
 
     // App lock (PIN, optional biometrics). The defaults describe a repository without the lock.
     suspend fun enableLock(credentials: Credentials, pin: CharArray) { throw UnsupportedOperationException() }
@@ -73,6 +80,7 @@ interface SessionRepository {
     suspend fun setMobileLayout(enabled: Boolean)
     suspend fun setTextZoom(percent: Int)
     suspend fun setAnimations(enabled: Boolean)
+    suspend fun setExternalLinks(enabled: Boolean)
     suspend fun setTheme(theme: AppTheme)
     suspend fun setShortcuts(shortcuts: HomeShortcuts)
     suspend fun setNotices(notices: List<SiteNotice>) {}

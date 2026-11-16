@@ -2,7 +2,7 @@
     android:id="@+id/viewer_root" android:layout_width="match_parent" android:layout_height="match_parent"
     android:orientation="vertical">
     <com.google.android.material.appbar.AppBarLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:background="?attr/colorSurface" app:liftOnScroll="false">
+        android:background="@color/app_bar" app:liftOnScroll="false">
         <com.google.android.material.appbar.MaterialToolbar android:id="@+id/viewer_toolbar"
             android:layout_width="match_parent" android:layout_height="56dp"
             app:navigationIcon="@drawable/ic_back" app:menu="@menu/file_viewer" />
@@ -33,7 +33,10 @@
                 app:icon="@drawable/ic_close" />
         </LinearLayout>
     </com.google.android.material.appbar.AppBarLayout>
-    <FrameLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1">
+    <View android:layout_width="match_parent" android:layout_height="1dp" android:background="@color/app_bar_line"
+        android:importantForAccessibility="no" />
+    <FrameLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
+        android:background="@color/md_background">
         <WebView android:id="@+id/viewer_web" android:layout_width="match_parent" android:layout_height="match_parent"
             android:visibility="invisible" />
         <LinearLayout android:id="@+id/viewer_progress" android:layout_width="match_parent" android:layout_height="match_parent"

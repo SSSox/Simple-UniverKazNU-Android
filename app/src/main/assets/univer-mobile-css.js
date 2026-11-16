@@ -176,21 +176,21 @@ html.univer-mobile .univer-app-days button[aria-pressed=true] { background:#164e
 html.univer-mobile .univer-app-day h3 { font-size:18px; margin:12px 0; color:#164e80; }
 html.univer-mobile .univer-app-day[hidden] { display:none!important; }
 html.univer-mobile .univer-app-lesson { background:white; border:1px solid #d7e3ef; border-left:4px solid #246298; border-radius:10px; padding:10px 12px; margin:0 0 8px; }
-html.univer-mobile .univer-app-lesson time { display:inline-block; padding:4px 8px; border-radius:6px; background:#eef4fb; color:#164e80; font-size:14px; font-weight:700; }
+html.univer-mobile .univer-app-lesson time { display:inline-block; padding:4px 8px; border-radius:6px; background:#eef4fb; color:#164e80; font-size:14px; font-weight:600; }
 html.univer-mobile .univer-app-lesson p { margin:4px 0 0; line-height:1.4; }
-html.univer-mobile .univer-app-lesson .univer-app-subject { font-weight:700; }
+html.univer-mobile .univer-app-lesson .univer-app-subject { font-weight:600; }
 html.univer-mobile .univer-app-no-classes { margin:8px 0; color:#4b5b6c; }
 /* UMKD cards use the original rows, download anchors and rating handlers. */
 html.univer-mobile .univer-app-shell table.inner.univer-app-materials,
 html.univer-mobile .univer-app-shell table.inner.univer-app-courses { display:block; width:100%!important; min-width:0!important; table-layout:fixed!important; }
 html.univer-mobile :is(.univer-app-materials,.univer-app-courses)>tbody { display:block; width:100%; }
 html.univer-mobile :is(.univer-app-materials,.univer-app-courses)>tbody>tr:has(>th:nth-child(2)) { display:none!important; }
-html.univer-mobile .univer-app-materials>tbody>tr:has(>th:only-child) { display:block; }
-html.univer-mobile .univer-app-materials>tbody>tr>th:only-child { display:block; padding:16px 4px 8px!important; background:none!important; color:#164e80!important; text-align:start!important; line-height:1.5; border:0!important; }
+html.univer-mobile .univer-app-materials>tbody>tr:has(>th:only-of-type) { display:block; }
+html.univer-mobile .univer-app-materials>tbody>tr>th:only-of-type { display:block; padding:16px 4px 8px!important; background:none!important; color:#164e80!important; text-align:start!important; line-height:1.5; border:0!important; }
 html.univer-mobile .univer-app-materials tr.file, html.univer-mobile .univer-app-courses tr.link { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:4px 12px; background:white!important; border:1px solid #d7e3ef; border-radius:8px; margin:8px 0; padding:10px 12px; }
 html.univer-mobile :is(.univer-app-materials,.univer-app-courses)>tbody>tr>td { display:block; width:auto!important; min-width:0!important; border:0!important; padding:0!important; text-align:start!important; line-height:1.5; background:none!important; }
 html.univer-mobile :is(.univer-app-materials tr.file,.univer-app-courses tr.link)>td:first-child { display:none!important; }
-html.univer-mobile :is(.univer-app-materials tr.file,.univer-app-courses tr.link)>td:nth-child(2) { grid-column:1/-1; font-weight:700; }
+html.univer-mobile :is(.univer-app-materials tr.file,.univer-app-courses tr.link)>td:nth-child(2) { grid-column:1/-1; font-weight:600; }
 html.univer-mobile .univer-app-materials tr.file>td:nth-child(3), html.univer-mobile .univer-app-materials tr.file>td:last-child { grid-column:1/-1; }
 html.univer-mobile .univer-app-materials td[data-univer-field]::before { content:attr(data-univer-field); display:block; font-size:12px; font-weight:500; color:#4b5b6c; }
 html.univer-mobile .univer-app-materials tr.file>td:nth-child(3):empty { display:none; }
@@ -265,7 +265,7 @@ html.univer-mobile .univer-app-scroll-hint[hidden] { display:none!important; }
 /* Keep study content first; auxiliary information belongs after it. */
 html.univer-mobile .univer-app-quick { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin:8px; }
 html.univer-mobile .univer-app-quick a { display:flex; align-items:center; justify-content:center; min-height:48px; box-sizing:border-box; padding:10px; border:1px solid #c7d9ed; border-radius:10px; background:white; color:#164e80; text-decoration:none; text-align:center; font-weight:600; }
-html.univer-mobile #tools a[aria-current=page] { background:#e4effb; color:#123f69; font-weight:700; border-left:3px solid #246298; }
+html.univer-mobile #tools a[aria-current=page] { background:#e4effb; color:#123f69; font-weight:600; border-left:3px solid #246298; }
 html.univer-mobile .univer-app-shell :is(.scrool,.scrool200) { width:100%!important; max-width:100%!important; min-width:0!important; box-sizing:border-box; }
 html.univer-mobile .univer-app-catalog .scrool200 { height:auto!important; max-height:none!important; overflow:visible!important; }
 html.univer-mobile .univer-app-catalog, html.univer-mobile .univer-app-faq { margin:8px 0; border:1px solid #d7e3ef; border-radius:10px; background:white; }
@@ -309,8 +309,8 @@ html.univer-mobile #modal_auth_frm label { margin:6px 0 2px; font-size:14px!impo
 html.univer-mobile #modal_auth_frm>table>tbody>tr>td:nth-child(2) { padding:4px!important; }
 /* Today in the week schedule. */
 html.univer-mobile .univer-app-day.univer-app-today h3 { display:flex; align-items:center; gap:8px; }
-html.univer-mobile .univer-app-today-badge { margin-inline-start:auto; padding:2px 10px; border-radius:999px; background:#1b5fa6; color:#fff; font-size:12px; font-weight:700; }
-html.univer-mobile .univer-app-days button.univer-app-today:not([aria-pressed=true]) { border-color:#1b5fa6; border-width:2px; font-weight:700; }
+html.univer-mobile .univer-app-today-badge { margin-inline-start:auto; padding:2px 10px; border-radius:999px; background:#1b5fa6; color:#fff; font-size:12px; font-weight:600; }
+html.univer-mobile .univer-app-days button.univer-app-today:not([aria-pressed=true]) { border-color:#1b5fa6; border-width:2px; font-weight:600; }
 /* News search, dates, important-only filter, numbered pages and long-article folding. */
 html.univer-mobile #l4 table[data-univer-news-source], html.univer-mobile .univer-app-news-pager[hidden] { display:none!important; }
 html.univer-mobile table.univer-app-news tr.news[hidden], html.univer-mobile #l4 td.tb.univer-app-news-pager-source { display:none!important; }
@@ -354,14 +354,14 @@ html.univer-mobile .univer-app-attendance-overall-block { padding:0 0 10px; marg
 html.univer-mobile .univer-app-attendance-summary p { display:flex; flex-wrap:wrap; gap:2px 12px; margin:4px 0!important; font-size:14px!important; line-height:1.5!important; }
 html.univer-mobile .univer-app-attendance-summary strong { min-width:96px; font-weight:600; }
 html.univer-mobile p.univer-app-attendance-overall, html.univer-mobile p.univer-app-attendance-summary-title { margin:0 0 6px!important; color:#4b5b6c; font-size:12px!important; font-weight:600; }
-html.univer-mobile p.univer-app-attendance-overall-value { font-size:17px!important; font-weight:700; color:#16283b; }
+html.univer-mobile p.univer-app-attendance-overall-value { font-size:17px!important; font-weight:600; color:#16283b; }
 html.univer-mobile #l4 .univer-app-lesson-label { display:flex; flex-wrap:wrap; align-items:baseline; gap:2px 12px; margin:10px 0 4px; font-size:14px!important; }
-html.univer-mobile #l4 .univer-app-lesson-label strong { font-size:15px!important; font-weight:700; color:#16283b; }
+html.univer-mobile #l4 .univer-app-lesson-label strong { font-size:15px!important; font-weight:600; color:#16283b; }
 html.univer-mobile #l4 .univer-app-lesson-label>span { font-size:13px!important; color:#4b5b6c; }
 html.univer-mobile #l4 .univer-app-course-heading { display:block; margin:0; padding:0; border:0; text-align:start; }
 html.univer-mobile #l4 .univer-app-course-title { box-sizing:border-box; min-height:48px; padding:10px 0; cursor:pointer; }
 html.univer-mobile #l4 .univer-app-course-meta>a { display:block; flex-basis:100%; padding:8px 0; min-height:32px; font-size:14px!important; }
-html.univer-mobile #l4 .univer-app-course-name, html.univer-mobile #l4 .univer-app-course-title>.univer-app-attendance-course { font-size:18px!important; font-weight:700; line-height:1.4; }
+html.univer-mobile #l4 .univer-app-course-name, html.univer-mobile #l4 .univer-app-course-title>.univer-app-attendance-course { font-size:18px!important; font-weight:600; line-height:1.4; }
 html.univer-mobile #l4 .univer-app-attendance-course { color:#1b5fa6; text-decoration:underline; text-underline-offset:3px; }
 html.univer-mobile #l4 .univer-app-course-meta { display:flex; flex-wrap:wrap; gap:2px 14px; margin-top:4px; color:#4b5b6c; }
 html.univer-mobile #l4 .univer-app-course-meta span { font-size:12px!important; font-weight:400; }
@@ -386,11 +386,8 @@ html.univer-mobile .univer-app-lesson-meta { color:#4b5b6c; font-size:14px!impor
 /* The filter toggle stays beside the search field; its panel opens on a row of its own underneath. */
 html.univer-mobile .univer-app-news-tools { flex-wrap:wrap; }
 html.univer-mobile .univer-app-news-tools>.univer-app-news-query { flex:1 1 150px; min-width:0; }
-html.univer-mobile .univer-app-news-filter-toggle { flex:0 0 auto; min-height:48px; padding:0 12px; color:#1b5fa6; font-size:14px; }
-html.univer-mobile .univer-app-news-tools>.univer-app-news-advanced { flex:1 1 100%; }
 html.univer-mobile .univer-app-news-pages>summary,
 html.univer-mobile .univer-app-attendance-options>summary, html.univer-mobile .univer-app-material-details>summary { box-sizing:border-box; min-height:48px; padding:12px 8px; color:#1b5fa6; font-size:14px; cursor:pointer; }
-html.univer-mobile .univer-app-news-advanced>div { display:flex; flex-wrap:wrap; gap:8px; padding:8px 0; }
 html.univer-mobile .univer-app-news-pages { margin:0 0 8px; }
 html.univer-mobile .univer-app-attendance-course-list { display:block; }
 html.univer-mobile .univer-app-attendance-course-list select { box-sizing:border-box; width:100%; min-height:48px; padding:8px; border:1px solid #bdcfe3; border-radius:8px; background:#fff; color:#16283b; }

@@ -52,15 +52,47 @@ internal object HtmlText {
         return declared?.let { name -> runCatching { String(bytes, Charset.forName(name)) }.getOrNull() } ?: TextPreview.decode(bytes, bytes.size)
     }
 
+    private val BLOCK = Regex("<(script|style|head|xml)\\b", RegexOption.IGNORE_CASE)
+
+    /**
+     * [change] applied up to the last [closing] of the text. What these patterns match ends with [closing], so the
+     * result is the same, and a page of markup that never closes is not searched to its end from every opening.
+     */
+    private fun String.through(closing: String, change: (String) -> String): String {
+        val end = lastIndexOf(closing).takeIf { it >= 0 } ?: return this
+        return change(substring(0, end + closing.length)) + substring(end + closing.length)
+    }
+
+    /** Scripts, styles and the head, each from its opening to its first closing tag; one never closed stays as it is. */
+    private fun withoutBlocks(text: String): String {
+        val out = StringBuilder(text.length)
+        val unclosed = HashSet<String>()
+        var at = 0
+        while (true) {
+            val open = BLOCK.find(text, at) ?: break
+            val name = open.groupValues[1].lowercase()
+            val close = if (name in unclosed) null else Regex("</$name\\s*>", RegexOption.IGNORE_CASE).find(text, open.range.last + 1)
+            if (close == null) {
+                unclosed += name // Nor does any later one close.
+                out.append(text, at, open.range.last + 1)
+                at = open.range.last + 1
+            } else {
+                out.append(text, at, open.range.first).append(' ')
+                at = close.range.last + 1
+            }
+        }
+        return out.append(text, at, text.length).toString()
+    }
+
     fun text(bytes: ByteArray): String {
         return decode(bytes)
-            .replace(Regex("<!--.*?-->", RegexOption.DOT_MATCHES_ALL), " ")
-            .replace(Regex("<(script|style|head|xml)\\b.*?</\\1\\s*>", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)), " ")
+            .through("-->") { it.replace(Regex("<!--.*?-->", RegexOption.DOT_MATCHES_ALL), " ") }
+            .let(::withoutBlocks)
             // As in a browser, line breaks in the source are spaces; only blocks start lines.
             .replace(Regex("\\s+"), " ")
-            .replace(Regex("</?(p|div|br|h[1-6]|li|tr|table|ul|ol|blockquote|pre|section|article|header|footer)\\b[^>]*>", RegexOption.IGNORE_CASE), "\n")
+            .through(">") { it.replace(Regex("</?(p|div|br|h[1-6]|li|tr|table|ul|ol|blockquote|pre|section|article|header|footer)\\b[^>]*>", RegexOption.IGNORE_CASE), "\n") }
             .replace(Regex("</t[dh]\\s*>", RegexOption.IGNORE_CASE), "\t")
-            .replace(Regex("<[^>]*>"), "")
+            .through(">") { it.replace(Regex("<[^>]*>"), "") }
             .let(::entities)
             .lines().joinToString("\n") { it.replace(Regex("[ \\u00A0]{2,}"), " ").trim() }
             .replace(Regex("\n{3,}"), "\n\n").take(TextExtract.LIMIT).trim()

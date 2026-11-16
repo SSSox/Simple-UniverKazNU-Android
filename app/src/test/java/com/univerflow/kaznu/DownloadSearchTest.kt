@@ -165,4 +165,97 @@ class DownloadSearchTest {
         val result = runCatching { TextExtract.text(hostile, "a.docx") }
         assertTrue("No external file content: $result", result.isFailure || !result.getOrThrow().contains("localhost"))
     }
+
+    @Test fun aLibraryLargerThanTheTextCacheIsReadOncePerQuery() {
+        val library = (1..5).map { DownloadRecord("id$it", fileName = "file$it.txt", started = it.toLong()) }
+        val cache = DownloadList.TextCache(maxFiles = 2, maxCharacters = 1_000)
+        val scan = DownloadList.TextScan()
+        var reads = 0
+        while (true) {
+            val round = scan.pending("query", library, cache)
+            if (round.isEmpty()) break
+            round.forEach { record -> reads++; cache.put(record.id, DownloadList.FileText("text")); scan.read(record.id) }
+            assertTrue("The scan must end", reads <= library.size)
+        }
+        assertEquals(library.size, reads)
+        assertEquals("A new query reads what the cache no longer holds", 3, scan.pending("other", library, cache).size)
+    }
+
+    // Review finding: three matching textbooks overflowed the cache, the first one left it, and since the scan had read
+    // it for this query it was never read again, so a file found by its text silently left the results.
+    @Test fun aTextMatchStaysInTheResultsAfterTheCacheDropsItsText() {
+        val books = (1..3).map { DownloadRecord("book$it", fileName = "Учебник $it.pdf", state = DownloadState.COMPLETED, started = it.toLong()) }
+        val cache = DownloadList.TextCache(maxFiles = 2, maxCharacters = 10_000)
+        val scan = DownloadList.TextScan()
+        scan.pending("энтропия", books, cache).forEach { record ->
+            val entry = cache.put(record.id, DownloadList.FileText("Глава о том, что такое энтропия."))
+            scan.read(record.id)
+            if (TextSearch.matches(entry.folded, "энтропия")) scan.found(record.id, TextSearch.snippet(entry.text, entry.folded, "энтропия")!!)
+        }
+        assertFalse("The first book's text left the cache", "book1" in cache)
+        assertEquals("Nothing is read again for the same query", emptyList<DownloadRecord>(), scan.pending("энтропия", books, cache))
+        val view = DownloadList.view(books, "энтропия", null, null, cache.snapshot(), DownloadList.Order.NAME, scan.found)
+        assertEquals(listOf("book1", "book2", "book3"), view.records.map { it.id })
+        assertEquals("энтропия", view.snippets.getValue("book1").let { it.text.substring(it.start, it.end) })
+        // A new query starts over: what the last one found is not carried into it.
+        scan.pending("другое", books, cache)
+        assertTrue(scan.found.isEmpty())
+        scan.found("book2", TextSearch.Snippet("x", 0, 1)); scan.forget("book2")
+        assertTrue("A file removed from the list is forgotten", scan.found.isEmpty())
+    }
+
+    // Review finding: the chips counted only name and course matches, so they read "PDF 0" over a card found by its text.
+    @Test fun chipCountsIncludeFilesFoundByTheirText() {
+        val files = listOf(DownloadRecord("p", fileName = "Лекция 3.pdf", started = 1), DownloadRecord("w", fileName = "Задание.docx", started = 2))
+        val texts = mapOf("p" to DownloadList.FileText("Термодинамика и энтропия"))
+        assertEquals(mapOf(FileKind.PDF to 1), DownloadList.kindCounts(files, "энтропия", null, texts))
+        assertEquals("Without the inside-files search only names count", emptyMap<FileKind, Int>(), DownloadList.kindCounts(files, "энтропия", null))
+        val dropped = mapOf("p" to TextSearch.Snippet("энтропия", 0, 8))
+        assertEquals("A match whose text left the cache still counts", mapOf(FileKind.PDF to 1),
+            DownloadList.kindCounts(files, "энтропия", null, emptyMap(), dropped))
+        assertEquals(mapOf(FileKind.WORD to 1), DownloadList.kindCounts(files, "задание", null, texts))
+    }
+
+    @Test fun aFullCacheKeepsMatchesAndLetsATextThatFoundNothingGo() {
+        val cache = DownloadList.TextCache(maxFiles = 2, maxCharacters = 1_000)
+        cache.put("match", DownloadList.FileText("found"))
+        cache.put("miss", DownloadList.FileText("nothing"))
+        cache.yieldTo("miss")
+        assertFalse("miss" in cache)
+        assertTrue("match" in cache)
+        cache.yieldTo("match")
+        assertTrue("A cache with room keeps what it read", "match" in cache)
+    }
+
+    @Test fun aServerNameWithRunsOfSpacesReadsAsOneLineAndIsStillFoundByItsWords() {
+        // Observed on /student/umkd: "методические рекомендации  СРО 1.docx", "Н. Силлабус  2025-2026 Психология.docx".
+        assertEquals("методические рекомендации СРО 1.docx", FileKinds.title(" методические рекомендации  СРО 1.docx\t"))
+        assertEquals("Н. Силлабус 2025-2026 Психология.docx", FileKinds.title("Н. Силлабус  2025-2026 Психология.docx"))
+        val record = DownloadRecord("a", fileName = "Н. Силлабус  2025-2026 Психология.docx", started = 0)
+        assertTrue(FileKinds.matchesQuery(record, "силлабус  психология"))
+        assertFalse(FileKinds.matchesQuery(record, "силлабус  2027"))
+    }
+
+    @Test fun textAndArchivesAreCountedUnderTheOtherChipThatShowsThem() {
+        val files = listOf(DownloadRecord("t", fileName = "notes.txt", started = 0), DownloadRecord("z", fileName = "lab.zip", started = 0),
+            DownloadRecord("p", fileName = "lecture.pdf", started = 0))
+        assertEquals(mapOf(FileKind.OTHER to 2, FileKind.PDF to 1), DownloadList.kindCounts(files, "", null))
+        assertEquals(listOf("t", "z"), files.filter { FileKinds.matchesFilter(it, FileKind.OTHER) }.map { it.id })
+        assertEquals(FileKind.OTHER, FileKinds.filterKind(FileKind.ARCHIVE))
+        assertEquals(FileKind.WORD, FileKinds.filterKind(FileKind.WORD))
+    }
+
+    @Test fun filesGroupByWholeDaysInTheStudentsZone() {
+        val zone = java.util.TimeZone.getTimeZone("GMT+05:00")
+        val now = java.util.GregorianCalendar(zone).apply { set(2026, 10, 6, 0, 30, 0) }.timeInMillis
+        val hour = 3_600_000L
+        // Half an hour into the day: an hour ago is already yesterday.
+        assertEquals(DownloadList.Period.TODAY, DownloadList.period(now - 10 * 60_000L, now, zone))
+        assertEquals(DownloadList.Period.YESTERDAY, DownloadList.period(now - hour, now, zone))
+        assertEquals(DownloadList.Period.WEEK, DownloadList.period(now - 6 * 24 * hour, now, zone))
+        assertEquals(DownloadList.Period.MONTH, DownloadList.period(now - 7 * 24 * hour, now, zone))
+        assertEquals(DownloadList.Period.MONTH, DownloadList.period(now - 30 * 24 * hour, now, zone))
+        assertEquals(DownloadList.Period.EARLIER, DownloadList.period(now - 31 * 24 * hour, now, zone))
+        assertEquals("A file from the future counts as today", DownloadList.Period.TODAY, DownloadList.period(now + hour, now, zone))
+    }
 }

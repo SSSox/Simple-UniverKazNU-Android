@@ -1,2 +1,2 @@
 <com.google.android.material.chip.Chip xmlns:android="http://schemas.android.com/apk/res/android"
-    style="@style/Widget.Material3.Chip.Filter" android:layout_width="wrap_content" android:layout_height="wrap_content" />
+    style="@style/Univer.FilterChip" android:layout_width="wrap_content" android:layout_height="wrap_content" />

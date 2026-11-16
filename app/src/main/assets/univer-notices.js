@@ -1,6 +1,6 @@
 /* Reads the site's notification marks (red menu counts, messages asking for a questionnaire or test); never clicks or
    submits. [fetchSections] also reads the section tabs by GET (never the root: it opens the read notice). */
-(function (fetchSections, generation) {
+(function (fetchSections, generation, send) {
     'use strict';
     if (location.origin !== 'https://univer.kaznu.kz' || document.readyState === 'loading' || !document.body) return null;
     var COUNT = /[(\[]\s*(\d{1,4})\s*[)\]]\s*$/;
@@ -148,7 +148,8 @@
 
     var page = location.pathname + location.search;
     var current = scan(document, location.href, page, 'page');
-    var channel = window.__univerNoticeEvents;
+    // The app's own sender (ChannelGuard): it carries the key the app checks, so the site cannot forge this list.
+    var channel = send && typeof send.notice === 'function' ? send.notice : null;
     current.fetching = false;
     if (fetchSections && channel && !window.__univerNoticeFetch) {
         var sections = [];
@@ -183,7 +184,7 @@
                 for (var k = 0; k < again.links.length; k++) {
                     if (again.links[k].n > 0 && SURVEYS.test(again.links[k].u)) await count(again.links[k], again.links[k].u === page ? document : null);
                 }
-                channel.postMessage(JSON.stringify(again));
+                channel(JSON.stringify(again));
             }
             for (var i = 0; i < sections.length; i++) {
                 // One section that fails to load (a network error, a timeout) does not end the others.
@@ -196,7 +197,7 @@
                     if (link.n <= 0 || (link.d && !SURVEYS.test(link.u))) continue;
                     await count(link, link.u === sections[i] ? section.doc : null);
                 }
-                channel.postMessage(JSON.stringify(result));
+                channel(JSON.stringify(result));
             }
         })().catch(function () { }).finally(function () { window.__univerNoticeFetch = false; });
     }

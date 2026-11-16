@@ -27,6 +27,7 @@ internal object XlsxReader {
         val parts = HashMap<String, ByteArray>()
         var entries = 0
         var total = 0L
+        val passed = PassedOver(checkActive)
         ZipInputStream(input).use { zip ->
             while (true) {
                 checkActive()
@@ -40,6 +41,7 @@ internal object XlsxReader {
                     if (total > TOTAL_LIMIT) throw PreviewLimitException()
                     parts[name] = part
                 }
+                passed.rest(zip)
             }
         }
         val workbook = parts["xl/workbook.xml"] ?: throw UnsupportedDocumentException("Not an Excel workbook")
@@ -56,10 +58,12 @@ internal object XlsxReader {
                     attributes.getValue(R, "id"), attributes.getValue("", "state"))
             }
         })
+        val budget = CellBudget()
         val result = sheets.filter { it.third.isNullOrEmpty() || it.third == "visible" }.mapNotNull { (name, id, _) ->
             val target = id?.let(targets::get) ?: return@mapNotNull null
-            val part = parts[resolve(target)] ?: return@mapNotNull null
-            Sheet(name).also { sheet -> SafeXml.parse(part, SheetHandler(sheet, strings, styles, checkActive)) }
+            // A part is one sheet: the names a damaged workbook gives it again get none.
+            val part = parts.remove(resolve(target)) ?: return@mapNotNull null
+            Sheet(name, budget).also { sheet -> SafeXml.parse(part, SheetHandler(sheet, strings, styles, checkActive)) }
         }
         return Workbook(result, date1904)
     }

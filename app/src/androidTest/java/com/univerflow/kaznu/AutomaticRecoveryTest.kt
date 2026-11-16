@@ -25,14 +25,16 @@ import java.io.ByteArrayInputStream
 import java.util.Collections
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
+import android.os.SystemClock
 
 /** A refused AJAX dialog (an expired key after a long break) ends in the full-page login by itself. Offline fixtures only. */
 @RunWith(AndroidJUnit4::class)
 class AutomaticRecoveryTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
 
-    private fun awaitCondition(condition: () -> Boolean) {
-        val end = System.nanoTime() + TimeUnit.SECONDS.toNanos(20)
+    private fun awaitCondition(timeoutSeconds: Long = 20, condition: () -> Boolean) {
+        val end = System.nanoTime() + TimeUnit.SECONDS.toNanos(timeoutSeconds)
         while (!condition() && System.nanoTime() < end) Thread.sleep(150)
         assertTrue("Recovery reached expected state", condition())
     }
@@ -64,6 +66,8 @@ class AutomaticRecoveryTest {
             <form id="login_frm" method="post" action="/"><input type="text" id="_l"><input type="password" id="_p"><input name="btn" type="submit"></form></body></html>"""
         val signedIn = "<html><body><p id='inside'>Inside Univer fixture</p><a href='/user/logout'>Выход</a></body></html>"
         val authRequests = AtomicInteger()
+        val rejectedAt = AtomicLong()
+        val recoveredAt = AtomicLong()
         val signIns = AtomicInteger()
         val recovered = Collections.synchronizedList(mutableListOf<String>())
         val scenario = ActivityScenario.launch(MainActivity::class.java)
@@ -77,6 +81,7 @@ class AutomaticRecoveryTest {
                 activity.setContentView(web)
                 web.settings.javaScriptEnabled = true
                 controller = AutomationController(web, model, activity.lifecycleScope, recover = { url ->
+                    recoveredAt.set(SystemClock.elapsedRealtime())
                     recovered.add(url)
                     // The ended session's page is redirected by the site to its login form.
                     web.loadUrl(if (url.endsWith("/student/umkd/")) "https://univer.kaznu.kz/user/login" else url)
@@ -85,7 +90,7 @@ class AutomaticRecoveryTest {
                     override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse {
                         var mime = "text/html"
                         val body = when (request.url.path) {
-                            "/user/ajl" -> { authRequests.incrementAndGet(); mime = "application/json"; """{"code":0}""" }
+                            "/user/ajl" -> { authRequests.incrementAndGet(); rejectedAt.set(SystemClock.elapsedRealtime()); mime = "application/json"; """{"code":0}""" }
                             "/user/login" -> login
                             "/fixture/signed-in" -> { signIns.incrementAndGet(); signedIn }
                             else -> page
@@ -99,7 +104,8 @@ class AutomaticRecoveryTest {
                 controller.resume()
                 web.loadUrl("https://univer.kaznu.kz/student/umkd/")
             }
-            awaitCondition { signIns.get() == 1 }
+            awaitCondition(85) { signIns.get() == 1 }
+            assertTrue("A refused AJAX challenge waits at least a minute before recovery", recoveredAt.get() - rejectedAt.get() >= 60_000)
             assertEquals("One refused dialog", 1, authRequests.get())
             assertEquals(listOf("https://univer.kaznu.kz/student/umkd/"), recovered.toList())
             awaitCondition { status == AutomationStatus.IDLE && !model.guard.blocked }

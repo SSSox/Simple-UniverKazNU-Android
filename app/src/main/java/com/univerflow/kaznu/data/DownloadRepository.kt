@@ -29,7 +29,8 @@ object DownloadHistoryCodec {
             put(JSONObject().put("id", record.id).put("fileName", record.fileName).put("uri", record.uri ?: JSONObject.NULL)
                 .put("mime", record.mime ?: JSONObject.NULL).put("state", record.state.name).put("received", record.received)
                 .put("total", record.total).put("started", record.started).put("finished", record.finished ?: JSONObject.NULL)
-                .put("source", record.source).put("failure", record.failure?.name ?: JSONObject.NULL).put("key", record.key))
+                .put("source", record.source).put("failure", record.failure?.name ?: JSONObject.NULL).put("key", record.key)
+                .put("place", record.place ?: JSONObject.NULL))
         }
     }.toString()
 
@@ -52,6 +53,7 @@ object DownloadHistoryCodec {
                     source = item.optString("source").take(200),
                     failure = if (item.isNull("failure")) null else runCatching { DownloadFailure.valueOf(item.getString("failure")) }.getOrNull(),
                     key = item.optString("key").takeIf { it.matches(Regex("[0-9a-f]{32}")) }.orEmpty(),
+                    place = item.optString("place").takeIf { !item.isNull("place") && it.isNotEmpty() && it.length <= 1024 },
                 )
             }.getOrNull()
         }
@@ -103,6 +105,23 @@ class DownloadRepository private constructor(context: Context) {
     fun remove(id: String) {
         mutable.update { list -> list.filterNot { it.id == id } }
         persist()
+    }
+
+    /** Drops the records of files that left their place, each only if it still points at the same file; one write. */
+    fun removeGone(gone: Collection<DownloadRecord>) {
+        if (gone.isEmpty()) return
+        val wanted = gone.associate { it.id to it.uri }
+        var changed = false
+        mutable.update { list -> list.filterNot { it.id in wanted && it.state == DownloadState.COMPLETED && it.uri == wanted[it.id] }.also { changed = it.size != list.size } }
+        if (changed) persist()
+    }
+
+    /** Records the current place of files saved before places were kept (id to place); one write. */
+    fun keepPlaces(places: Map<String, String>) {
+        if (places.isEmpty()) return
+        var changed = false
+        mutable.update { list -> list.map { record -> places[record.id]?.takeIf { record.place == null }?.let { changed = true; record.copy(place = it) } ?: record } }
+        if (changed) persist()
     }
 
     private fun persist() {

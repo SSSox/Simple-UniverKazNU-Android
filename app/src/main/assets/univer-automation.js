@@ -5,13 +5,40 @@
     var origin = 'https://univer.kaznu.kz';
     if (location.origin !== origin || window.__univerAutomationV1) return;
     var token = Date.now().toString(36) + Math.random().toString(36).slice(2);
-    var loginClicked = false, sequence = 0;
+    var loginClicked = false, sequence = 0, interactiveSince = 0;
     var episodes = {notice: {}, agreement: {}, reauth: {}};
     var ajax = {reauth: {state: '', challenge: ''}, agreement: {state: '', challenge: ''}};
     var hooked = new WeakSet();
+    /* The account the next pages belong to, noted when the login form is sent (by the student or by automatic sign-in),
+       so a page cache of one student (the syllabus tasks) is not shown to another student signing in on the same profile.
+       Only a short hash of the login is kept, in the site's own storage that goes with the profile. */
+    var ACCOUNT_KEY = 'univer.app.account.v1';
+    function accountMark(login) {
+        var text = String(login || '').trim().toLowerCase(), hash = 0x811c9dc5;
+        for (var i = 0; i < text.length; i++) { hash ^= text.charCodeAt(i); hash = Math.imul(hash, 0x01000193) >>> 0; }
+        return text ? 'a' + hash.toString(16) : '';
+    }
+    if (window === window.top && /^\/user\/login\/?$/i.test(location.pathname)) ['click', 'keydown', 'submit'].forEach(function (type) {
+        document.addEventListener(type, function (event) {
+            var form = event.target && event.target.closest ? event.target.closest('form#login_frm') : null;
+            if (!form || (type === 'keydown' && event.key !== 'Enter')) return;
+            if (type === 'click' && !event.target.closest('button,input[type=submit],input[type=button],input[type=image],a')) return;
+            var field = Array.from(form.querySelectorAll('input')).find(function (input) {
+                var kind = (input.getAttribute('type') || 'text').toLowerCase();
+                return (kind === 'text' || kind === 'email') && input.value.trim();
+            });
+            var mark = field ? accountMark(field.value) : '';
+            if (mark) { try { localStorage.setItem(ACCOUNT_KEY, mark); } catch (_) { } }
+        }, true);
+    });
     var LOGIN_PATH = /^\/user\/login(?:moodle)?\/?$/i, NOTICE_PATH = /^\/student\/attentionStudents\/\d+\/?$/i;
     // The site's own AJAX endpoints whose result settles a pending reauthentication or agreement.
     var AJAX_PATHS = {reauth: '/user/ajl', agreement: '/user/setagree'};
+    // At most this many documents (the page and its same-origin frames) are searched; a form absent this long ends
+    // its episode; an interactive DOM counts as ready this long after it became interactive.
+    var MAX_DOCUMENTS = 8, ABSENCE_MS = 1_500, INTERACTIVE_GRACE_MS = 4000;
+
+    /* Page helpers. */
     function visible(el) {
         if (!el || el.hidden || !el.getClientRects().length) return false;
         var win = el.ownerDocument.defaultView;
@@ -28,16 +55,39 @@
         catch (_) { return null; }
     }
     function trustedAction(form) { return !!siteUrl(form.action, form.ownerDocument.URL); }
+    function hash(text) {
+        var result = 2166136261;
+        for (var i = 0; i < text.length; i++) { result ^= text.charCodeAt(i); result = Math.imul(result, 16777619); }
+        return (result >>> 0).toString(16);
+    }
+    /** A digest of [form]'s text: a changed notice or agreement gets a new key. */
+    function fingerprint(form) { return hash(normalize(form.textContent)); }
+    // Whether [node] holds any non-blank text. The first word answers: textContent would copy the whole page (often the
+    // site's one wrapper table) into a string on every polling tick.
+    function hasText(node) {
+        var walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+        for (var text = walker.nextNode(); text; text = walker.nextNode()) if (/\S/.test(text.data)) return true;
+        return false;
+    }
+    function setValue(input, value) {
+        var win = input.ownerDocument.defaultView;
+        Object.getOwnPropertyDescriptor(win.HTMLInputElement.prototype, 'value').set.call(input, value);
+        input.setAttribute('value', value); // Legacy jQuery reads attr('value'). Readonly is preserved.
+        input.dispatchEvent(new win.Event('input', {bubbles: true}));
+        input.dispatchEvent(new win.Event('change', {bubbles: true}));
+    }
+
+    /* The page and its same-origin frames, each with the site's AJAX results that settle a pending submission. */
     function documents() {
         var result = [document];
-        for (var i = 0; i < result.length && result.length < 8; i++) {
+        for (var i = 0; i < result.length && result.length < MAX_DOCUMENTS; i++) {
             for (var frame of result[i].querySelectorAll('iframe,frame')) {
                 try {
                     var doc = frame.contentDocument;
                     if (visible(frame) && doc && doc.defaultView.location.origin === origin &&
                         doc.readyState === 'complete' && !result.includes(doc)) result.push(doc);
                 } catch (_) { /* Cross-origin frames remain untouched. */ }
-                if (result.length === 8) break;
+                if (result.length === MAX_DOCUMENTS) break;
             }
         }
         result.forEach(hookAjax);
@@ -69,6 +119,8 @@
             for (var kind in AJAX_PATHS) if (awaited(kind, doc, settings)) ajax[kind].state = 'failure';
         });
     }
+
+    /* The forms automation may fill, each only while complete, visible and posting to the trusted origin. */
     function loginForm() {
         if (!LOGIN_PATH.test(location.pathname)) return null;
         var form = document.querySelector('form#login_frm');
@@ -86,25 +138,34 @@
     function readAgreement(text) {
         return /прочитал(?:а)? договор|i have read the (?:agreement|contract)|шартты оқыдым|келісімді оқыдым/.test(normalize(text));
     }
+    /**
+     * The read notice's checkbox and submit button in [form]: the observed #check / #btn, otherwise a checkbox labelled
+     * with the notice sentence and a submit button by its caption. Null while either is hidden or the checkbox disabled.
+     */
+    function noticeControls(form) {
+        var check = form.querySelector('input#check[type="checkbox"]');
+        var label = form.querySelector('label[for="check"]');
+        var button = form.querySelector('input#btn[type="submit"], button#btn[type="submit"]');
+        if (!check || !label) {
+            for (var candidate of form.querySelectorAll('input[type="checkbox"]')) {
+                var candidateLabel = Array.from(form.querySelectorAll('label')).find(function (l) {
+                    return l.htmlFor === candidate.id || l.contains(candidate);
+                });
+                if (candidateLabel && readNotice(candidateLabel.textContent)) { check = candidate; label = candidateLabel; break; }
+            }
+        }
+        if (!button) button = Array.from(form.querySelectorAll('input[type="submit"], button[type="submit"]'))
+            .find(function (b) { return /submit|отправить|ж[іi]беру/i.test(b.value || b.textContent); });
+        if (visible(check) && !check.disabled && label && readNotice(label.textContent) && visible(button))
+            return {form: form, check: check, button: button};
+        return null;
+    }
     function noticeForm(docs) {
         for (var doc of docs) for (var form of doc.querySelectorAll('form#attentionSt, form[action*="/student/attentionStudents/"]')) {
             var action = siteUrl(form.action, form.ownerDocument.URL);
             if (!action || !NOTICE_PATH.test(action.pathname)) continue;
-            var check = form.querySelector('input#check[type="checkbox"]');
-            var label = form.querySelector('label[for="check"]');
-            var button = form.querySelector('input#btn[type="submit"], button#btn[type="submit"]');
-            if (!check || !label) {
-                for (var candidate of form.querySelectorAll('input[type="checkbox"]')) {
-                    var candidateLabel = Array.from(form.querySelectorAll('label')).find(function (l) {
-                        return l.htmlFor === candidate.id || l.contains(candidate);
-                    });
-                    if (candidateLabel && readNotice(candidateLabel.textContent)) { check = candidate; label = candidateLabel; break; }
-                }
-            }
-            if (!button) button = Array.from(form.querySelectorAll('input[type="submit"], button[type="submit"]'))
-                .find(function (b) { return /submit|отправить|ж[іi]беру/i.test(b.value || b.textContent); });
-            if (visible(check) && !check.disabled && label && readNotice(label.textContent) && visible(button))
-                return {form: form, check: check, button: button};
+            var target = noticeControls(form);
+            if (target) return target;
         }
         return null;
     }
@@ -137,11 +198,8 @@
         }
         return null;
     }
-    function hash(text) {
-        var result = 2166136261;
-        for (var i = 0; i < text.length; i++) { result ^= text.charCodeAt(i); result = Math.imul(result, 16777619); }
-        return (result >>> 0).toString(16);
-    }
+
+    /* An episode is one appearance of a form: it is checked and submitted at most once. */
     function episode(kind, target) {
         var e = episodes[kind];
         if (target) {
@@ -152,10 +210,12 @@
             e.absent = 0;
         } else if (e.active && ajax[kind]?.state !== 'pending') {
             if (!e.absent) e.absent = Date.now();
-            if (Date.now() - e.absent >= 1_500) e.active = false;
+            if (Date.now() - e.absent >= ABSENCE_MS) e.active = false;
         }
         return e;
     }
+
+    /* The page state the native poller reads. */
     function currentLanguage() {
         for (var flag of document.querySelectorAll('.header img')) {
             if (flag.closest('a')) continue;
@@ -170,19 +230,25 @@
             var url = siteUrl(a.href); return !!url && /^\/user\/logout\/?$/.test(url.pathname);
         });
     }
-    var interactiveSince = 0;
     /* A hanging third-party image or counter must not block the login form for ever: an interactive DOM is
      * accepted after a short grace period, once the site's jQuery ready handlers have run. */
     function documentReady() {
         if (document.readyState === 'complete') return true;
         if (document.readyState !== 'interactive') return false;
         if (!interactiveSince) interactiveSince = Date.now();
-        return Date.now() - interactiveSince >= 4000;
+        return Date.now() - interactiveSince >= INTERACTIVE_GRACE_MS;
+    }
+    // Whether the body shows any text. innerText of the entire grade/material catalogue forces layout every polling tick.
+    function hasContent() {
+        return !!document.body && Array.from(document.body.children).some(function (node) {
+            return !/^(SCRIPT|STYLE|NOSCRIPT)$/.test(node.tagName) && visible(node) && hasText(node);
+        });
     }
     function probe() {
         if (location.origin !== origin) return {trusted: false};
         var docs = documents(), login = loginForm(), notice = noticeForm(docs), agreement = agreementForm(docs), reauth = reauthForm(docs);
         var n = episode('notice', notice), a = episode('agreement', agreement), r = episode('reauth', reauth);
+        // The site counts a rejected attempt in #auth_try: the pending submission has failed.
         if (reauth && reauth.attempt > 1 && ajax.reauth.state === 'pending') ajax.reauth.state = 'failure';
         var ready = documentReady();
         var loginPage = LOGIN_PATH.test(location.pathname);
@@ -195,29 +261,21 @@
             // Wall-clock age of this document, including time asleep: a long-open login form has an expired key.
             age: Math.max(0, Math.round(Date.now() - (performance.timeOrigin || Date.now()))),
             notice: ready && !!notice, checked: !!notice && notice.check.checked, submitEnabled: !!notice && !notice.button.disabled,
-            noticeKey: notice ? new URL(notice.form.action).pathname + ':' + hash(normalize(notice.form.textContent)) : '',
+            noticeKey: notice ? new URL(notice.form.action).pathname + ':' + fingerprint(notice.form) : '',
             noticeEpisode: notice ? n.id : '',
             agreement: ready && !!agreement, agreementChecked: !!agreement && agreement.check.checked,
             agreementEnabled: !!agreement && !agreement.button.disabled,
-            agreementKey: agreement ? 'additional:' + hash(normalize(agreement.form.textContent)) : '',
+            agreementKey: agreement ? 'additional:' + fingerprint(agreement.form) : '',
             agreementEpisode: agreement ? a.id : '', agreementOutcome: ajax.agreement.state,
             agreementResultEpisode: ajax.agreement.challenge,
             reauth: ready && !!reauth, reauthReady: ready && !!reauth && reauth.ready,
             reauthAttempt: reauth ? reauth.attempt : 0, reauthChallenge: reauth ? r.id : '',
             reauthOutcome: ajax.reauth.state, reauthResultChallenge: ajax.reauth.challenge,
-            // innerText of the entire grade/material catalogue forces layout every polling tick.
-            language: currentLanguage(), hasContent: !!document.body && Array.from(document.body.children).some(function (node) {
-                return !/^(SCRIPT|STYLE|NOSCRIPT)$/.test(node.tagName) && visible(node) && (node.textContent || '').trim().length > 0;
-            })};
+            language: currentLanguage(), hasContent: hasContent()};
     }
+
+    /* Actions. Each first checks that it still runs in the document [expected] names. */
     function valid(expected) { return location.origin === origin && token === expected; }
-    function setValue(input, value) {
-        var win = input.ownerDocument.defaultView;
-        Object.getOwnPropertyDescriptor(win.HTMLInputElement.prototype, 'value').set.call(input, value);
-        input.setAttribute('value', value); // Legacy jQuery reads attr('value'). Readonly is preserved.
-        input.dispatchEvent(new win.Event('input', {bubbles: true}));
-        input.dispatchEvent(new win.Event('change', {bubbles: true}));
-    }
     var CONFIRMATIONS = {notice: noticeForm, agreement: agreementForm};
     /** The notice or agreement form with its episode, or null while it is absent or [appearance] names an earlier one. */
     function confirmation(kind, appearance) {
@@ -228,7 +286,7 @@
     function submittable(found) {
         return !!found && !found.episode.clicked && found.target.check.checked && !found.target.button.disabled;
     }
-    function check(kind, expected, appearance) {
+    function checkConfirmation(kind, expected, appearance) {
         var found = valid(expected) && confirmation(kind, appearance);
         if (!found || found.episode.checked) return 'wait';
         var target = found.target; found.episode.checked = true;
@@ -238,10 +296,10 @@
     }
     function prepareNotice(expected, appearance) {
         if (!valid(expected)) return 'wait';
-        check('notice', expected, appearance);
+        checkConfirmation('notice', expected, appearance);
         return submittable(confirmation('notice', appearance)) ? 'ready' : 'wait';
     }
-    function submit(kind, expected, appearance) {
+    function submitConfirmation(kind, expected, appearance) {
         var found = valid(expected) && confirmation(kind, appearance);
         if (!submittable(found)) return 'wait';
         found.episode.clicked = true;
@@ -249,41 +307,45 @@
         found.target.button.click();
         return 'submitted';
     }
+    function submitLogin(expected, login, password) {
+        if (!valid(expected) || loginClicked || !probe().loginReady) return 'wait';
+        var target = loginForm(); loginClicked = true;
+        setValue(target.login, login); setValue(target.password, password);
+        target.button.click(); // Dynamic encryption/key handler remains intact.
+        return 'submitted';
+    }
+    function reauthenticate(expected, challenge, login, password) {
+        if (!valid(expected)) return 'wait';
+        var target = reauthForm(documents()), e = episode('reauth', target);
+        if (!target || !target.ready || target.attempt !== 1 || e.id !== challenge || e.clicked || ajax.reauth.state === 'pending') return 'wait';
+        // Do not replace the account bound by the site's readonly reauthentication field.
+        // An empty readonly field names no account yet and receives the saved login.
+        var bound = target.login.readOnly ? target.login.value.trim() : '';
+        if (bound && bound.toLowerCase() !== String(login).trim().toLowerCase()) return 'account-mismatch';
+        e.clicked = true; ajax.reauth = {state: 'pending', challenge: e.id, doc: target.form.ownerDocument};
+        if (!bound) setValue(target.login, login);
+        setValue(target.password, password);
+        target.button.click(); // Official ajl() serializes nonce/cheat and performs AJAX.
+        return 'submitted';
+    }
+    function switchLanguage(code) {
+        if (location.origin !== origin || !/^(ru|kz|en)$/.test(code)) return 'missing';
+        var link = Array.from(document.querySelectorAll('a[href]')).find(function (a) {
+            var url = siteUrl(a.href); return !!url && url.pathname === '/lang/change/' + code + '/';
+        });
+        if (!link) return 'missing';
+        link.click(); return 'clicked';
+    }
+
     window.__univerAutomationV1 = {
         probe: probe,
-        login: function (expected, login, password) {
-            if (!valid(expected) || loginClicked || !probe().loginReady) return 'wait';
-            var target = loginForm(); loginClicked = true;
-            setValue(target.login, login); setValue(target.password, password);
-            target.button.click(); // Dynamic encryption/key handler remains intact.
-            return 'submitted';
-        },
-        reauthenticate: function (expected, challenge, login, password) {
-            if (!valid(expected)) return 'wait';
-            var target = reauthForm(documents()), e = episode('reauth', target);
-            if (!target || !target.ready || target.attempt !== 1 || e.id !== challenge || e.clicked || ajax.reauth.state === 'pending') return 'wait';
-            // Do not replace the account bound by the site's readonly reauthentication field.
-            // An empty readonly field names no account yet and receives the saved login.
-            var bound = target.login.readOnly ? target.login.value.trim() : '';
-            if (bound && bound.toLowerCase() !== String(login).trim().toLowerCase()) return 'account-mismatch';
-            e.clicked = true; ajax.reauth = {state: 'pending', challenge: e.id, doc: target.form.ownerDocument};
-            if (!bound) setValue(target.login, login);
-            setValue(target.password, password);
-            target.button.click(); // Official ajl() serializes nonce/cheat and performs AJAX.
-            return 'submitted';
-        },
-        checkNotice: function (expected, appearance) { return check('notice', expected, appearance); },
+        login: submitLogin,
+        reauthenticate: reauthenticate,
+        checkNotice: function (expected, appearance) { return checkConfirmation('notice', expected, appearance); },
         prepareNotice: prepareNotice,
-        submitNotice: function (expected, appearance) { return submit('notice', expected, appearance); },
-        checkAgreement: function (expected, appearance) { return check('agreement', expected, appearance); },
-        submitAgreement: function (expected, appearance) { return submit('agreement', expected, appearance); },
-        switchLanguage: function (code) {
-            if (location.origin !== origin || !/^(ru|kz|en)$/.test(code)) return 'missing';
-            var link = Array.from(document.querySelectorAll('a[href]')).find(function (a) {
-                var url = siteUrl(a.href); return !!url && url.pathname === '/lang/change/' + code + '/';
-            });
-            if (!link) return 'missing';
-            link.click(); return 'clicked';
-        }
+        submitNotice: function (expected, appearance) { return submitConfirmation('notice', expected, appearance); },
+        checkAgreement: function (expected, appearance) { return checkConfirmation('agreement', expected, appearance); },
+        submitAgreement: function (expected, appearance) { return submitConfirmation('agreement', expected, appearance); },
+        switchLanguage: switchLanguage
     };
 })();

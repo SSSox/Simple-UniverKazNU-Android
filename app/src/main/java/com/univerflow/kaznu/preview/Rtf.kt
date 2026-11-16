@@ -12,6 +12,10 @@ import java.util.Locale
 internal object Rtf {
     private const val PICTURE_LIMIT = 32 * 1024 * 1024
     private const val DEPTH_LIMIT = 256
+    /** Paragraphs and their items kept for one document: past it the view is refused and the search keeps what it read. */
+    private const val FLOW_LIMIT = 500_000
+    /** Characters of text the search reads at most, blanks included, when few of them are anything else. */
+    private const val TEXT_CHAR_LIMIT = 4 * TextExtract.LIMIT
 
     fun isRtf(bytes: ByteArray) = bytes.size >= 5 && String(bytes, 0, 5, Charsets.ISO_8859_1) == "{\\rtf"
 
@@ -65,10 +69,23 @@ internal object Rtf {
         private val pictureData = ByteArrayOutputStream()
         private var pictureNibble = -1
         private val decoders = mutableMapOf<Int, Charset>()
+        /** The lead byte of a double-byte character waiting for its second byte, or -1. */
+        private var leadByte = -1
+        /** Without [media] the reader serves the search, which needs only the first TextExtract.LIMIT characters. */
+        private val forText = media == null
+        /** Paragraphs and items in [result]. */
+        private var kept = 0
+        /** Characters of text read, and those of them that are not blank (only those always reach the search). */
+        private var chars = 0
+        private var visible = 0
 
         fun read(): List<WordFlow.Paragraph> {
             while (position < bytes.size) {
                 if (position % 65536 == 0) checkActive()
+                if (kept + items.size >= FLOW_LIMIT || forText && (visible >= TextExtract.LIMIT || chars >= TEXT_CHAR_LIMIT)) {
+                    if (forText) break
+                    throw PreviewLimitException()
+                }
                 val byte = byteAt(position)
                 position++
                 when (byte) {
@@ -76,7 +93,8 @@ internal object Rtf {
                     '}'.code -> pop()
                     '\\'.code -> control()
                     '\r'.code, '\n'.code -> Unit
-                    else -> if (byte >= 0x80) codepageByte(byte) else character(byte)
+                    // A byte below 0x80 can complete a double-byte character too.
+                    else -> if (byte >= 0x80 || leadByte >= 0) codepageByte(byte) else character(byte)
                 }
             }
             flush()
@@ -93,6 +111,7 @@ internal object Rtf {
             stack.addLast(state)
             state = state.copy(linkOpened = false, picture = null)
             pendingSkip = 0
+            leadByte = -1
         }
 
         private fun pop() {
@@ -102,6 +121,7 @@ internal object Rtf {
             if (closing.destination == Destination.STYLES && styleName.isNotBlank()) style()
             if (closing.linkOpened) { flush(); items += Item.LinkEnd }
             pendingSkip = 0
+            leadByte = -1
         }
 
         /** A control symbol (\' \~ \* …) or a control word with an optional numeric parameter. */
@@ -110,6 +130,7 @@ internal object Rtf {
             if (!isLetter(position)) {
                 val symbol = byteAt(position).toChar()
                 position++
+                if (symbol != '\'') leadByte = -1
                 when (symbol) {
                     '\'' -> {
                         val value = if (position + 2 <= bytes.size) String(bytes, position, 2, Charsets.ISO_8859_1).toIntOrNull(16) else null
@@ -125,6 +146,7 @@ internal object Rtf {
                 }
                 return
             }
+            leadByte = -1
             val start = position
             while (isLetter(position) && position - start < 32) position++
             val word = String(bytes, start, position - start, Charsets.ISO_8859_1)
@@ -233,7 +255,7 @@ internal object Rtf {
             }
         }
 
-        private fun skip(count: Int?) { position = (position + (count ?: 0).coerceAtLeast(0)).coerceAtMost(bytes.size) }
+        private fun skip(count: Int?) { position += (count ?: 0).coerceIn(0, bytes.size - position) }
 
         private fun character(code: Int) {
             if (pendingSkip > 0 && state.destination != Destination.PICTURE) { pendingSkip--; return }
@@ -243,6 +265,8 @@ internal object Rtf {
                     if (run.isNotEmpty() && state.style != runStyle) flush()
                     if (run.isEmpty()) runStyle = state.style
                     run.appendCodePoint(code)
+                    chars++
+                    if (!Character.isWhitespace(code) && !Character.isSpaceChar(code)) visible++
                 }
                 Destination.INSTRUCTION -> state.field?.instruction?.takeIf { it.length < 2048 }?.appendCodePoint(code)
                 Destination.STYLES -> if (code == ';'.code) style() else if (styleName.length < 256) styleName.appendCodePoint(code)
@@ -251,17 +275,29 @@ internal object Rtf {
             }
         }
 
-        /** A byte above ASCII (escaped as \'hh or raw): a character in the code page of the current font or document. */
+        /**
+         * A byte above ASCII (escaped as \'hh or raw): a character in the code page of the current font or document.
+         * In the double-byte code pages (Chinese, Japanese, Korean) a lead byte waits for the byte that completes it.
+         */
         private fun codepageByte(value: Int) {
             if (state.destination == Destination.PICTURE) return
-            val char = if (value < 0x80) value.toChar()
-                else String(byteArrayOf(value.toByte()), decoder(fontCodepages[state.font] ?: defaultCodepage)).firstOrNull() ?: return
-            character(char.code)
+            // The fallback after \uN is counted in bytes, both bytes of a double-byte character included.
+            if (pendingSkip > 0) { pendingSkip--; leadByte = -1; return }
+            val codepage = fontCodepages[state.font] ?: defaultCodepage
+            val lead = leadByte
+            leadByte = -1
+            when {
+                lead >= 0 -> String(byteArrayOf(lead.toByte(), value.toByte()), decoder(codepage)).forEach { character(it.code) }
+                isLeadByte(codepage, value) -> leadByte = value
+                value < 0x80 -> character(value)
+                else -> character(String(byteArrayOf(value.toByte()), decoder(codepage)).firstOrNull()?.code ?: return)
+            }
         }
 
         private fun unicode(value: Int) {
             pendingSkip = 0
-            character(if (value < 0) value + 65536 else value)
+            // A number that is no character at all is left out; what stands in for it is still skipped.
+            (if (value < 0) value + 65536 else value).takeIf { it in 0..Character.MAX_CODE_POINT }?.let(::character)
             pendingSkip = state.unicodeSkip
         }
 
@@ -307,8 +343,13 @@ internal object Rtf {
         private fun paragraphEnd(cellEnd: Boolean) {
             if (state.destination != Destination.TEXT) return
             flush()
-            result += WordFlow.Paragraph(items, if (cellEnd) state.paragraph.copy(inTable = true) else state.paragraph, cellEnd)
+            keep(WordFlow.Paragraph(items, if (cellEnd) state.paragraph.copy(inTable = true) else state.paragraph, cellEnd))
             items = mutableListOf()
+        }
+
+        private fun keep(paragraph: WordFlow.Paragraph) {
+            result += paragraph
+            kept += paragraph.items.size + 1
         }
 
         /** \row: the row-end mark carries the row's layout, like a .doc row-end paragraph. */
@@ -316,7 +357,7 @@ internal object Rtf {
             flush()
             if (items.isNotEmpty()) paragraphEnd(cellEnd = true)
             val layout = WordFlow.RowLayout(bounds.toIntArray(), merges.toList(), covered.toList()).takeIf { bounds.size > 1 }
-            result += WordFlow.Paragraph(emptyList(), WordFlow.Props(inTable = true, depth = 1, rowEnd = true, row = layout), cellEnd = true)
+            keep(WordFlow.Paragraph(emptyList(), WordFlow.Props(inTable = true, depth = 1, rowEnd = true, row = layout), cellEnd = true))
         }
     }
 
@@ -330,6 +371,13 @@ internal object Rtf {
         "footnote", "annotation", "pntext", "pntxta", "pntxtb", "listtext", "listtable", "listoverridetable", "rsidtbl", "shp",
         "nonshppict", "nonesttables", "revtbl", "filetbl", "xe", "tc", "txe", "objdata", "objclass", "themedata", "colorschememapping",
         "datastore", "latentstyles", "generator", "xmlnstbl", "mmathPr", "pgdsctbl", "bkmkstart", "bkmkend", "template")
+
+    /** Lead bytes of the double-byte code pages: Shift-JIS, GBK, Korean (Unified Hangul) and Big5. */
+    private fun isLeadByte(codepage: Int, value: Int) = when (codepage) {
+        932 -> value in 0x81..0x9F || value in 0xE0..0xFC
+        936, 949, 950 -> value in 0x81..0xFE
+        else -> false
+    }
 
     /** \fcharset values to Windows code pages. */
     private val CHARSETS = mapOf(0 to 1252, 161 to 1253, 162 to 1254, 163 to 1258, 177 to 1255, 178 to 1256, 186 to 1257,

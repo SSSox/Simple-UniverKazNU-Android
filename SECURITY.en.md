@@ -4,7 +4,7 @@
 
 ## Supported versions
 
-Security fixes are released only for the latest version on the Releases page (currently 2.3.1).
+Security fixes are released only for the latest version on the Releases page (currently 2.4.0).
 
 ## Reporting a vulnerability
 
@@ -22,9 +22,10 @@ Security fixes are released only for the latest version on the Releases page (cu
 - The password and PIN screens, and the whole app when the PIN is on, are hidden from screenshots and the recent apps list (`FLAG_SECURE`).
 
 **Network.**
-- The app connects only to `https://univer.kaznu.kz` and to Moodle (`dl.kaznu.kz`, `dl.kaznu.edu.kz`). For updates: `github.com` and `*.githubusercontent.com`, without a login or cookies. HTTP is disabled (`usesCleartextTraffic="false"`).
+- The app connects only to `https://univer.kaznu.kz` and to Moodle (`dl.kaznu.kz`, `dl.kaznu.edu.kz`). For updates: `github.com` and `*.githubusercontent.com`, without a login or cookies. HTTP is disabled (`usesCleartextTraffic="false"`). The link window opens only the sites whose links the student tapped.
 - Certificates are checked by the system. In addition, only the public Sectigo R46 root certificate is trusted, and only for `univer.kaznu.kz` (old Android 7–14 do not know it), and the public ISRG Root X1 root only for update files on `*.githubusercontent.com` (Android 7.0 does not know it). Certificate Transparency checking is on for Android 17. Certificate and hostname checks are never turned off.
-- External links (browser, YouTube) open in other apps; the WebView does not load them.
+- External links open only after an explicit user action; automatic external navigation is blocked. An HTTPS link to a study site opens in the app's link window: it has a separate WebView profile with its own cookies, and the Univer and Moodle session never reaches it. That profile's data is deleted on sign-out and with the "Site data" button in Settings. HTTP, mailto and tel links, and every link when "Open links in an external browser" is on or the WebView has no separate profiles, open in other apps.
+- Exception: «Онлайн тест» (Online test). After the student taps it, the app waits 30 seconds for one server redirect to exactly `https://online-test.kaznu.kz` and opens it in the link window.
 
 **WebView.**
 - File access and mixed HTTP content are off, third-party cookies are blocked.
@@ -65,3 +66,11 @@ Camera, contacts, location, microphone and SMS are not requested. Photos for ass
 - On a rooted phone or with malware that has administrator rights, the storage protection can be bypassed.
 - The debug build (`app-debug.apk`) allows WebView debugging; for everyday use install the release.
 - On Android 7 the PIN key is derived with fewer iterations (60,000).
+
+## Session and download isolation · 12 November 2026 review
+
+Before sign-out, deletion or account replacement, automatic sign-in is paused and a pending-clear marker is committed. After restart, clearing finishes before the website opens. The old page must first commit a blank document so that pagehide cannot restore its storage. The app then awaits the WebView provider deletion callback. Older providers clear and verify DOM storage for the exact Univer and two allowed Moodle origins in locally intercepted documents, without server requests. Failure retains the pause and marker. This does not promise secure erasure from the device or termination of all server sessions.
+
+Manual mode creates no password record. Only an explicit user action can open a safe link in the link window or in another app. Automatic external navigation and off-origin main-document POSTs are blocked, including in the print-document window.
+
+Downloads are limited to 1 GiB. Names and folders are normalized and completed files are not overwritten. Signatures, Office ZIP entry names and bounded OLE inspection refine the type. Unknown and executable content gets `.bin`; type inspection never extracts an archive to disk. Course and syllabus HTML reads have streamed byte limits and deadlines.

@@ -47,6 +47,11 @@ internal class CompoundFile(private val source: ByteSource) {
 
     private val sectorSize: Int
     private val miniCutoff: Long
+    /**
+     * Sectors the file really has. A chain that does not loop visits each at most once, so a longer chain is a loop
+     * (the FAT may list one sector many times, which makes it far larger than the file).
+     */
+    private val sectorCount: Long
     private val fat: IntArray
     private val miniFat: IntArray
     private val nodes: List<Entry>
@@ -62,7 +67,7 @@ internal class CompoundFile(private val source: ByteSource) {
         if (shift != 9 && shift != 12 || file.u16(0x20) != 6) throw UnsupportedDocumentException("Unknown sector size")
         sectorSize = 1 shl shift
         miniCutoff = file.u32(0x38)
-        val sectorCount = ((source.size - sectorSize).coerceAtLeast(0) + sectorSize - 1) / sectorSize
+        sectorCount = ((source.size - sectorSize).coerceAtLeast(0) + sectorSize - 1) / sectorSize
         if (sectorCount > Int.MAX_VALUE / 2) throw PreviewLimitException()
         val perSector = sectorSize / 4
         // The FAT sectors are listed by the 109 header entries, then by the DIFAT sector chain.
@@ -130,7 +135,7 @@ internal class CompoundFile(private val source: ByteSource) {
         val sectors = ArrayList<Int>()
         var sector = entry.start
         while (sector != END_OF_CHAIN && sectors.size.toLong() * sectorSize < entry.size) {
-            if (sector !in fat.indices || sectors.size > fat.size) throw UnsupportedDocumentException("Bad chain")
+            if (sector !in fat.indices || sectors.size >= sectorCount) throw UnsupportedDocumentException("Bad chain")
             sectors += sector
             sector = fat[sector]
         }
@@ -175,7 +180,7 @@ internal class CompoundFile(private val source: ByteSource) {
         var sector = start
         var steps = 0
         while (sector != END_OF_CHAIN && output.size() < size) {
-            if (sector !in fat.indices || ++steps > fat.size) throw UnsupportedDocumentException("Bad chain")
+            if (sector !in fat.indices || ++steps > sectorCount) throw UnsupportedDocumentException("Bad chain")
             if (size == Long.MAX_VALUE && output.size() > STREAM_LIMIT) throw PreviewLimitException()
             val count = source.read(offset(sector), buffer, 0, sectorSize)
             output.write(buffer, 0, count)

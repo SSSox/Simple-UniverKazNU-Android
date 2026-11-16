@@ -10,6 +10,7 @@ import android.view.View
 import android.webkit.WebView
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
+import androidx.core.view.ViewCompat
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -231,12 +232,14 @@ class DownloadsScreensTest {
             scenario.onActivity { activity ->
                 val list = activity.findViewById<RecyclerView>(R.id.downloads_list)
                 val running = (0 until list.childCount).map { list.getChildAt(it) }
-                    .first { it.findViewById<TextView>(R.id.download_name).text.startsWith("Лекция") }
+                    .first { it.findViewById<TextView?>(R.id.download_name)?.text?.startsWith("Лекция") == true }
                 assertEquals("Отменить загрузку", running.findViewById<View>(R.id.download_action).contentDescription)
                 assertTrue(running.findViewById<TextView>(R.id.download_meta).text.startsWith("Скачивается 38%"))
                 assertEquals(View.VISIBLE, running.findViewById<View>(R.id.download_progress).visibility)
                 val chips = activity.findViewById<ChipGroup>(R.id.downloads_filters)
-                (0 until chips.childCount).map { chips.getChildAt(it) as Chip }.first { it.text == "Word" }.isChecked = true
+                val word = (0 until chips.childCount).map { chips.getChildAt(it) as Chip }.first { it.text.startsWith("Word") }
+                assertEquals("The chip counts what it would show", "Word: 2", word.contentDescription)
+                word.isChecked = true
             }
             waitUntil(scenario, "Word filter") { shown(it) == 2 }
             scenario.onActivity { activity -> activity.findViewById<TextView>(R.id.downloads_search).text = "методы" }
@@ -246,21 +249,18 @@ class DownloadsScreensTest {
         }
     }
 
-    @Test fun searchOpensFromTheIconFindsWordsInsideFilesAndFiltersByCourse() {
+    @Test fun searchFindsWordsInsideFilesAndFiltersByCourse() {
         val tag = UUID.randomUUID().toString().take(8)
         val word = save("Методичка QA-$tag.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", docx())
         val notes = save("Заметки QA-$tag.txt", "text/plain", "Первая строка.\nВнутри файла: криптография$tag и шифры.".toByteArray(), source = "Методы QA-$tag")
         ActivityScenario.launch<DownloadsActivity>(DownloadsActivity.intent(context, AppLanguage.RUSSIAN)).use { scenario ->
             fun shown(activity: DownloadsActivity) = activity.findViewById<RecyclerView>(R.id.downloads_list).adapter!!.itemCount
-            fun chip(activity: DownloadsActivity, group: Int, label: String) = activity.findViewById<ChipGroup>(group).let { chips ->
-                (0 until chips.childCount).map { chips.getChildAt(it) as Chip }.first { it.text == label } }
             waitUntil(scenario, "List loaded") { shown(it) >= 2 }
             scenario.onActivity { activity ->
-                assertEquals("Search starts hidden", View.GONE, activity.findViewById<View>(R.id.downloads_search_layout).visibility)
-                activity.findViewById<MaterialToolbar>(R.id.downloads_toolbar).menu.performIdentifierAction(R.id.downloads_search_toggle, 0)
-                assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.downloads_search_layout).visibility)
-                assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.downloads_text_search).visibility)
+                assertEquals("Search is always there", View.VISIBLE, activity.findViewById<View>(R.id.downloads_search_layout).visibility)
+                assertEquals("Inside-the-files waits for a query", View.GONE, activity.findViewById<View>(R.id.downloads_text_search).visibility)
                 activity.findViewById<TextView>(R.id.downloads_search).text = "КРИПТОГРАФИЯ$tag"
+                assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.downloads_text_search).visibility)
             }
             waitUntil(scenario, "Names alone do not match") { shown(it) == 0 }
             scenario.onActivity { (it.findViewById<Chip>(R.id.downloads_text_search)).isChecked = true }
@@ -272,7 +272,7 @@ class DownloadsScreensTest {
             }
             screenshot("downloads-text-search")
             // The course filter narrows any search: the text file belongs to the other course.
-            scenario.onActivity { chip(it, R.id.downloads_subjects, "Введение в QA").isChecked = true }
+            scenario.onActivity { it.chooseSubject("Введение в QA") }
             waitUntil(scenario, "Other course hides the match") { shown(it) == 0 }
             scenario.onActivity { it.findViewById<TextView>(R.id.downloads_search).text = tag }
             waitUntil(scenario, "Only the Word file of this course") { activity ->
@@ -282,12 +282,8 @@ class DownloadsScreensTest {
             scenario.recreate()
             waitUntil(scenario, "Search, text switch and course restored") { activity ->
                 activity.findViewById<View>(R.id.downloads_search_layout).visibility == View.VISIBLE &&
-                    activity.findViewById<Chip>(R.id.downloads_text_search).isChecked && chip(activity, R.id.downloads_subjects, "Введение в QA").isChecked && shown(activity) == 1
-            }
-            // Back closes the search and clears it before leaving the screen.
-            scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
-            waitUntil(scenario, "Search closed") { activity ->
-                activity.findViewById<View>(R.id.downloads_search_layout).visibility == View.GONE && activity.findViewById<TextView>(R.id.downloads_search).text.isEmpty() && !activity.isFinishing
+                    activity.findViewById<Chip>(R.id.downloads_text_search).isChecked &&
+                    activity.findViewById<TextView>(R.id.downloads_subject).text == "Введение в QA" && shown(activity) == 1
             }
         }
         // Opened from a match, the viewer highlights the found word.
@@ -326,10 +322,13 @@ class DownloadsScreensTest {
         }
         ActivityScenario.launch<DownloadsActivity>(DownloadsActivity.intent(context, AppLanguage.RUSSIAN)).use { scenario ->
             fun names(activity: DownloadsActivity) = activity.findViewById<RecyclerView>(R.id.downloads_list).let { list ->
-                (0 until list.childCount).map { list.getChildAt(it).findViewById<TextView>(R.id.download_name).text.toString() } }
+                // Period headings between the files have no name.
+                (0 until list.childCount).mapNotNull { list.getChildAt(it).findViewById<TextView?>(R.id.download_name)?.text?.toString() } }
             waitUntil(scenario, "List loaded") { names(it).isNotEmpty() }
             scenario.onActivity { activity ->
-                activity.findViewById<MaterialToolbar>(R.id.downloads_toolbar).menu.performIdentifierAction(R.id.downloads_search_toggle, 0)
+                val list = activity.findViewById<RecyclerView>(R.id.downloads_list)
+                val heading = (0 until list.childCount).map(list::getChildAt).first { it.id == R.id.download_heading }
+                assertTrue("TalkBack hears a period title as a heading on every API", ViewCompat.isAccessibilityHeading(heading))
                 activity.findViewById<TextView>(R.id.downloads_search).text = "әліпби ұлттық"
                 activity.findViewById<Chip>(R.id.downloads_text_search).isChecked = true
             }

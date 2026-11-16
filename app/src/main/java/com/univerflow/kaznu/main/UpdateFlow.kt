@@ -17,7 +17,7 @@ import com.univerflow.kaznu.UniverViewModel
 import com.univerflow.kaznu.databinding.ViewUpdateProgressBinding
 import com.univerflow.kaznu.domain.Updates
 import com.univerflow.kaznu.ui.AppLockSession
-import com.univerflow.kaznu.ui.context
+import com.univerflow.kaznu.ui.LanguageResources
 import com.univerflow.kaznu.update.UpdateFailure
 import com.univerflow.kaznu.update.UpdateManager
 import com.univerflow.kaznu.update.UpdatePhase
@@ -35,6 +35,7 @@ class UpdateFlow(private val activity: AppCompatActivity, private val model: Uni
     }
 
     private val updates = UpdateManager.get(activity)
+    private val languages = LanguageResources(activity)
     private var prompt: AlertDialog? = null
     private var progress: AlertDialog? = null
     private var progressView: ViewUpdateProgressBinding? = null
@@ -90,7 +91,7 @@ class UpdateFlow(private val activity: AppCompatActivity, private val model: Uni
 
     private fun showPrompt(update: UpdateState) {
         val version = update.available ?: return
-        val labels = model.state.value.language.context(activity)
+        val labels = languages.of(model.state.value.language)
         val never = MaterialCheckBox(labels).apply { text = host.text(R.string.update_never) }
         val padding = (20 * activity.resources.displayMetrics.density).toInt()
         val frame = FrameLayout(labels).apply { setPadding(padding, padding / 2, padding, 0); addView(never) }
@@ -114,7 +115,7 @@ class UpdateFlow(private val activity: AppCompatActivity, private val model: Uni
             progress = MaterialAlertDialogBuilder(activity).setTitle(host.text(R.string.update_section)).setView(view.root).setCancelable(false)
                 .setNegativeButton(host.text(R.string.cancel)) { _, _ -> updates.cancel() }.show().also(host::track)
         }
-        val labels = model.state.value.language.context(activity)
+        val labels = languages.of(model.state.value.language)
         progressView?.apply {
             val installing = update.phase == UpdatePhase.INSTALLING
             updateProgressText.text = if (installing) labels.getString(R.string.update_preparing) else labels.getString(R.string.update_downloading, update.progress)
@@ -126,7 +127,7 @@ class UpdateFlow(private val activity: AppCompatActivity, private val model: Uni
     fun status(): String {
         val update = updates.state.value
         val language = model.state.value.language
-        val labels = language.context(activity)
+        val labels = languages.of(language)
         val found = when {
             update.phase == UpdatePhase.CHECKING -> labels.getString(R.string.update_checking)
             update.phase == UpdatePhase.DOWNLOADING -> labels.getString(R.string.update_downloading, update.progress)

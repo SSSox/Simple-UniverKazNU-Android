@@ -15,9 +15,13 @@ import kotlin.concurrent.withLock
  * reader is waiting for is drawn between the size reads of later pages instead of after all of them.
  */
 class PdfPages(descriptor: ParcelFileDescriptor) : Closeable {
-    private val renderer = PdfRenderer(descriptor)
+    // A PDF that asks for a password: the file is there, but this viewer cannot open it.
+    private val renderer = try { PdfRenderer(descriptor) } catch (_: SecurityException) { throw UnsupportedDocumentException("Password-protected PDF") }
     private val lock = ReentrantLock(true)
-    private var closed = false
+    /** Set without the lock, so pages waiting for it after [close] return at once instead of being drawn. */
+    @Volatile private var closed = false
+    /** Whether [renderer] is closed; read and set under the lock. */
+    private var released = false
     val count: Int = renderer.pageCount
     /** Pages shown: a longer file is shown from its start. */
     val shown = minOf(count, PAGE_LIMIT)
@@ -48,8 +52,22 @@ class PdfPages(descriptor: ParcelFileDescriptor) : Closeable {
         } catch (_: OutOfMemoryError) { null } // The page stays blank; the viewer keeps running.
     }
 
-    override fun close() = lock.withLock {
-        if (!closed) { closed = true; renderer.close() }
+    /**
+     * Ends drawing without waiting for it on the calling (main) thread: a page being drawn finishes and the renderer is
+     * then closed on another thread; pages waiting for the lock draw nothing.
+     */
+    override fun close() {
+        if (closed) return
+        closed = true
+        if (lock.tryLock()) {
+            try { release() } finally { lock.unlock() }
+        } else {
+            Thread { lock.withLock { release() } }.start()
+        }
+    }
+
+    private fun release() {
+        if (!released) { released = true; renderer.close() }
     }
 
     companion object {

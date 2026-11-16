@@ -91,6 +91,7 @@ object AppLockSession {
         androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
             val bars = insets.getInsets(types)
             view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            view.paintSystemBands(bars.top)
             insets
         }
     }

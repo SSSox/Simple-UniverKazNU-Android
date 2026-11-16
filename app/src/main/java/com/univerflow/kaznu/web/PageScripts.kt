@@ -2,6 +2,31 @@ package com.univerflow.kaznu.web
 
 /** Read-only scripts the main screen runs on Univer pages; each first checks that it is on the trusted origin. */
 object PageScripts {
+    /** Only names beside the exact file link, never form values or the rest of the student's page. */
+    fun materialPlace(page: String, target: String) = """(function(){
+        if(top!==self||location.origin!==${jsString(SitePolicy.ORIGIN)}||location.href!==${jsString(page)}||
+            !/^\/student\/umkd\/\d+\/\d{4}\/[12]\/?$/.test(location.pathname))return null;
+        var target=${jsString(target)},link=Array.from(document.querySelectorAll('#l4 a.downLoad[href]')).find(a=>a.href===target);
+        if(!link)return null;
+        var section='';for(var row=link.closest('tr')?.previousElementSibling;row;row=row.previousElementSibling)
+            if(row.cells?.length===1&&row.cells[0].tagName==='TH'){section=row.cells[0].textContent;break;}
+        var crumbs=document.querySelectorAll('#l4 tr.top>td.ct a[href*="/student/umkd/"]');
+        return JSON.stringify({course:crumbs.length>1?crumbs[crumbs.length-1].textContent:'',section:section});
+    })()"""
+    /** [materialPlace] for every file of a «Скачать все» in one pass: {address: {course, section}} for the links found. */
+    fun materialPlaces(page: String, targets: List<String>) = """(function(){
+        if(top!==self||location.origin!==${jsString(SitePolicy.ORIGIN)}||location.href!==${jsString(page)}||
+            !/^\/student\/umkd\/\d+\/\d{4}\/[12]\/?$/.test(location.pathname))return null;
+        var wanted=[${targets.joinToString(",") { jsString(it) }}],found={};
+        var crumbs=document.querySelectorAll('#l4 tr.top>td.ct a[href*="/student/umkd/"]'),course=crumbs.length>1?crumbs[crumbs.length-1].textContent:'';
+        Array.from(document.querySelectorAll('#l4 a.downLoad[href]')).forEach(function(link){
+            if(wanted.indexOf(link.href)<0||found[link.href])return;
+            var section='';for(var row=link.closest('tr')?.previousElementSibling;row;row=row.previousElementSibling)
+                if(row.cells?.length===1&&row.cells[0].tagName==='TH'){section=row.cells[0].textContent;break;}
+            found[link.href]={course:course,section:section};
+        });
+        return JSON.stringify(found);
+    })()"""
     /**
      * The visible page heading: the current #tools link or the first visible heading
      * (the last breadcrumb link of an adapted heading). No form data or text beyond it is returned.

@@ -12,6 +12,7 @@ The app is an unofficial client of the [Univer KazNU](https://univer.kaznu.kz/) 
 |---|---|---|
 | Univer login and password | Only on the phone, in a file encrypted with AES-GCM under an Android Keystore key (and a PIN-derived key when the PIN code is on) | Only to `https://univer.kaznu.kz`, into the site's own sign-in form |
 | Cookies and site data (session, page settings) | The app's WebView storage | Only to the Univer site and KazNU Moodle (`dl.kaznu.kz`, `dl.kaznu.edu.kz`) when you sign in through Univer |
+| Cookies and sign-ins of sites opened from links | A separate WebView profile of the app | Only to the sites whose links you tapped; Univer and Moodle do not get them |
 | Downloaded files | The phone's Downloads folder and the app's downloads list | Nowhere |
 | Settings (language, text size, tiles, PIN code) | The app's settings on the phone | Nowhere |
 | Update check (the version found, the check time) | The app's settings on the phone | A plain request without a login or cookies goes to `github.com`: GitHub sees the IP address and the app's name |
@@ -24,7 +25,7 @@ The app is an unofficial client of the [Univer KazNU](https://univer.kaznu.kz/) 
 
 ## Deleting data
 
-- "Sign out" deletes the WebView cookies, storage and cache; the encrypted login and password stay for signing in again.
+- "Sign out" deletes the WebView cookies, storage and cache, including the link window's data; the encrypted login and password stay for signing in again.
 - "Delete saved credentials" deletes the encrypted record and its key.
 - Uninstalling the app deletes all of its data; downloaded files stay in Downloads.
 

@@ -8,12 +8,15 @@ import androidx.core.view.GravityCompat
 import androidx.core.view.MenuItemCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.children
 import androidx.core.view.updatePadding
 import androidx.core.widget.TextViewCompat
 import androidx.drawerlayout.widget.DrawerLayout
 import com.univerflow.kaznu.AppState
 import com.univerflow.kaznu.R
-import com.univerflow.kaznu.ui.context
+import com.univerflow.kaznu.domain.AppLanguage
+import com.univerflow.kaznu.ui.LanguageResources
+import com.univerflow.kaznu.ui.Motion
 import com.univerflow.kaznu.databinding.ActivityMainBinding
 import com.univerflow.kaznu.web.AppSection
 import com.google.android.material.badge.BadgeDrawable
@@ -27,6 +30,15 @@ import com.google.android.material.badge.ExperimentalBadgeUtils
 class MainChrome(private val activity: AppCompatActivity, private val binding: ActivityMainBinding) {
     private var badge: BadgeDrawable? = null
     private var noticeBadge: BadgeDrawable? = null
+    private val languages = LanguageResources(activity)
+    /**
+     * What the menus last showed. A menu title set to the same text still rebuilds the app bar's actions and rebinds the
+     * whole drawer list, and the page's automation reports its status every probe (600 ms, later 2 s): without these the
+     * idle screen would redraw itself all the time.
+     */
+    private var localized: Triple<AppLanguage, Boolean, Boolean>? = null
+    private var shownDownloads: Pair<Int, AppLanguage>? = null
+    private var shownNotices: Pair<Int, AppLanguage>? = null
 
     /** [onNavigation] returns whether the tapped item becomes the checked one. */
     fun configure(canOpenDrawer: () -> Boolean, onToolbar: (Int) -> Boolean, onNavigation: (Int) -> Boolean) {
@@ -37,6 +49,8 @@ class MainChrome(private val activity: AppCompatActivity, private val binding: A
             view.updatePadding(top = headerTop + insets.getInsets(WindowInsetsCompat.Type.systemBars()).top)
             insets
         }
+        // The list just fits a tall phone: its scrollbar would flash along the whole drawer each time it opens.
+        binding.navigation.getChildAt(0).isVerticalScrollBarEnabled = false
         binding.toolbar.setNavigationOnClickListener { if (canOpenDrawer()) binding.drawer.openDrawer(GravityCompat.START) }
         binding.toolbar.setOnMenuItemClickListener { item -> onToolbar(item.itemId) }
         binding.navigation.setNavigationItemSelectedListener { item ->
@@ -47,7 +61,10 @@ class MainChrome(private val activity: AppCompatActivity, private val binding: A
 
     /** Native labels follow the app language, which can differ from the system locale. */
     fun localize(state: AppState) {
-        val labels = state.language.context(activity)
+        val shown = Triple(state.language, state.mobileLayout, state.paused)
+        if (shown == localized) return
+        localized = shown
+        val labels = languages.of(state.language)
         binding.toolbar.navigationContentDescription = labels.getString(R.string.navigation_menu)
         binding.toolbar.menu.apply {
             findItem(R.id.action_downloads).title = labels.getString(R.string.downloads)
@@ -70,24 +87,26 @@ class MainChrome(private val activity: AppCompatActivity, private val binding: A
             TextViewCompat.setCompoundDrawableTintList(this, ColorStateList.valueOf(activity.getColor(
                 if (state.paused) R.color.on_warning_container else R.color.md_tertiary)))
         }
+        // The downloads count is read out in the app language too; it otherwise changes only with the list.
+        shownDownloads?.let { (active, _) -> downloads(active, state) }
     }
 
     /**
-     * The page heading in the app bar, with the section's own name as the fallback. Schedule and distance-course
-     * pages head themselves with breadcrumbs ("Недели/ Список Уч. планов / …"); the section name reads better there.
+     * The section's short name in the app bar: the page repeats its full heading below it, and site headings are too
+     * long for the bar. Other pages use their heading; while one loads, the bar keeps its title and the progress line
+     * under the bar shows the wait, so nothing in the bar jumps on a navigation.
      */
     fun heading(section: AppSection?, pageTitle: String?, loading: Boolean, text: (Int) -> String) {
-        val fallback = when (section) {
+        val name = when (section) {
             AppSection.SCHEDULE -> R.string.nav_schedule
             AppSection.JOURNAL -> R.string.nav_journal
             AppSection.MATERIALS -> R.string.nav_materials
             AppSection.ATTESTATION -> R.string.nav_attestation
             AppSection.DISTANCE -> R.string.nav_distance
-            else -> R.string.app_name
+            else -> null
         }
-        binding.toolbar.title = if (section == AppSection.SCHEDULE || section == AppSection.DISTANCE) text(fallback)
-            else pageTitle?.takeIf { it.isNotBlank() } ?: text(fallback)
-        binding.toolbar.subtitle = if (loading) text(R.string.preparing_page) else null
+        showTitle(name?.let(text) ?: pageTitle?.takeIf { it.isNotBlank() }
+            ?: binding.toolbar.title?.takeIf { loading && it.isNotBlank() } ?: text(R.string.app_name))
         val item = when (section) {
             AppSection.HOME -> R.id.nav_home
             AppSection.SCHEDULE -> R.id.nav_schedule
@@ -101,6 +120,12 @@ class MainChrome(private val activity: AppCompatActivity, private val binding: A
         else binding.navigation.checkedItem?.isChecked = false
     }
 
+    private fun showTitle(title: CharSequence) {
+        if (binding.toolbar.title?.toString() == title.toString()) return
+        binding.toolbar.title = title
+        binding.toolbar.children.firstOrNull { (it as? TextView)?.text == title }?.let(Motion::arrive)
+    }
+
     fun drawerUsable(usable: Boolean) {
         binding.drawer.setDrawerLockMode(if (usable) DrawerLayout.LOCK_MODE_UNLOCKED else DrawerLayout.LOCK_MODE_LOCKED_CLOSED)
     }
@@ -112,9 +137,11 @@ class MainChrome(private val activity: AppCompatActivity, private val binding: A
             badge = it
             BadgeUtils.attachBadgeDrawable(it, binding.toolbar, R.id.action_downloads)
         }
+        if (shownDownloads == active to state.language) return
+        shownDownloads = active to state.language
         badge.isVisible = active > 0
         badge.number = active
-        val labels = state.language.context(activity)
+        val labels = languages.of(state.language)
         binding.toolbar.menu.findItem(R.id.action_downloads)?.let { item ->
             MenuItemCompat.setContentDescription(item, if (active > 0) labels.getString(R.string.downloads_active, active) else labels.getString(R.string.downloads))
         }
@@ -127,9 +154,11 @@ class MainChrome(private val activity: AppCompatActivity, private val binding: A
             noticeBadge = it
             BadgeUtils.attachBadgeDrawable(it, binding.toolbar, R.id.action_notifications)
         }
+        if (shownNotices == unread to state.language) return
+        shownNotices = unread to state.language
         badge.isVisible = unread > 0
         badge.number = unread
-        val labels = state.language.context(activity)
+        val labels = languages.of(state.language)
         val label = if (unread > 0) labels.getString(R.string.notices_badge, unread) else labels.getString(R.string.notices)
         binding.toolbar.menu.findItem(R.id.action_notifications)?.let { MenuItemCompat.setContentDescription(it, label) }
         binding.navigation.menu.findItem(R.id.nav_notices)?.let { item ->

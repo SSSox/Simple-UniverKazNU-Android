@@ -12,6 +12,9 @@ class NoticeLoadingOverlay(private val web: WebView, private val overlay: View,
     private var previousAccessibility = web.importantForAccessibility
     private val timeout = Runnable { expired = true; hide() }
 
+    /** Whether the page is covered; the overlay may still be fading out when it no longer is. */
+    val covering get() = overlay.isVisible && !Motion.leaving(overlay)
+
     fun beginStartup() { expired = false; show() }
 
     fun status(status: AutomationStatus) {
@@ -23,16 +26,16 @@ class NoticeLoadingOverlay(private val web: WebView, private val overlay: View,
     }
 
     private fun show() {
-        if (overlay.isVisible) return
+        if (covering) return
         previousAccessibility = web.importantForAccessibility
         web.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
-        Motion.show(overlay, true)
+        Motion.cover(overlay)
         overlay.postDelayed(timeout, timeoutMillis)
     }
 
     private fun hide() {
         overlay.removeCallbacks(timeout)
-        if (overlay.isVisible) web.importantForAccessibility = previousAccessibility
+        if (covering) web.importantForAccessibility = previousAccessibility
         Motion.show(overlay, false)
     }
 

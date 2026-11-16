@@ -17,6 +17,12 @@
     <color name="md_error_container">#93000A</color>
     <color name="md_on_error_container">#FFDAD6</color>
     <color name="md_background">#0F151C</color>
+    <color name="skeleton_surface">#17202A</color>
+    <color name="skeleton_line">#2B3746</color>
+    <color name="skeleton_bar">#222D39</color>
+    <color name="skeleton_tint">#1A2B40</color>
+    <color name="skeleton_accent">#1B5FA6</color>
+    <color name="skeleton_on_accent">#5D8ABC</color>
     <color name="md_surface">#121921</color>
     <color name="md_on_surface">#E2E8F0</color>
     <color name="md_surface_variant">#3F4752</color>

@@ -4,6 +4,8 @@ import android.webkit.WebView
 import android.widget.FrameLayout
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.univerflow.kaznu.domain.AppLanguage
@@ -18,6 +20,37 @@ import java.util.concurrent.TimeUnit
 
 @RunWith(AndroidJUnit4::class)
 class DocumentViewerTest {
+    @Test fun aDocumentRejectsAnOffOriginPostBeforeTransportAndAllowsItsOwnOrigin() {
+        ActivityScenario.launch<com.univerflow.kaznu.ui.DownloadsActivity>(com.univerflow.kaznu.ui.DownloadsActivity.intent(
+            InstrumentationRegistry.getInstrumentation().targetContext, AppLanguage.RUSSIAN)).use { scenario ->
+            scenario.onActivity { activity ->
+                val host = FrameLayout(activity)
+                activity.setContentView(host)
+                val model = ViewModelProvider(activity, viewModelFactory {
+                    initializer { UniverViewModel(com.univerflow.kaznu.data.LocalSessionRepository(
+                        com.univerflow.kaznu.data.CredentialVault(activity), com.univerflow.kaznu.data.AppPreferences(activity))) }
+                })[UniverViewModel::class.java]
+                val viewer = DocumentViewer(activity, host, { AutomationController(it, model, activity.lifecycleScope) {} },
+                    {}, { _, _, _, _ -> }, {})
+                viewer.open("about:blank", AppLanguage.RUSSIAN)
+                val web = viewer.webView!!
+                fun request(url: String) = object : android.webkit.WebResourceRequest {
+                    override fun getUrl() = android.net.Uri.parse(url)
+                    override fun isForMainFrame() = true
+                    override fun isRedirect() = false
+                    override fun hasGesture() = false
+                    override fun getMethod() = "POST"
+                    override fun getRequestHeaders() = emptyMap<String, String>()
+                }
+                val blocked = web.webViewClient.shouldInterceptRequest(web, request("https://external.invalid/collect"))
+                assertEquals("A main-frame POST must be blocked before any network request", 403, blocked?.statusCode)
+                blocked?.data?.close()
+                assertNull(web.webViewClient.shouldInterceptRequest(web, request("https://univer.kaznu.kz/user/ajl")))
+                viewer.close(false)
+            }
+        }
+    }
+
     @Test fun failedDocumentCanRetryInsideViewerWithoutLosingSourceOrErrorAfterLanguageUpdate() {
         val instrumentation=InstrumentationRegistry.getInstrumentation()
         lateinit var viewer:DocumentViewer
@@ -80,6 +113,10 @@ class DocumentViewerTest {
             scenario.onActivity { activity ->
                 assertEquals(android.view.View.GONE,activity.findViewById<android.view.View>(R.id.document_error).visibility)
                 assertTrue(viewer.isOpen);assertEquals(2,host.childCount)
+                // Retry is still on the layer while it fades out: it must not bring the closed document back.
+                activity.findViewById<android.view.View>(R.id.document_back).performClick()
+                activity.findViewById<android.view.View?>(R.id.document_retry)?.performClick()
+                assertFalse(viewer.isOpen)
                 viewer.close(false);(host.getChildAt(0) as WebView).destroyFixture()
             }
         }
@@ -133,9 +170,11 @@ class DocumentViewerTest {
     }
     @Test fun separateWindowModesSavedStateAndBackLeaveSourceIntact() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            lateinit var host: FrameLayout
+            lateinit var source: WebView
             scenario.onActivity { activity ->
-                val host = FrameLayout(activity)
-                val source = WebView(activity)
+                host = FrameLayout(activity)
+                source = WebView(activity)
                 host.addView(source)
                 activity.setContentView(host)
                 val model = ViewModelProvider(activity)[UniverViewModel::class.java]
@@ -152,15 +191,46 @@ class DocumentViewerTest {
                 val saved = viewer.save()!!
                 assertFalse(saved.getBoolean("readable"))
                 viewer.close(false)
+                assertEquals("A session that ends removes the layer at once", 1, host.childCount)
                 viewer.open("about:blank", AppLanguage.ENGLISH, saved)
                 assertEquals("Read", activity.findViewById<android.widget.TextView>(R.id.document_mode).text.toString())
                 activity.findViewById<android.view.View>(R.id.document_back).performClick()
                 assertFalse(viewer.isOpen)
                 assertNull(viewer.webView)
                 assertEquals(1, closed)
-                assertEquals(1, host.childCount)
+            }
+            // The layer fades out over the page first; the page itself is never touched.
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+            var left = false
+            while (!left && System.nanoTime() < deadline) {
+                scenario.onActivity { left = host.childCount == 1 }
+                if (!left) Thread.sleep(20)
+            }
+            assertTrue("The closed layer leaves its host", left)
+            scenario.onActivity {
                 assertSame(source, host.getChildAt(0))
                 source.destroyFixture()
+            }
+        }
+    }
+
+    // Review finding: the reading-mode button captured the language the window opened in, so after a switch to English
+    // one tap turned the bar (and the page's mobile labels) back to Russian.
+    @Test fun theReadingModeButtonKeepsTheCurrentLanguage() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                val host = FrameLayout(activity)
+                activity.setContentView(host)
+                val model = ViewModelProvider(activity)[UniverViewModel::class.java]
+                val viewer = DocumentViewer(activity, host, { AutomationController(it, model, activity.lifecycleScope) {} }, {}, { _, _, _, _ -> }, {})
+                viewer.open("about:blank", AppLanguage.RUSSIAN)
+                viewer.applyLanguage(AppLanguage.ENGLISH)
+                val mode = activity.findViewById<android.widget.TextView>(R.id.document_mode)
+                assertEquals("Original", mode.text.toString())
+                mode.performClick()
+                assertEquals("Read", mode.text.toString())
+                assertEquals("Document", activity.findViewById<android.widget.TextView>(R.id.document_title).text.toString())
+                viewer.close(false)
             }
         }
     }

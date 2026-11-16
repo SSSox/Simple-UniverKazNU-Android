@@ -13,35 +13,60 @@ enum class AppSection(val path: String) {
 object SitePolicy {
     const val ORIGIN = "https://univer.kaznu.kz"
     const val HOME = "$ORIGIN/"
+
+    // Compiled once: these checks run on every navigation, link tap, render and placeholder of the main screen.
+    private val SECTIONS = listOf(
+        Regex("^/student/myschedule(/|$)", RegexOption.IGNORE_CASE) to AppSection.SCHEDULE,
+        Regex("^/student/attendance(/|$)", RegexOption.IGNORE_CASE) to AppSection.JOURNAL,
+        Regex("^/student/attestation(/|$)", RegexOption.IGNORE_CASE) to AppSection.ATTESTATION,
+        Regex("^/student/umkd(/|$)", RegexOption.IGNORE_CASE) to AppSection.MATERIALS,
+        Regex("^/student/discussion(/|$)", RegexOption.IGNORE_CASE) to AppSection.DISTANCE,
+    )
+    private val LANGUAGE_CHANGE = Regex("^/lang/change/(ru|kz|en)/?$")
+    private val PRINT_DOCUMENT = Regex("^/student/(?:iup(?:/\\d+)*(?:/)?|transcript(?:/\\d+)?/?|recbook(?:/\\d+)?/?|interactive/syllabus/print/\\d+/\\d+/?|myschedule/print/\\d+/\\d+/?)$", RegexOption.IGNORE_CASE)
+    private val MATERIAL_FILE = Regex("^/student/umkd/get/\\d+/\\d+/\\d+/\\d+/?$", RegexOption.IGNORE_CASE)
+    private val FILE_EXTENSION = Regex("\\.(?:pdf|docx?|xlsx?|pptx?|odt|ods|rtf|zip|rar)$", RegexOption.IGNORE_CASE)
+    private val NEWS_ROUTE = Regex("^/(?:|my/news/?|my/news/(\\d{1,4})/?)$")
+    private val LOGIN_FORM = Regex("^/user/login/?$", RegexOption.IGNORE_CASE)
+    private val NOT_RESUMABLE = Regex("^/(user|lang|student/attention|__univer)", RegexOption.IGNORE_CASE)
+    private val READ_NOTICE = Regex("^/student/attentionStudents/[0-9]+/?$")
+    private val TOP_LEVEL_LABEL = Regex("^[a-z][a-z0-9-]*$", RegexOption.IGNORE_CASE)
+    private val ONLINE_TEST = Regex("^/student/AuthorizationOnOnlineTestForm/?$", RegexOption.IGNORE_CASE)
+    const val ONLINE_TEST_HOST = "online-test.kaznu.kz"
+
     /** The shortcut that matches the current page, or null for an untrusted address. */
     fun section(url: String?): AppSection? = if (!trusted(url)) null else runCatching {
         val path = URI(url!!).path.orEmpty()
-        when {
-            Regex("^/student/myschedule(/|$)", RegexOption.IGNORE_CASE).containsMatchIn(path) -> AppSection.SCHEDULE
-            Regex("^/student/attendance(/|$)", RegexOption.IGNORE_CASE).containsMatchIn(path) -> AppSection.JOURNAL
-            Regex("^/student/attestation(/|$)", RegexOption.IGNORE_CASE).containsMatchIn(path) -> AppSection.ATTESTATION
-            Regex("^/student/umkd(/|$)", RegexOption.IGNORE_CASE).containsMatchIn(path) -> AppSection.MATERIALS
-            Regex("^/student/discussion(/|$)", RegexOption.IGNORE_CASE).containsMatchIn(path) -> AppSection.DISTANCE
-            else -> AppSection.HOME
-        }
+        SECTIONS.firstOrNull { (pattern, _) -> pattern.containsMatchIn(path) }?.second ?: AppSection.HOME
     }.getOrNull()
     fun logout(url: String?): Boolean = trusted(url) && runCatching {
         URI(url!!).rawPath in setOf("/user/logout", "/user/logout/")
     }.getOrDefault(false)
     /** Only the site's real header flag endpoint changes the application language. */
     fun languageChange(url: String?): AppLanguage? = if (!trusted(url)) null else runCatching {
-        val code = Regex("^/lang/change/(ru|kz|en)/?$").matchEntire(URI(url!!).rawPath)?.groupValues?.get(1)
+        val code = LANGUAGE_CHANGE.matchEntire(URI(url!!).rawPath)?.groupValues?.get(1)
         AppLanguage.entries.firstOrNull { it.siteCode == code }
     }.getOrNull()
     fun printDocument(url: String?): Boolean = trusted(url) && runCatching {
-        Regex("^/student/(?:iup(?:/\\d+)*(?:/)?|transcript(?:/\\d+)?/?|recbook(?:/\\d+)?/?|interactive/syllabus/print/\\d+/\\d+/?|myschedule/print/\\d+/\\d+/?)$", RegexOption.IGNORE_CASE)
-            .matches(URI(url!!).path)
+        PRINT_DOCUMENT.matches(URI(url!!).path)
     }.getOrDefault(false)
     /** Protected course materials and office/PDF files linked from the site (guides, forms). */
+    fun materialFile(url: String?): Boolean = trusted(url) && runCatching { MATERIAL_FILE.matches(URI(url!!).path) }.getOrDefault(false)
+    /**
+     * A teacher's link from УМКД: a plain web page on a named host. Mail and phone links, addresses with a user name,
+     * IP addresses (the last label of a real domain starts with a letter) and local names are not study sources.
+     */
+    fun studyLink(url: String?): Boolean = external(url) && runCatching {
+        val uri = URI(url!!)
+        val host = uri.host ?: return false
+        (uri.scheme.equals("https", true) || uri.scheme.equals("http", true)) && host.indexOf('.') > 0 && !host.endsWith(".") &&
+            !host.equals("univer.kaznu.kz", true) && TOP_LEVEL_LABEL.matches(host.substringAfterLast('.'))
+    }.getOrDefault(false)
+    /** A course material the server sends on to a page on another site: the teacher left a link there, not a file. */
+    fun materialLink(material: String?, target: String?): Boolean = materialFile(material) && !trusted(target) && studyLink(target)
     fun documentDownload(url: String?): Boolean = trusted(url) && runCatching {
         val path = URI(url!!).path
-        Regex("^/student/umkd/get/\\d+/\\d+/\\d+/\\d+/?$", RegexOption.IGNORE_CASE).matches(path) ||
-            Regex("\\.(?:pdf|docx?|xlsx?|pptx?|odt|ods|rtf|zip|rar)$", RegexOption.IGNORE_CASE).containsMatchIn(path)
+        MATERIAL_FILE.matches(path) || FILE_EXTENSION.containsMatchIn(path)
     }.getOrDefault(false)
     /**
      * "/" and the site's news pager (/my/news/{n}) pass through /student/attention, which re-posts the read
@@ -50,13 +75,17 @@ object SitePolicy {
     fun newsShortcut(url: String?): String? = if (!trusted(url)) null else runCatching {
         val uri = URI(url!!)
         if (uri.rawQuery != null && uri.path == "/") return null
-        val match = Regex("^/(?:|my/news/?|my/news/(\\d{1,4})/?)$").matchEntire(uri.path) ?: return null
+        val match = NEWS_ROUTE.matchEntire(uri.path) ?: return null
         val page = match.groupValues[1].toIntOrNull()
         if (page != null && page > 1) "$ORIGIN/news/student/$page" else "$ORIGIN/news/student"
     }.getOrNull()
     /** The site's full-page login form, where an ended session is redirected. */
     fun loginPage(url: String?): Boolean = trusted(url) && runCatching {
-        Regex("^/user/login/?$", RegexOption.IGNORE_CASE).matches(URI(url!!).rawPath)
+        LOGIN_FORM.matches(URI(url!!).rawPath)
+    }.getOrDefault(false)
+    /** The supplied read notice's own page (/student/attentionStudents/{id}), which the automation confirms. */
+    fun readNotice(url: String?): Boolean = trusted(url) && runCatching {
+        READ_NOTICE.matches(URI(url!!).path.orEmpty())
     }.getOrDefault(false)
     /**
      * A section page worth reopening after an automatic login. Not the start/news route (it re-posts
@@ -65,11 +94,40 @@ object SitePolicy {
     fun resumable(url: String?): Boolean = trusted(url) && newsShortcut(url) == null && !documentDownload(url) &&
         !printDocument(url) && runCatching {
             val path = URI(url!!).rawPath.orEmpty()
-            path.length > 1 && !Regex("^/(user|lang|student/attention|__univer)", RegexOption.IGNORE_CASE).containsMatchIn(path)
+            path.length > 1 && !NOT_RESUMABLE.containsMatchIn(path)
         }.getOrDefault(false)
     fun trusted(url: String?): Boolean = runCatching {
         val uri = URI(url ?: return false)
         uri.scheme.equals("https", true) && uri.host.equals("univer.kaznu.kz", true) &&
             uri.userInfo == null && (uri.port == -1 || uri.port == 443)
     }.getOrDefault(false)
+
+    /** Addresses a deliberate user action may hand to another application. */
+    fun external(url: String?): Boolean = runCatching {
+        if (url == null || url.any { it.isISOControl() }) return false
+        val uri = URI(url)
+        when (uri.scheme?.lowercase()) {
+            "https", "http" -> !uri.host.isNullOrBlank() && uri.userInfo == null
+            "mailto", "tel" -> !uri.rawSchemeSpecificPart.isNullOrBlank()
+            else -> false
+        }
+    }.getOrDefault(false)
+
+    fun externalNavigation(url: String?, userGesture: Boolean, redirect: Boolean, method: String) =
+        userGesture && !redirect && method.equals("GET", true) && external(url)
+
+    /** «Онлайн тест»: the site's route that signs the student in to the test portal with a server redirect. */
+    fun onlineTest(url: String?): Boolean = trusted(url) && runCatching { ONLINE_TEST.matches(URI(url!!).path.orEmpty()) }.getOrDefault(false)
+    /** That portal: HTTPS on port 443 at exactly online-test.kaznu.kz, without a user name. */
+    fun onlineTestPortal(url: String?): Boolean = runCatching {
+        if (url == null || url.any { it.isISOControl() }) return false
+        val uri = URI(url)
+        uri.scheme.equals("https", true) && uri.host.equals(ONLINE_TEST_HOST, true) && uri.userInfo == null && (uri.port == -1 || uri.port == 443)
+    }.getOrDefault(false)
+    /** Only the server redirect that answers the student's own tap on «Онлайн тест» leaves for the portal; a script, a late or a repeated redirect does not. */
+    fun onlineTestExit(url: String?, method: String, redirect: Boolean, armed: Boolean) =
+        armed && redirect && method.equals("GET", true) && onlineTestPortal(url)
+    /** The tap that arms that redirect: a GET of the route with a gesture, not a redirect. */
+    fun onlineTestTap(url: String?, method: String, userGesture: Boolean, redirect: Boolean) =
+        userGesture && !redirect && method.equals("GET", true) && onlineTest(url)
 }

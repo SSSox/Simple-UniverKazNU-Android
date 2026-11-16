@@ -21,6 +21,12 @@ internal object CellFormat {
         39 to "#,##0.00;(#,##0.00)", 40 to "#,##0.00;(#,##0.00)", 45 to "mm:ss", 46 to "[h]:mm:ss", 47 to "mm:ss.0", 48 to "##0.0E+0", 49 to "@",
     )
 
+    // Compiled once: every number cell of a sheet goes through clean().
+    private val BRACKET = Regex("\\[([^\\]]*)]")
+    private val ELAPSED = Regex("(?i)h+|m+|s+")
+    private val EXPONENT_ZEROS = Regex("\\.?0+E")
+    private const val MAX_DECIMALS = 30
+
     /** Excel's built-in formats are not stored in the file; 14 is the short date of the reader's locale. */
     fun builtIn(id: Int) = BUILT_IN[id] ?: "General"
 
@@ -39,6 +45,8 @@ internal object CellFormat {
             value == 0.0 && sections.size >= 3 -> sections[2]
             else -> sections[0]
         }
+        // An empty section ("0;-0;;@", "0;;0", ";;;") hides its values, as in Excel; only a one-section code falls back to General.
+        if (own.isBlank() && sections.size > 1) return ""
         // A negative section draws the sign itself, with brackets or a minus written in the format.
         val signed = value < 0 && sections.size < 2
         val magnitude = if (value < 0 && sections.size >= 2) -value else value
@@ -60,7 +68,7 @@ internal object CellFormat {
         val magnitude = abs(value)
         val plain = if (magnitude >= 1e-9 && magnitude < 1e11)
             BigDecimal(value).round(MathContext(10, RoundingMode.HALF_UP)).stripTrailingZeros().toPlainString()
-        else String.format(Locale.ROOT, "%.5E", value).replace(Regex("\\.?0+E"), "E")
+        else String.format(Locale.ROOT, "%.5E", value).replace(EXPONENT_ZEROS, "E")
         return plain.replace('.', decimal)
     }
 
@@ -85,10 +93,10 @@ internal object CellFormat {
     }
 
     /** Drops colours, conditions and locale tags; a currency tag "[$₸-43F]" leaves its symbol. Elapsed-time brackets stay. */
-    private fun clean(section: String) = Regex("\\[([^\\]]*)]").replace(section) { match ->
+    private fun clean(section: String) = BRACKET.replace(section) { match ->
         val inner = match.groupValues[1]
         when {
-            inner.matches(Regex("(?i)h+|m+|s+")) -> match.value
+            inner.matches(ELAPSED) -> match.value
             inner.startsWith("$") -> inner.drop(1).substringBefore('-').let { if (it.isEmpty()) "" else "\"$it\"" }
             else -> ""
         }
@@ -97,12 +105,17 @@ internal object CellFormat {
     /** A section with no placeholders is text written as is, such as "-" for zero. */
     private fun literal(section: String) = tokens(clean(section)).joinToString("") { (it as? Token.Literal)?.text.orEmpty() }
 
-    private fun isDate(section: String) = tokens(section).any { it is Token.Code && it.text[0].lowercaseChar() in "ymdhs" }
+    private fun isDate(section: String) = tokens(section).any(::isDateCode)
 
     private sealed interface Token {
         class Literal(val text: String) : Token
         class Code(val text: String) : Token
     }
+
+    /** The lower-case letter of a code; an elapsed-time code such as "[h]" counts as its letter. */
+    private fun letter(token: Token?) = (token as? Token.Code)?.text?.trimStart('[')?.firstOrNull()?.lowercaseChar()
+
+    private fun isDateCode(token: Token?) = letter(token).let { it != null && it in "ymdhs" }
 
     /** Literal text (quoted, escaped, padding) and code characters, so letters in quotes never act as codes. */
     private fun tokens(section: String): List<Token> {
@@ -122,6 +135,7 @@ internal object CellFormat {
                 char.lowercaseChar() in "ymdhs" || char in "0#?.,%Ee+-/@:" -> { result += Token.Code(char.toString()); index++ }
                 section.regionMatches(index, "AM/PM", 0, 5, ignoreCase = true) -> { result += Token.Code("AM/PM"); index += 5 }
                 section.regionMatches(index, "A/P", 0, 3, ignoreCase = true) -> { result += Token.Code("A/P"); index += 3 }
+                section.regionMatches(index, "General", 0, 7, ignoreCase = true) -> { result += Token.Code("General"); index += 7 }
                 else -> { result += Token.Literal(char.toString()); index++ }
             }
         }
@@ -131,6 +145,12 @@ internal object CellFormat {
     private fun numeric(value: Double, section: String, locale: Locale): String? {
         val tokens = tokens(section)
         fun code(token: Token?, vararg texts: String) = token is Token.Code && token.text in texts
+        fun text(part: List<Token>) = part.joinToString("") { token ->
+            if (token is Token.Literal) token.text else (token as Token.Code).text.takeIf { it == "%" || it == "-" || it == "+" || it == ":" }.orEmpty()
+        }
+        // "General" with text around it, such as General" шт": the general number in its place.
+        val generalAt = tokens.indexOfFirst { code(it, "General") }
+        if (generalAt >= 0) return text(tokens.subList(0, generalAt)) + general(value, locale) + text(tokens.subList(generalAt + 1, tokens.size))
         if (tokens.any { code(it, "/") }) return null
         val exponent = tokens.indexOfFirst { code(it, "E", "e") }
         val mantissa = if (exponent >= 0) tokens.subList(0, exponent) else tokens
@@ -164,17 +184,17 @@ internal object CellFormat {
             end = last + 1
             digitsOf(number, minInteger, decimals, minDecimals, integerCodes.contains(","), symbols)
         }
-        fun text(part: List<Token>) = part.joinToString("") { token ->
-            if (token is Token.Literal) token.text else (token as Token.Code).text.takeIf { it == "%" || it == "-" || it == "+" || it == ":" }.orEmpty()
-        }
         return text(tokens.subList(0, first)) + body + text(tokens.subList(end.coerceAtMost(tokens.size), tokens.size))
     }
 
     private fun digitsOf(value: Double, minInteger: Int, decimals: Int, minDecimals: Int, grouping: Boolean, symbols: DecimalFormatSymbols): String {
-        val plain = BigDecimal(value).setScale(decimals, RoundingMode.HALF_UP).toPlainString()
+        // Excel shows no more than 30 decimal places, however many the format asks for.
+        val plain = BigDecimal(value).setScale(decimals.coerceAtMost(MAX_DECIMALS), RoundingMode.HALF_UP).toPlainString()
         var integer = plain.substringBefore('.').trimStart('0')
         var fraction = if (decimals > 0) plain.substringAfter('.', "") else ""
-        while (fraction.length > minDecimals && fraction.endsWith('0')) fraction = fraction.dropLast(1)
+        var kept = fraction.length
+        while (kept > minDecimals && fraction[kept - 1] == '0') kept--
+        fraction = fraction.substring(0, kept)
         integer = integer.padStart(minInteger, '0')
         if (grouping && integer.length > 3) {
             val separator = if (symbols.groupingSeparator == ' ' || symbols.groupingSeparator == ' ') ' ' else symbols.groupingSeparator
@@ -186,7 +206,7 @@ internal object CellFormat {
     private fun date(value: Double, section: String, date1904: Boolean, locale: Locale): String {
         val tokens = tokens(section)
         val fractionDigits = tokens.indices.firstOrNull { index ->
-            (tokens[index] as? Token.Code)?.text == "." && tokens.getOrNull(index - 1).let { it is Token.Code && it.text[0].lowercaseChar() == 's' }
+            (tokens[index] as? Token.Code)?.text == "." && letter(tokens.getOrNull(index - 1)) == 's'
         }?.let { index -> tokens.drop(index + 1).takeWhile { it is Token.Code && it.text == "0" }.size } ?: 0
         val unit = Math.pow(10.0, fractionDigits.toDouble())
         val total = Math.round(value * 86_400 * unit)
@@ -214,9 +234,10 @@ internal object CellFormat {
             val code = (token as Token.Code).text
             val lower = code.lowercase(Locale.ROOT)
             fun minutes(): Boolean {
-                val before = runs.subList(0, index).lastOrNull { it is Token.Code && it.text[0].lowercaseChar() in "ymdhs" } as? Token.Code
-                val after = runs.subList(index + 1, runs.size).firstOrNull { it is Token.Code && it.text[0].lowercaseChar() in "ymdhs" } as? Token.Code
-                return before?.text?.get(0)?.lowercaseChar() == 'h' || after?.text?.get(0)?.lowercaseChar() == 's'
+                // "[h]:mm" counts too: the elapsed-hours code is an hour code.
+                val before = runs.subList(0, index).lastOrNull(::isDateCode)
+                val after = runs.subList(index + 1, runs.size).firstOrNull(::isDateCode)
+                return letter(before) == 'h' || letter(after) == 's'
             }
             when {
                 lower.startsWith("[h") -> out.append((days * 24 + hour).toString().padStart(lower.length - 2, '0'))

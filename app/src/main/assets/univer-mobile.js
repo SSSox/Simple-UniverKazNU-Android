@@ -11,7 +11,7 @@
     var closeLabel = 'Закрыть', frameListeners = new WeakSet(), childAdapters = new Set();
     var selectedLanguage = 'ru';
     var nativeChrome = false;
-    var headerMoves = [], schedules = new Map(), upcomingTimer = 0, finishedWeek = null;
+    var headerMoves = [], schedules = new Map(), weekViews = new Map(), upcomingTimer = 0, finishedWeek = null;
     var punctuation = new Map(), usabilityMoves = [], catalogHidden = new WeakMap(), pageMarkers = new Map();
     function labels() {
         return selectedLanguage === 'en' ? {account:'Account', university:'About KazNU', open:'Open', all:'All days', empty:'No classes', files:'Download', sections:'All sections', close:'Close', today:'Today', now:'In progress', next:'Next', done:'Done', byDay:'By day', weekGrid:'Week grid', scheduleView:'Schedule view', weekDay:'Day of week', details:'Class details', days:['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']} :
@@ -178,7 +178,10 @@
         if (document.documentElement.classList.contains('univer-app-unified')) window.__univerMotionUI?.exit(popup);
         popup.open = false;
         if (hadFocus) {
-            var trigger = popup.classList.contains('univer-app-menu') ? document.querySelector('.univer-app-sections') : popup.querySelector('summary');
+            var menu = popup.classList.contains('univer-app-menu');
+            // Under the native app bar there is no header "All sections" button: focus goes to the menu's own title, as with Back.
+            var sections = menu && !nativeChrome ? document.querySelector('.univer-app-sections') : null;
+            var trigger = !menu ? popup.querySelector('summary') : sections && sections.getClientRects().length ? sections : popup.querySelector(':scope>summary');
             trigger?.focus({preventScroll:true});
         }
     }
@@ -210,7 +213,7 @@
             ownRows(table).forEach(function (row) { if (!cleanText(row) && !row.querySelector('input,select,img')) row.classList.add('univer-app-study-empty'); });
         });
         document.querySelectorAll('#l4 a[href]').forEach(function (a) {
-            if (!a.closest('#tools') && /^\/student\/(myschedule|umkd|interactive\/syllabus)\//.test(new URL(a.href, location.href).pathname) && !a.classList.contains('downLoad'))
+            if (!a.closest('#tools') && /^\/student\/(myschedule|umkd|interactive\/syllabus)\//.test(new URL(a.href, location.href).pathname) && !a.classList.contains('downLoad') && !a.classList.contains('univer-app-lesson-name') && !a.closest('.univer-app-syl-panel,.univer-app-syl-task'))
                 a.classList.add('univer-app-page-link');
         });
     }
@@ -224,6 +227,49 @@
             if (week.getAttribute('aria-label') !== weekName) week.setAttribute('aria-label', weekName);
             week.setAttribute('data-univer-label', '');
         }
+        addWeekSteps(week);
+    }
+    // The option of the week before (-1) or after (1) the selected one, by its dates and, for undated options, by list order; -1 at either end.
+    function neighbourWeek(select, direction) {
+        var options = Array.from(select.options), at = select.selectedIndex;
+        if (at < 0) return -1;
+        var from = weekDates(options[at])[0], found = -1, best = null;
+        if (!from) return at + direction >= 0 && at + direction < options.length ? at + direction : -1;
+        options.forEach(function (option, i) {
+            var date = weekDates(option)[0]; if (!date) return;
+            if (direction > 0 ? date > from && (!best || date < best) : date < from && (!best || date > best)) { best = date; found = i; }
+        });
+        return found;
+    }
+    // Previous and next week buttons around the site's week list; each runs the list's own change handler.
+    function addWeekSteps(week) {
+        weekViews.forEach(function (view, select) { if (!select.isConnected) { select.removeEventListener('change', view.update); view.nav.remove(); weekViews.delete(select); } });
+        var names = selectedLanguage === 'en' ? ['Previous week', 'Next week'] : selectedLanguage === 'kz' ? ['Алдыңғы апта', 'Келесі апта'] : ['Предыдущая неделя', 'Следующая неделя'];
+        var view = weekViews.get(week);
+        if (!view) {
+            var nav = document.createElement('div'); nav.className = 'univer-app-week-nav';
+            var step = function (direction, glyph) {
+                var button = document.createElement('button'); button.type = 'button'; button.className = 'univer-app-week-step'; button.textContent = glyph;
+                button.addEventListener('click', function () {
+                    var at = neighbourWeek(week, direction); if (at < 0) return;
+                    week.selectedIndex = at; week.dispatchEvent(new Event('change', {bubbles:true}));
+                });
+                return button;
+            };
+            var back = step(-1, '‹'), forward = step(1, '›');
+            var update = function () {
+                var left = neighbourWeek(week, -1) < 0, right = neighbourWeek(week, 1) < 0, current = view.names;
+                if (back.disabled !== left) back.disabled = left;
+                if (forward.disabled !== right) forward.disabled = right;
+                [[back, current[0]], [forward, current[1]]].forEach(function (pair) {
+                    if (pair[0].getAttribute('aria-label') !== pair[1]) { pair[0].setAttribute('aria-label', pair[1]); pair[0].title = pair[1]; }
+                });
+            };
+            week.before(nav); nav.append(back, week, forward);
+            week.addEventListener('change', update);
+            view = {nav:nav, update:update, names:names}; weekViews.set(week, view);
+        }
+        view.names = names; view.update();
     }
     // A УМКД file table: each file row's values are labelled with their column, and the row gets its material actions.
     function markMaterials(table, rows, header) {
@@ -314,7 +360,7 @@
             }
             var badge = lesson.card.querySelector('.univer-app-lesson-badge');
             if (!state) { if (badge) badge.remove(); return; }
-            if (!badge) { badge = document.createElement('span'); badge.className = 'univer-app-lesson-badge'; lesson.card.querySelector('time').after(badge); }
+            if (!badge) { badge = document.createElement('span'); badge.className = 'univer-app-lesson-badge'; lesson.card.querySelector('.univer-app-subject').appendChild(badge); }
             setText(badge, text);
         });
     }
@@ -458,7 +504,8 @@
     function copyLessonLinks(group, card) {
         group.querySelectorAll('a[href]').forEach(function (original) {
             var link = document.createElement('a'); link.textContent = cleanText(original); link.href = original.href;
-            link.className = 'univer-app-page-link'; link.addEventListener('click', function (e) { e.preventDefault(); original.click(); }); card.appendChild(link);
+            link.className = 'univer-app-page-link'; link.addEventListener('click', function (e) { e.preventDefault(); original.click(); });
+            card.querySelector('.univer-app-lesson-main').appendChild(link);
         });
     }
     // The class cards of one weekday; classes with clock times also feed the "Now / Next" summary.
@@ -476,6 +523,8 @@
                 var info = lessonInfo(group), card = window.__univerLesson.card(info, timeText, selectedLanguage);
                 copyLessonLinks(group, card);
                 section.appendChild(card); count++;
+                record.cards.push({card:card, main:card.querySelector('.univer-app-lesson-main'), subject:info.subject, type:info.type,
+                    teacher:info.teacher, day:dayIndex, order:record.cards.length, time:start[0] || timeText});
                 if (from.length === 2 && to.length === 2)
                     record.lessons.push({card:card, day:dayIndex, start:+from[0] * 60 + +from[1], end:+to[0] * 60 + +to[1], state:'', subject:info.subject || '', details:window.__univerLesson.summary(info, selectedLanguage)});
             });
@@ -543,11 +592,11 @@
         modes.className = 'univer-app-schedule-modes'; modes.setAttribute('role', 'group'); modes.setAttribute('aria-label', words.scheduleView);
         dayMode.type = gridMode.type = 'button'; dayMode.textContent = words.byDay; gridMode.textContent = words.weekGrid;
         modes.append(dayMode, gridMode); view.appendChild(modes);
-        var tabs = document.createElement('div'); tabs.className = 'univer-app-days'; tabs.setAttribute('aria-label', words.weekDay);
+        var tabs = document.createElement('div'); tabs.className = 'univer-app-days'; tabs.setAttribute('role', 'group'); tabs.setAttribute('aria-label', words.weekDay);
         view.appendChild(tabs);
         var detailed = previous?.detailed || false;
         if (!previous) { try { detailed = sessionStorage.getItem(DETAILS_KEY) === 'true'; } catch (_) {} }
-        var record = {view:view, signature:signature, selected:previous ? previous.selected : -1, detailed:detailed, mode:previous?.mode || 'days', lessons:[], card:agendaCard(), select:select};
+        var record = {view:view, signature:signature, selected:previous ? previous.selected : -1, detailed:detailed, mode:previous?.mode || 'days', lessons:[], cards:[], card:agendaCard(), select:select};
         tabs.before(record.card.root);
         view.appendChild(detailSwitch(view, record));
         function select(index, event) {
@@ -680,21 +729,39 @@
     function headingRow(rows) {
         return rows.find(function (r) { return r.cells.length > 1 && Array.from(r.cells).every(function (c) { return c.tagName === 'TH'; }); });
     }
-    // Label/value rows ("ФИО:", "Факультет"), two or four cells each, that read as a profile block.
+    // Label/value rows ("ФИО:", "Факультет"), two or four cells each, that read as a profile block. The student's
+    // questionnaire marks its labels with a list item, with or without a colon.
     function labelValueRows(own) {
-        return own.some(function (r) { return /:|фио|ф\.и\.о|факульт|кафедр|телефон|e.?mail/i.test(r.cells[0]?.textContent || ''); }) && own.every(function (r) {
+        return own.some(function (r) { return r.cells[0]?.querySelector('li') || /:|фио|ф\.и\.о|факульт|кафедр|телефон|e.?mail/i.test(r.cells[0]?.textContent || ''); }) && own.every(function (r) {
             var cells = Array.from(r.cells);
             return (cells.length === 2 || cells.length === 4) && cells.every(function (c) { return c.colSpan === 1 && c.rowSpan === 1; }) &&
                 cells.filter(function (_, i) { return i % 2 === 0; }).every(function (c) {
-                    return !c.textContent.trim() || /:\s*$/.test(c.textContent) || /^(фио|ф\.и\.о\.?|факультет|кафедра|(?:рабочий )?телефон|e.?mail|курс|специальность|адрес)$/i.test(c.textContent.trim());
+                    return !c.textContent.trim() || c.querySelector('li') || /:\s*$/.test(c.textContent) || /^(фио|ф\.и\.о\.?|факультет|кафедра|(?:рабочий )?телефон|e.?mail|курс|специальность|адрес)$/i.test(c.textContent.trim());
                 });
+        });
+    }
+    // "Форма обучения: очная" in a .xp table: every other cell is a label. The other .xp tables hold navigation links.
+    function factRows(own) {
+        return own.some(function (r) { return /:\s*$/.test(r.cells[0]?.textContent || ''); }) &&
+            own.every(function (r) { return Array.from(r.cells).every(function (c, i) { return i % 2 || !c.textContent.trim() || /:\s*$/.test(c.textContent); }); });
+    }
+    // The site evens out its two-column rows with label/value cells that hold nothing.
+    function markBlankPairs(own) {
+        own.forEach(function (r) {
+            Array.from(r.cells).forEach(function (c, i) {
+                var other = r.cells[i % 2 ? i - 1 : i + 1];
+                c.classList.toggle('univer-app-blank-field', !cleanText(c) && !c.children.length && !cleanText(other) && !other?.children.length);
+            });
         });
     }
     // One card per record, each value labelled with its column heading.
     function makeCards(table, own, header) {
         table.classList.add('univer-app-cards'); header.classList.add('univer-app-card-header');
         // Keep the original clickable sort headings available above the statement cards.
-        if (table.matches('.table_sort')) header.classList.add('univer-app-sort-head');
+        if (table.matches('.table_sort')) {
+            header.classList.add('univer-app-sort-head');
+            Array.from(header.cells).forEach(function (c) { c.classList.toggle('univer-app-blank-field', !cleanText(c) && !c.children.length); });
+        }
         own.forEach(function (r) {
             if (r === header) return;
             var cells = Array.from(r.cells);
@@ -707,6 +774,7 @@
                 if (c.tagName === 'TH') return;
                 var label = header.cells[i]?.textContent.trim();
                 if (label && c.dataset.univerField !== label) c.dataset.univerField = label;
+                c.classList.toggle('univer-app-blank-field', !c.children.length && !c.textContent.trim());
                 if (/дисциплин|название|описание|услуга|содержание|преподаватель/i.test(label || '') || c.textContent.length > 100)
                     c.classList.add('univer-app-long-field');
             });
@@ -717,9 +785,9 @@
         var own = ownRows(table);
         if (!own.length || own.some(function (r) { return Array.from(r.cells).some(function (c) { return c.matches('.left,.right,.center'); }); })) return;
         var header = headingRow(own);
-        if ((personal || print) && !header && labelValueRows(own)) { table.classList.add('univer-app-pairs'); return; }
+        if ((personal || print) && !header && labelValueRows(own)) { table.classList.add('univer-app-pairs'); markBlankPairs(own); return; }
         if (personal && (table.querySelector('input[type=file]') || (!header && table.querySelector('input,select,textarea')))) {
-            table.classList.add('univer-app-form-table'); return;
+            table.classList.add('univer-app-form-table'); markBlankPairs(own); return;
         }
         if (print) {
             if (/^(ф\.и\.о\.?|фио|аты.?жөні|full name|student name|name)$/i.test(own[0].cells[0]?.textContent.trim() || '')) {
@@ -766,8 +834,12 @@
         document.querySelectorAll('#l4 ul,#l4 ol').forEach(function (list) {
             if (!list.closest('#tools,#login_frm,#modal_agreement')) list.classList.add('univer-app-list');
         });
-        document.querySelectorAll('table.xp').forEach(function (table) { table.classList.add('univer-app-nav-table'); });
         if (/^\/student\/academcalendar\/?$/.test(path)) adaptCalendarNav();
+        document.querySelectorAll('table.xp').forEach(function (table) {
+            var own = ownRows(table);
+            if (!factRows(own) || table.querySelector('input,select,textarea,button')) { table.classList.add('univer-app-nav-table'); return; }
+            table.classList.add('univer-app-pairs'); markBlankPairs(own);
+        });
         if (print) document.documentElement.classList.add('univer-app-document');
         Array.from(document.querySelectorAll('table')).forEach(function (table) {
             if (table.closest('#tools,#login_frm,#modal_auth_frm,#modal_agreement,.univer-app-info') ||
@@ -775,15 +847,13 @@
             classifyTable(table, path, personal, print);
         });
     }
-    // A focusable region that scrolls a table wider than the phone sideways, unless the table is part of
-    // another table's structure (wrapping it would corrupt that DOM) or, unless [nested], already in one.
+    // A box that scrolls a table wider than the phone sideways, unless the table is part of another table's
+    // structure (wrapping it would corrupt that DOM) or, unless [nested], already in one. scrollHints() makes it a
+    // named, focusable region only while the table is really wider than the box.
     function wrapTable(table, nested) {
         if (table.parentElement.matches('tr,tbody,thead,tfoot,table,.univer-app-table-scroll') ||
             (!nested && table.closest('.univer-app-table-scroll'))) return;
-        var box = document.createElement('div'); box.className = 'univer-app-table-scroll'; box.tabIndex = 0;
-        box.setAttribute('role', 'region');
-        box.setAttribute('aria-label', selectedLanguage === 'en' ? 'Table, scroll horizontally' :
-            selectedLanguage === 'kz' ? 'Кесте, көлденең айналдыру' : 'Таблица, прокрутка по горизонтали');
+        var box = document.createElement('div'); box.className = 'univer-app-table-scroll';
         table.parentNode.insertBefore(box, table); box.appendChild(table);
     }
     // A wide table's hint row: the swipe caption and, with univer-tables.js, "Expand" for the full-screen view.
@@ -791,12 +861,16 @@
         var caption = selectedLanguage === 'en' ? '↔ Swipe the table sideways to see all columns' :
             selectedLanguage === 'kz' ? '↔ Барлық бағанды көру үшін кестені көлденең жылжытыңыз' :
             '↔ Сдвиньте таблицу вбок, чтобы увидеть все столбцы';
+        // The spoken name is the caption without its arrow.
+        var name = caption.replace(/^↔\s*/, '');
         var tables = window.__univerTablesV1;
         tables?.setLanguage(selectedLanguage);
         document.querySelectorAll('.univer-app-table-scroll').forEach(function (box) {
             if (box.closest('.univer-app-table-viewer')) return;
             var hint = box.__univerHint;
-            var wide = box.getClientRects().length && box.scrollWidth > box.clientWidth + 2;
+            // A table with nothing in it has nothing to swipe to or to open.
+            var empty = box.querySelector('table.univer-app-empty-note') || box.querySelector('tr.univer-app-empty-row') && !box.querySelector('tr:not(.univer-app-empty-row)>td');
+            var wide = !empty && box.getClientRects().length && box.scrollWidth > box.clientWidth + 2;
             if (!hint && wide) {
                 hint = document.createElement('div'); hint.className = 'univer-app-scroll-hint';
                 var text = document.createElement('span'); text.className = 'univer-app-scroll-caption'; hint.appendChild(text);
@@ -814,7 +888,13 @@
                 if (expand && tables && expand.textContent !== tables.label()) expand.textContent = tables.label();
                 hint.hidden = !wide;
             }
-            box.setAttribute('aria-label', caption);
+            // Only a table wider than its box is a keyboard and screen-reader stop of its own; card lists, fitted and
+            // narrow tables are read in place.
+            if (wide) {
+                if (box.tabIndex !== 0) box.tabIndex = 0;
+                if (box.getAttribute('role') !== 'region') box.setAttribute('role', 'region');
+                if (box.getAttribute('aria-label') !== name) box.setAttribute('aria-label', name);
+            } else ['tabindex', 'role', 'aria-label'].forEach(function (attribute) { if (box.hasAttribute(attribute)) box.removeAttribute(attribute); });
         });
         document.querySelectorAll('.univer-app-scroll-hint').forEach(function (hint) {
             if (!hint.nextElementSibling?.classList.contains('univer-app-table-scroll')) hint.remove();
@@ -1015,7 +1095,8 @@
             answer.classList.add('univer-app-faq-row');
             var panel = question.closest('table.mt'); if (panel) panel.classList.add('univer-app-study-panel');
         });
-        document.querySelectorAll('#l4 table.mt:has(.univer-app-faq)').forEach(function (panel) {
+        // Filtered here rather than with :has(), which Chromium before 105 cannot parse.
+        Array.from(document.querySelectorAll('#l4 table.mt')).filter(function (panel) { return panel.querySelector('.univer-app-faq'); }).forEach(function (panel) {
             ownRows(panel).forEach(function (row) {
                 if (!cleanText(row) && !row.querySelector('input,select,textarea,button,a,img,iframe')) row.classList.add('univer-app-study-empty');
             });
@@ -1067,13 +1148,13 @@
         });
         markCurrentLinks();
         // Home tiles, pins and the useful links inside "All sections" (shortcuts.js) follow the menu's current links.
-        window.__univerShortcutsV1?.apply(selectedLanguage);
+        guarded(function () { window.__univerShortcutsV1?.apply(selectedLanguage); });
         markForms(path);
         if (/^\/student\/(myexam\/schedule|discussion\/index)(\/|$)/.test(path)) markMediaColumns();
         adaptVideos();
         hideCopyrightNoise();
         if (/^\/my\/docs\/?$/.test(path)) adaptDocCatalog();
-        if (/^\/my\/faq\/?$/.test(path)) adaptFaq();
+        if (/^\/my\/faq(\/\d+)?\/?$/.test(path)) adaptFaq();
         if (/^\/my\/calculatorgpa\/?$/.test(path)) adaptGpaCalculator();
         addSortToggles();
         wrapInnerGrids();
@@ -1179,7 +1260,8 @@
         details.appendChild(tools);
         var search = document.createElement('input'); search.type = 'search';
         search.className = 'univer-app-menu-search'; search.autocomplete = 'off';
-        search.addEventListener('input', filterMenu); details.insertBefore(search, tools);
+        // Each keystroke only shows and hides menu items; it needs no adapter pass.
+        search.addEventListener('input', function () { quiet(filterMenu); }); details.insertBefore(search, tools);
         var close = document.createElement('button'); close.type = 'button'; close.className = 'univer-app-menu-close';
         close.addEventListener('click', function () { toggleMenu(false); }); details.insertBefore(close, search);
         details.addEventListener('toggle', syncMenuButton);
@@ -1251,9 +1333,10 @@
             var shell = markShell();
             adaptHeader();
             adaptStudyPages();
-            window.__univerStudyV1?.apply(selectedLanguage);
-            window.__univerAttendanceV1?.apply(selectedLanguage);
+            guarded(function () { window.__univerStudyV1?.apply(selectedLanguage); });
+            guarded(function () { window.__univerAttendanceV1?.apply(selectedLanguage); });
             adaptSchedules();
+            guarded(function () { window.__univerSyllabusV1?.apply(selectedLanguage, Array.from(schedules.values())); });
             adaptRecords();
             markNewsTables();
             markDataTables();
@@ -1264,16 +1347,34 @@
             wrapLayoutTables(shell);
             adaptUsability();
             // Page modules run after tables are classified and wrapped, so they can hide whole source blocks.
-            window.__univerTermsV1?.apply(selectedLanguage);
-            window.__univerAttestationV1?.apply(selectedLanguage);
-            window.__univerDiscussionV1?.apply(selectedLanguage);
-            window.__univerNewsV1?.apply(selectedLanguage);
+            guarded(function () { window.__univerTermsV1?.apply(selectedLanguage); });
+            guarded(function () { window.__univerAttestationV1?.apply(selectedLanguage); });
+            guarded(function () { window.__univerDiscussionV1?.apply(selectedLanguage); });
+            guarded(function () { window.__univerFoldsV1?.apply(selectedLanguage); });
+            guarded(function () { window.__univerNewsV1?.apply(selectedLanguage); });
+            // Finish for the plain pages (notes, warnings, label and value lists, pagers), shared with Windows.
+            guarded(function () { window.__univerPolishV1?.apply(selectedLanguage); });
+            guarded(function () { window.__univerScreensV1?.apply(selectedLanguage); });
             adaptFrames();
-            window.__univerTablesV1?.fit();
+            guarded(function () { window.__univerTablesV1?.fit(); });
             scrollHints();
         } finally {
             window.__univerPresentationV1?.release();
             if (enabled) observer?.observe(document.documentElement, OBSERVED);
+        }
+    }
+    // One page module failing (an older engine missing a selector or DOM method it uses) must not cost the rest of
+    // the pass; the error is still reported, once the pass is done.
+    function guarded(action) {
+        try { action(); } catch (error) { setTimeout(function () { throw error; }); }
+    }
+    // An adapter-owned change made outside a pass (a tile following the finger, a menu search) starts no pass of its
+    // own: its mutation records are dropped. Records the site queued before it still schedule one.
+    function quiet(action) {
+        var pending = observer ? observer.takeRecords() : [];
+        try { action(); } finally {
+            observer?.takeRecords();
+            if (pending.length) schedule();
         }
     }
     function filterMenu() {
@@ -1317,7 +1418,7 @@
     }
     // Classes the adapter puts on site nodes; Original removes every one of them.
     var RECORD_CLASSES = ['univer-app-pairs','univer-app-form-table','univer-app-cards','univer-app-card-header',
-        'univer-app-card-row','univer-app-card-section','univer-app-long-field','univer-app-matrix',
+        'univer-app-card-row','univer-app-card-section','univer-app-long-field','univer-app-blank-field','univer-app-matrix',
         'univer-app-nav-table','univer-app-list','univer-app-document-layout','univer-app-sort-head','univer-app-breadcrumb',
         'univer-app-gpa-layout','univer-app-catalog-title','univer-app-catalog-head','univer-app-sort-collapsed','univer-app-faq-row',
         'univer-app-video','univer-app-media-column','univer-app-content-columns','univer-app-empty-result','univer-app-calendar-meta','univer-app-empty-nav-cell','univer-app-div-records','univer-app-schedule-controls','univer-app-schedule-grid-visible',
@@ -1417,6 +1518,7 @@
         ['--univer-dialog-top','--univer-dialog-height','--univer-frame-height'].forEach(function (key) { document.documentElement.style.removeProperty(key); });
         document.documentElement.classList.remove('univer-mobile','univer-app-document','univer-native-chrome','univer-app-schedule-page','univer-app-unified');
         window.__univerMaterialsV1?.release();
+        window.__univerSyllabusV1?.release();
         document.querySelectorAll('.univer-app-native-heading').forEach(function (node) { node.classList.remove('univer-app-native-heading'); });
         punctuation.forEach(function (value, node) { node.data = value; }); punctuation.clear();
         removeClasses(RECORD_CLASSES);
@@ -1424,6 +1526,7 @@
         undoMoves(headerMoves); headerMoves = [];
         document.querySelectorAll('.univer-app-header,.univer-app-account,.univer-app-course-open').forEach(function (node) { node.remove(); });
         schedules.forEach(function (record) { record.view.remove(); }); schedules.clear();
+        weekViews.forEach(function (view, select) { select.removeEventListener('change', view.update); if (view.nav.parentNode) view.nav.replaceWith(select); }); weekViews.clear();
         if (upcomingTimer) { clearTimeout(upcomingTimer); upcomingTimer = 0; }
         finishedWeek = null;
         MARKER_ATTRIBUTES.forEach(function (name) { document.querySelectorAll('[' + name + ']').forEach(function (node) { node.removeAttribute(name); }); });
@@ -1437,7 +1540,7 @@
         undoMoves(usabilityMoves); usabilityMoves = [];
         pageMarkers.forEach(function (value, node) { if (value === null) node.removeAttribute('aria-current'); else node.setAttribute('aria-current', value); }); pageMarkers.clear();
         [window.__univerNewsV1, window.__univerShortcutsV1, window.__univerStudyV1, window.__univerAttendanceV1,
-            window.__univerTermsV1, window.__univerAttestationV1, window.__univerDiscussionV1].forEach(function (module) { module?.release(); });
+            window.__univerTermsV1, window.__univerAttestationV1, window.__univerDiscussionV1, window.__univerFoldsV1, window.__univerPolishV1, window.__univerScreensV1].forEach(function (module) { module?.release(); });
         document.querySelectorAll('.univer-app-menu-close,.univer-app-menu-collapse,.univer-app-quick,.univer-app-menu-return,.univer-app-catalog,.univer-app-catalog-search,.univer-app-catalog-empty,.univer-app-catalog-download,.univer-app-faq,.univer-app-sort-toggle,.univer-app-semester-nav,.univer-app-academic-meta,.univer-app-video-link').forEach(function (node) { node.remove(); });
         restoreMenu();
         restoreDialogs();
@@ -1461,11 +1564,13 @@
         if (value && !enabled) enable();
         else if (!value && enabled) disable(language);
         adapt();
+        // «Наверх» after a long scroll, sized for the thumb and kept in its corner; Original has none.
+        window.__univerTopV1?.configure(enabled, language, {edge:16, height:48, anchored:true});
     }
     window.__univerMobileV1 = {setEnabled:setEnabled, mutate:function (action) {
         observer?.disconnect();
         try { action(); } finally { schedule(); }
-    }, setNativeChrome:function (value) {
+    }, quiet:quiet, setNativeChrome:function (value) {
         nativeChrome = !!value;
         document.documentElement.classList.toggle('univer-native-chrome', enabled && nativeChrome);
     }};

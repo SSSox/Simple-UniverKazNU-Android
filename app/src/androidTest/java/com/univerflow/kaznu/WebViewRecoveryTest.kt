@@ -15,6 +15,22 @@ import java.util.concurrent.TimeUnit
 
 @RunWith(AndroidJUnit4::class)
 class WebViewRecoveryTest {
+    @Test fun aNewWindowThatNeverNavigatesClosesByItself() {
+        val retired = java.util.concurrent.CountDownLatch(1)
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                val parent = WebView(activity)
+                val message = android.os.Handler(android.os.Looper.getMainLooper()) { true }.obtainMessage()
+                message.obj = parent.WebViewTransport()
+                com.univerflow.kaznu.web.captureNewWindow(activity, message, timeoutMillis = 50, onRetired = retired::countDown) {
+                    fail("Nothing navigated")
+                }
+                parent.postDelayed({ parent.destroy() }, 1_000)
+            }
+            assertTrue("The unattached window must not wait for a layout pass that never comes", retired.await(2, TimeUnit.SECONDS))
+        }
+    }
+
     @Test fun rendererFailureShowsNativeRecoveryAndRecreatesTheSignedInScreenBySelf() {
         org.junit.Assume.assumeTrue(Build.VERSION.SDK_INT >= 26)
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->

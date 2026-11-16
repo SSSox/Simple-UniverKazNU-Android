@@ -12,12 +12,23 @@
         style.textContent = 'html[data-univer-app-pending] body{visibility:hidden!important}';
         (document.head || document.documentElement).appendChild(style);
     }
+    function arrive(root) {
+        if (window.__univerMotion === false || !root.classList.contains('univer-mobile') ||
+            window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+        // A data attribute, not a class: the adapter's observer follows <html class>, and removing a class marker
+        // would start a whole adapter pass on a page that has not changed.
+        root.setAttribute('data-univer-app-enter', '');
+        setTimeout(function () { root.removeAttribute('data-univer-app-enter'); }, 260);
+    }
     function release() {
+        var first = !released;
         released = true;
         if (observer) observer.disconnect();
         clearTimeout(timer);
         if (style) style.remove();
-        if (document.documentElement) document.documentElement.removeAttribute('data-univer-app-pending');
+        if (!document.documentElement) return;
+        document.documentElement.removeAttribute('data-univer-app-pending');
+        if (first) arrive(document.documentElement);
     }
     window.__univerPresentationV1 = {token:token, release:release, ready:false};
     if (document.documentElement) install();
