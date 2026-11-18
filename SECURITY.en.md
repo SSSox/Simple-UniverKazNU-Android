@@ -38,7 +38,7 @@ Security fixes are released only for the latest version on the Releases page (cu
 - A file is saved only if the response came from Univer or Moodle; a sign-in page instead of a file, a 213 response and a redirect to another site are rejected.
 - Documents are opened by the app's own readers in a WebView with a separate internal address where JavaScript, file access and network are off. File sizes and structure are checked; a damaged file is not opened.
 
-**Updates.** At sign-in, at most once every 6 hours, the app asks GitHub for the number of the latest release (`domain/Updates.kt`, `update/`). The check cannot be turned off, but nothing is installed until you tap "Install". The file comes only from `github.com` and `*.githubusercontent.com` over HTTPS, and every redirect is checked. Before installing, the app compares the SHA-256 from the release file, the package name, a newer version and the signature: the APK must be signed with the same certificate as the installed app, otherwise it is deleted. The Android system installer installs the file.
+**Updates.** At every launch, and then at most once every 30 minutes, the app asks GitHub for the number of the latest release (`domain/Updates.kt`, `update/`). The check cannot be turned off, but nothing is installed until you tap "Install". The file comes only from `github.com` and `*.githubusercontent.com` over HTTPS, and every redirect is checked. Before installing, the app compares the SHA-256 from the release file, the package name, a newer version and the signature: the APK must be signed with the same certificate as the installed app, otherwise it is deleted. The Android system installer installs the file.
 
 ## Permissions
 
