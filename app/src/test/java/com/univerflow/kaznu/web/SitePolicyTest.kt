@@ -18,6 +18,16 @@ class SitePolicyTest {
         assertTrue(SitePolicy.external("mailto:help@example.org"))
         assertTrue(SitePolicy.external("tel:+77001234567"))
     }
+    @Test fun aNewSessionStartsThroughTheFlagOfTheAppLanguage() {
+        // Without the server session the site answers in Kazakh: the first request sets the chosen language.
+        assertEquals("https://univer.kaznu.kz/lang/change/ru/", SitePolicy.startUrl(null, AppLanguage.RUSSIAN))
+        assertEquals("https://univer.kaznu.kz/lang/change/en/", SitePolicy.startUrl("_ga=GA1.1; user_login=x", AppLanguage.ENGLISH))
+        assertEquals("https://univer.kaznu.kz/lang/change/kz/", SitePolicy.startUrl("", AppLanguage.KAZAKH))
+        // An existing session keeps its language and opens the start page directly.
+        assertEquals(SitePolicy.HOME, SitePolicy.startUrl("_ga=GA1.1; ASP.NET_SessionId=abc; cookiesession1=x", AppLanguage.RUSSIAN))
+        assertEquals("https://univer.kaznu.kz/lang/change/ru/", SitePolicy.startUrl("my.ASP.NET_SessionId=abc", AppLanguage.RUSSIAN))
+    }
+
     @Test fun onlyExactFlagRoutesSelectAppLanguage() {
         assertEquals(AppLanguage.KAZAKH, SitePolicy.languageChange(SitePolicy.ORIGIN + "/lang/change/kz/"))
         assertEquals(AppLanguage.RUSSIAN, SitePolicy.languageChange(SitePolicy.ORIGIN + "/lang/change/ru"))

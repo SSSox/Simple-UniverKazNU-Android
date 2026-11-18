@@ -7,6 +7,9 @@ enum class DownloadState { RUNNING, COMPLETED, FAILED, CANCELED }
 /** Whether a saved file is still where it was saved. UNKNOWN when the storage gives no clear answer: such a file stays listed. */
 enum class FilePresence { PRESENT, GONE, UNKNOWN }
 
+/** Compiled once: a search runs it over every record and result on every keystroke. */
+private val SPACES = Regex("\\s+")
+
 /** How a check of a saved file is read; the storage queries themselves are in FileActions. */
 object FilePresenceRules {
     /** A MediaStore row (Android 10+): gone without a row, or when its folder or name now differs from where it was saved. */
@@ -138,8 +141,6 @@ object FileKinds {
 
     private fun fold(value: String) = value.lowercase(Locale.ROOT).replace('ё', 'е')
 
-    /** Compiled once: a search runs it over every record on every keystroke. */
-    private val SPACES = Regex("\\s+")
 }
 
 /** Newest first and bounded. A transfer cannot outlive the process that ran it. */
@@ -161,19 +162,42 @@ object DownloadHistoryRules {
     /** The newest finished download of the same file, if any (whether it still exists is checked by the caller). */
     fun previous(records: List<DownloadRecord>, key: String): DownloadRecord? = if (key.isEmpty()) null else
         records.filter { it.key == key && it.state == DownloadState.COMPLETED && it.uri != null }.maxByOrNull { it.finished ?: it.started }
+
+    /**
+     * A file saved before downloads had a [DownloadRecord.key]: the server's answer names it [name] and gives [size]
+     * bytes (then the extension may have been corrected after saving). Without a size only the exact name on the same
+     * page heading ([source]) counts, so neither a "Лекция 1.docx" of another course nor a "Лекция 1.pdf" beside it is
+     * taken for it: that file would take this address's key for good. Newest first.
+     */
+    fun unkeyed(records: List<DownloadRecord>, name: String, size: Long, source: String): DownloadRecord? {
+        if (name.isEmpty()) return null
+        val base = name.substringBeforeLast('.')
+        return records.filter {
+            it.key.isEmpty() && it.state == DownloadState.COMPLETED && it.uri != null &&
+                if (size > 0) it.total == size && (it.fileName == name || it.fileName.substringBeforeLast('.') == base)
+                else source.isNotEmpty() && it.fileName == name && it.source == source
+        }.maxByOrNull { it.finished ?: it.started }
+    }
 }
 
 /**
  * A one-way digest of a file's address (scheme, host, path, query without Moodle's "forcedownload"): the history
- * recognises a repeated download without storing where it came from.
+ * recognises a repeated download without storing where it came from. A static document of Univer itself
+ * (https://univer.kaznu.kz/…/name.pdf) also loses its "v": the site appends ?v=<ticks> that changes on every render.
  */
 object DownloadKeys {
+    private val STATIC_DOCUMENT = Regex("\\.(?:pdf|docx?|xlsx?|pptx?|odt|ods|rtf|zip|rar)$", RegexOption.IGNORE_CASE)
+
     fun of(url: String): String {
         val uri = runCatching { java.net.URI(url) }.getOrNull() ?: return ""
         val scheme = uri.scheme?.lowercase(Locale.ROOT) ?: return ""
         val host = uri.host?.lowercase(Locale.ROOT) ?: return ""
-        val query = uri.rawQuery.orEmpty().split('&').filter { it.isNotEmpty() && !it.startsWith("forcedownload=") }.sorted().joinToString("&")
-        val normal = scheme + "://" + host + uri.rawPath.orEmpty().trimEnd('/') + if (query.isEmpty()) "" else "?$query"
+        val path = uri.rawPath.orEmpty().trimEnd('/')
+        val versioned = scheme == "https" && host == "univer.kaznu.kz" && uri.userInfo == null && (uri.port == -1 || uri.port == 443) &&
+            STATIC_DOCUMENT.containsMatchIn(path)
+        val query = uri.rawQuery.orEmpty().split('&')
+            .filter { it.isNotEmpty() && !it.startsWith("forcedownload=") && !(versioned && it.startsWith("v=")) }.sorted().joinToString("&")
+        val normal = scheme + "://" + host + path + if (query.isEmpty()) "" else "?$query"
         val digest = java.security.MessageDigest.getInstance("SHA-256").digest(normal.toByteArray(Charsets.UTF_8))
         return digest.take(16).joinToString("") { "%02x".format(it) }
     }
@@ -189,7 +213,6 @@ object TextSearch {
     /** Lower case and "ё" → "е" without changing the length, so positions map back to the original text. */
     fun fold(value: String): String = buildString(value.length) { value.forEach { append(if (it == 'ё' || it == 'Ё') 'е' else it.lowercaseChar()) } }
 
-    private val SPACES = Regex("\\s+")
     private fun words(query: String) = fold(query).trim().split(SPACES).filter { it.isNotEmpty() }
 
     fun matches(folded: String, query: String) = words(query).let { list -> list.isNotEmpty() && list.any { folded.contains(it) } }
@@ -204,8 +227,8 @@ object TextSearch {
         if (from > 0) text.indexOf(' ', from).takeIf { it in from until at }?.let { from = it + 1 }
         if (to < text.length) text.lastIndexOf(' ', to).takeIf { it > at + first.length }?.let { to = it }
         val prefix = if (from > 0) "…" else ""
-        val body = text.substring(from, to).replace(Regex("\\s+"), " ")
-        val start = prefix.length + text.substring(from, at).replace(Regex("\\s+"), " ").length
+        val body = text.substring(from, to).replace(SPACES, " ")
+        val start = prefix.length + text.substring(from, at).replace(SPACES, " ").length
         return Snippet(prefix + body + if (to < text.length) "…" else "", start, start + first.length)
     }
 }

@@ -70,20 +70,22 @@ class UpdatesTest {
         assertNull(Updates.checksum(""))
     }
 
-    @Test fun checksRunAtMostEverySixHoursAndSurviveAClockChange() {
+    @Test fun everyLaunchChecksAndALaterReturnChecksAfterHalfAnHour() {
         val checked = 1_000_000_000L
-        assertTrue("never checked", Updates.due(checked, 0))
-        assertFalse(Updates.due(checked + Updates.CHECK_INTERVAL_MS - 1, checked))
-        assertTrue(Updates.due(checked + Updates.CHECK_INTERVAL_MS, checked))
-        assertTrue("clock moved back", Updates.due(checked - 1, checked))
+        assertTrue("a launch checks even right after the last check", Updates.due(checked + 1, checked, firstInRun = true))
+        assertTrue("never checked", Updates.due(checked, 0, firstInRun = false))
+        assertFalse(Updates.due(checked + Updates.CHECK_INTERVAL_MS - 1, checked, firstInRun = false))
+        assertTrue(Updates.due(checked + Updates.CHECK_INTERVAL_MS, checked, firstInRun = false))
+        assertTrue("clock moved back", Updates.due(checked - 1, checked, firstInRun = false))
     }
 
     @Test fun theDialogRespectsLaterAndDoNotShowAgainForThatVersionOnly() {
-        assertTrue(Updates.prompt("2.4", null, answered = false))
-        assertFalse("nothing to offer", Updates.prompt(null, null, answered = false))
-        assertFalse("answered in this run", Updates.prompt("2.4", null, answered = true))
-        assertFalse("turned off for this version", Updates.prompt("2.4", "2.4", answered = false))
-        assertTrue("a newer version is offered again", Updates.prompt("2.5", "2.4", answered = false))
+        assertTrue(Updates.prompt("2.4", null, answered = null))
+        assertFalse("nothing to offer", Updates.prompt(null, null, answered = null))
+        assertFalse("Later in this run", Updates.prompt("2.4", null, answered = "2.4"))
+        assertTrue("a version found after Later in the same run is offered", Updates.prompt("2.5", null, answered = "2.4"))
+        assertFalse("turned off for this version", Updates.prompt("2.4", "2.4", answered = null))
+        assertTrue("a newer version is offered again", Updates.prompt("2.5", "2.4", answered = null))
     }
 
     @Test fun theLatestVersionIsReadFromTheRedirect() {

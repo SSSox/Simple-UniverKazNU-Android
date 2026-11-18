@@ -4,7 +4,7 @@
 
 ## Supported versions
 
-Security fixes are released only for the latest version on the Releases page (currently 2.4.0).
+Security fixes are released only for the latest version on the Releases page (currently 2.5.0).
 
 ## Reporting a vulnerability
 
@@ -56,7 +56,7 @@ Camera, contacts, location, microphone and SMS are not requested. Photos for ass
 
 ## Checking the code yourself
 
-- The address list: `SitePolicy.kt`, `SingleSignOnPolicy.kt`, `Updates.kt` and [network_security_config.xml](app/src/main/res/xml/network_security_config.xml). Besides them, the code has only the file viewer's internal address `univer-files.local` (it never goes to the network) and a YouTube link for embedded videos, which opens in another app.
+- The address list: `SitePolicy.kt`, `SingleSignOnPolicy.kt`, `Updates.kt` and [network_security_config.xml](app/src/main/res/xml/network_security_config.xml). Besides them, the code has only the file viewer's internal address `univer-files.local` (it never goes to the network), the Google Analytics hosts in `Trackers.kt` (the app answers them itself, nothing goes to the network) and a YouTube link for embedded videos, which opens in another app.
 - Dependencies: [gradle/libs.versions.toml](gradle/libs.versions.toml), only AndroidX, Material Components and kotlinx-coroutines. There is no analytics, advertising or crash reporting. The app runs no code from the network: a new version installs only as an ordinary APK through the Android installer.
 - Where the password is handled: `data/CredentialVault.kt`, `data/LockVault.kt`, `data/LockCrypto.kt`, `assets/univer-automation.js`.
 - The APK signature can be checked with `apksigner verify --print-certs Simple-UniverKazNU.apk` (from Android SDK Build Tools). The release certificate is `CN=SOX Team, O=SOX Team, C=KZ`, SHA-256 `0aa54a2d4714db17bc71b9a0a4d4bc7818cb57d91f10685200416bd2094732b9`; signed with schemes v2 and v3.
@@ -67,7 +67,7 @@ Camera, contacts, location, microphone and SMS are not requested. Photos for ass
 - The debug build (`app-debug.apk`) allows WebView debugging; for everyday use install the release.
 - On Android 7 the PIN key is derived with fewer iterations (60,000).
 
-## Session and download isolation · 12 November 2026 review
+## Session and download isolation
 
 Before sign-out, deletion or account replacement, automatic sign-in is paused and a pending-clear marker is committed. After restart, clearing finishes before the website opens. The old page must first commit a blank document so that pagehide cannot restore its storage. The app then awaits the WebView provider deletion callback. Older providers clear and verify DOM storage for the exact Univer and two allowed Moodle origins in locally intercepted documents, without server requests. Failure retains the pause and marker. This does not promise secure erasure from the device or termination of all server sessions.
 

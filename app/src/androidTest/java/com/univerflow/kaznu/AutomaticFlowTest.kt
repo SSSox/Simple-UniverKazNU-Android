@@ -11,6 +11,7 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.univerflow.kaznu.domain.AppLanguage
+import com.univerflow.kaznu.web.SitePolicy
 import com.univerflow.kaznu.data.AppPreferences
 import com.univerflow.kaznu.data.CredentialVault
 import com.univerflow.kaznu.web.AutomationController
@@ -124,10 +125,16 @@ class AutomaticFlowTest {
                 web.loadDataWithBaseURL("https://univer.kaznu.kz/", "<html><script>localStorage.removeItem('fixture-logins');localStorage.removeItem('fixture-notices');document.cookie='fixture_session=; Max-Age=0; path=/; Secure';</script></html>", "text/html", "UTF-8", null)
             }
             assertTrue(initialLoaded.await(15, TimeUnit.SECONDS))
-            instrumentation.runOnMainSync { loading.beginStartup(); controller.resume(); controller.open() }
+            // The device's real cookie jar is never touched here, so it decides the start: with the site's session the app
+            // opens the site itself; without one the app's language goes first, through the site's flag, once.
+            var flagFirst = false
+            instrumentation.runOnMainSync {
+                flagFirst = SitePolicy.startUrl(android.webkit.CookieManager.getInstance().getCookie(SitePolicy.ORIGIN), AppLanguage.RUSSIAN) != SitePolicy.HOME
+                loading.beginStartup(); controller.resume(); controller.open()
+            }
             awaitCondition { eval("!!document.getElementById('inside')") == "true" }
             assertEquals("\"1\"", eval("localStorage.getItem('fixture-logins')"))
-            assertEquals("Startup reuses the session without an unconditional flag redirect", 0, flagRequests.get())
+            assertEquals("Startup reuses a session without a flag redirect, and sets the language once without one", if (flagFirst) 1 else 0, flagRequests.get())
             assertEquals("\"1\"", eval("localStorage.getItem('fixture-notices')"))
             assertTrue("The real notice handler ran beneath the native loading screen", noticeWasCovered)
             awaitCondition { status == AutomationStatus.IDLE }

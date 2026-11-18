@@ -68,6 +68,13 @@ object Motion {
         view.isVisible = true
     }
 
+    /** Gone at once, even mid-fade: a placeholder fading over the page it stood for would mix the two. */
+    fun drop(view: View) {
+        view.animate().cancel()
+        settle(view)
+        view.isVisible = false
+    }
+
     /** Changed words rise into place, so a new status is seen to change; the same words stay still. */
     fun text(view: TextView, value: CharSequence?) {
         if (view.text.toString() == value?.toString().orEmpty()) return

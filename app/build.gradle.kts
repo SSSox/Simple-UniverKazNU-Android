@@ -20,8 +20,8 @@ android {
         applicationId = "com.univerflow.kaznu"
         minSdk = 24
         targetSdk = 37
-        versionCode = 30
-        versionName = "2.4.0"
+        versionCode = 31
+        versionName = "2.5.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

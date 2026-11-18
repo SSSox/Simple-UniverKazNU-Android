@@ -338,6 +338,11 @@ test('a form\'s main action is filled, Back stays quiet, and nothing happens wit
   assert.ok(bodies.length > 50);
   for (const body of bodies) for (const declaration of body.slice(1, -1).split(';').filter(d => d.trim()))
     assert.match(declaration, /!important\s*$/, declaration);
+  // A section's file count keeps its digits on one line next to a long title (Документы: «110» broke into «11» and «0»).
+  const count = css.match(/summary>\.up-count \{([^}]*)\}/);
+  assert.ok(count, 'the count rule is there');
+  assert.match(count[1], /flex:none!important/);
+  assert.match(count[1], /white-space:nowrap!important/);
   p.close();
 
   // A long FAQ question gets the lighter weight; a short one keeps the site's.

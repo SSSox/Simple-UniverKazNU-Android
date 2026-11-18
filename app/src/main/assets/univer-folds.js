@@ -1,31 +1,21 @@
 /* УМКД: every material section folds under its heading, whether it is a heading row of the files table or a heading over
-   a block of links (Силлабус). The heading itself is the button, with the count of what it holds; folded sections are
-   remembered per course. A files section with two or more files gets «Скачать все» in its heading row: the app checks
+   a block of links (Силлабус). The heading itself is the button, with the count of what it holds; every course opens
+   with all its sections open, and a fold lasts only while the page is shown. A files section with two or more files gets «Скачать все» in its heading row: the app checks
    the addresses and saves the files it does not have yet. Original restores the headings and rows as they were.
    Shared behaviour with Windows. */
 (function () {
     'use strict';
     if (location.origin !== 'https://univer.kaznu.kz' || window.__univerFoldsV1) return;
     var dom = window.__univerDomV1, clean = dom.clean, ownRows = dom.ownRows;
-    var KEY = 'univer.mobile.umkd-folds.v1', sections = new Map(), language = 'ru';
+    var sections = new Map(), language = 'ru';
+    // Earlier versions kept folded sections per course here; the record goes once the module runs.
+    try { localStorage.removeItem('univer.mobile.umkd-folds.v1'); } catch (_) { }
     function text() {
         return language === 'en' ? {all:'Download all', allLabel:'Download every file in this section'} :
             language === 'kz' ? {all:'Барлығын жүктеу', allLabel:'Бөлімнің барлық файлын жүктеу'} : {all:'Скачать все', allLabel:'Скачать все файлы раздела'};
     }
     function coursePage() { return /^\/student\/umkd\/\d+\/\d+\/\d+\/?$/.test(location.pathname); }
-    function memory() { try { var all = JSON.parse(localStorage.getItem(KEY) || '{}'); return all && typeof all === 'object' && !Array.isArray(all) ? all : {}; } catch (_) { return {}; } }
     function nameOf(head) { return clean(head).slice(0, 200); }
-    function pathOf() { return location.pathname.replace(/\/$/, ''); }
-    function remember(head, closed) {
-        try {
-            var all = memory(), path = pathOf(), name = nameOf(head);
-            var list = (Array.isArray(all[path]) ? all[path] : []).filter(function (n) { return n !== name; });
-            if (closed) list.push(name);
-            delete all[path]; if (list.length) all[path] = list.slice(-40);
-            var keys = Object.keys(all); keys.slice(0, Math.max(0, keys.length - 60)).forEach(function (k) { delete all[k]; });
-            localStorage.setItem(KEY, JSON.stringify(all));
-        } catch (_) { }
-    }
     // A fold slides its rows shut and open rather than cutting them. One registered number, --univer-slide, runs between
     // 1 and 0, and a rule scales each row's height, vertical padding, margins and borders by it: the card rules set those
     // with !important, which keyframes cannot move. The folded attribute is the state from the first frame; a row sliding
@@ -123,15 +113,15 @@
         if (button.dataset.label !== t.all) button.dataset.label = t.all;
         if (button.getAttribute('aria-label') !== t.allLabel) button.setAttribute('aria-label', t.allLabel);
     }
-    function section(head, items, saved) {
+    function section(head, items) {
         var record = sections.get(head);
         if (!record) {
-            record = {head:head, items:items, closed:saved.indexOf(nameOf(head)) >= 0};
+            record = {head:head, items:items, closed:false};
             record.toggle = function (event) {
                 if (event.type === 'keydown' && event.key !== 'Enter' && event.key !== ' ') return;
                 if (event.target !== head && event.target.closest('a,button,input,select,textarea')) return;
                 event.preventDefault();
-                record.closed = !record.closed; paint(record, event.type === 'keydown' || event.detail > 0); remember(head, record.closed);
+                record.closed = !record.closed; paint(record, event.type === 'keydown' || event.detail > 0);
             };
             head.addEventListener('click', record.toggle); head.addEventListener('keydown', record.toggle);
             head.setAttribute('role', 'button'); head.tabIndex = 0;
@@ -145,20 +135,19 @@
     function apply(lang) {
         language = lang || 'ru';
         if (!coursePage()) return;
-        var saved = memory()[pathOf()] || [];
         document.querySelectorAll('#l4 table.univer-app-materials').forEach(function (table) {
             var current = null, groups = [];
             ownRows(table).forEach(function (row) {
                 if (row.cells.length === 1 && row.cells[0].tagName === 'TH') { current = {head:row.cells[0], items:[]}; groups.push(current); }
                 else if (current && row.matches('tr.file')) current.items.push(row);
             });
-            groups.forEach(function (group) { if (group.items.length && clean(group.head)) section(group.head, group.items, saved); });
+            groups.forEach(function (group) { if (group.items.length && clean(group.head)) section(group.head, group.items); });
         });
         document.querySelectorAll('#l4 td.tt h4').forEach(function (h4) {
             if (h4.closest('#tools')) return;
             var items = [], node = h4.nextElementSibling;
             while (node && node.tagName !== 'H4') { items.push(node); node = node.nextElementSibling; }
-            if (items.length && clean(h4)) section(h4, items, saved);
+            if (items.length && clean(h4)) section(h4, items);
         });
     }
     function release() {

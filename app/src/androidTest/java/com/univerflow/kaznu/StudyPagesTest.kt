@@ -348,8 +348,8 @@ class StudyPagesTest {
         mobile()
         waitFor("Course chips", "document.querySelector('.univer-app-attendance-courses button[aria-pressed=true]')")
         assertEquals("\"Психология\"", eval("document.querySelector('.univer-app-attendance-courses button[aria-pressed=true]').textContent"))
-        assertEquals("The name becomes the journal's own course token", "true",
-            eval("sessionStorage.getItem('univer.mobile.attendance-course.v1:/student/attendance/full/').startsWith('психология (')"))
+        assertEquals("The hand-off is used once: a refresh shows every course again", "null",
+            eval("sessionStorage.getItem('univer.mobile.attendance-course.v1:/student/attendance/full/')"))
         // An unknown name falls back to every course instead of an empty page.
         eval("sessionStorage.setItem('univer.mobile.attendance-course.v1:/student/attendance/full/','name:химия')")
         mobile(false); eval("delete window.__univerAttendanceV1"); mobile()

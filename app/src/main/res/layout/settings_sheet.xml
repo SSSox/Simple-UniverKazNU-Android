@@ -117,41 +117,22 @@
             </com.google.android.material.card.MaterialCardView>
         </LinearLayout>
 
-        <!-- Two rows: what the action does, and its button at the end. -->
+        <!-- One row: what the action does, and its button at the end. -->
         <com.google.android.material.card.MaterialCardView android:id="@+id/account_actions" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:layout_marginTop="16dp">
-            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
-                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical"
-                    android:minHeight="64dp" android:orientation="horizontal" android:paddingHorizontal="16dp" android:paddingVertical="8dp">
-                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
-                        android:layout_marginEnd="12dp" android:orientation="vertical">
-                        <TextView android:id="@+id/logout_title" style="@style/Univer.RowTitle" android:layout_width="match_parent"
-                            android:layout_height="wrap_content" android:text="@string/logout" />
-                        <TextView android:id="@+id/logout_hint" style="@style/Univer.RowHint" android:layout_width="match_parent"
-                            android:layout_height="wrap_content" android:text="@string/logout_hint" />
-                    </LinearLayout>
-                    <com.google.android.material.button.MaterialButton android:id="@+id/logout"
-                        style="@style/Widget.Material3.Button.OutlinedButton" android:layout_width="wrap_content"
-                        android:layout_height="wrap_content" android:minHeight="48dp" android:minWidth="88dp" android:insetBottom="0dp"
-                        android:insetTop="0dp" android:text="@string/logout_action" app:cornerRadius="10dp" />
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical"
+                android:minHeight="64dp" android:orientation="horizontal" android:paddingHorizontal="16dp" android:paddingVertical="8dp">
+                <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+                    android:layout_marginEnd="12dp" android:orientation="vertical">
+                    <TextView android:id="@+id/logout_title" style="@style/Univer.RowTitle" android:layout_width="match_parent"
+                        android:layout_height="wrap_content" android:text="@string/logout" />
+                    <TextView android:id="@+id/logout_hint" style="@style/Univer.RowHint" android:layout_width="match_parent"
+                        android:layout_height="wrap_content" android:text="@string/logout_hint" />
                 </LinearLayout>
-                <com.google.android.material.divider.MaterialDivider android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:layout_marginHorizontal="16dp" app:dividerColor="?attr/colorOutlineVariant" />
-                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical"
-                    android:minHeight="64dp" android:orientation="horizontal" android:paddingHorizontal="16dp" android:paddingVertical="8dp">
-                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
-                        android:layout_marginEnd="12dp" android:orientation="vertical">
-                        <TextView android:id="@+id/delete_title_row" style="@style/Univer.RowTitle" android:layout_width="match_parent"
-                            android:layout_height="wrap_content" android:text="@string/delete_row" />
-                        <TextView android:id="@+id/delete_hint" style="@style/Univer.RowHint" android:layout_width="match_parent"
-                            android:layout_height="wrap_content" android:text="@string/delete_hint" />
-                    </LinearLayout>
-                    <com.google.android.material.button.MaterialButton android:id="@+id/delete"
-                        style="@style/Widget.Material3.Button.TonalButton" android:layout_width="wrap_content"
-                        android:layout_height="wrap_content" android:minHeight="48dp" android:minWidth="88dp" android:insetBottom="0dp"
-                        android:insetTop="0dp" android:text="@string/delete_action" android:textColor="?attr/colorOnErrorContainer"
-                        app:backgroundTint="?attr/colorErrorContainer" app:cornerRadius="10dp" />
-                </LinearLayout>
+                <com.google.android.material.button.MaterialButton android:id="@+id/logout"
+                    style="@style/Widget.Material3.Button.OutlinedButton" android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" android:minHeight="48dp" android:minWidth="88dp" android:insetBottom="0dp"
+                    android:insetTop="0dp" android:text="@string/logout_action" app:cornerRadius="10dp" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
         </LinearLayout>

@@ -44,5 +44,24 @@
         /** Writes only real changes, so DOM observers are not woken for nothing. */
         setText: function (node, value) { if (node.textContent !== value) node.textContent = value; },
         setHidden: function (node, value) { if (node.hidden !== value) node.hidden = value; },
+        /**
+         * Where a score ("63" of "100", "12,5" of "25") stands against the marks students go by, as a share of its
+         * maximum: below 50 % is short ('low'), 50–69 % admits ('pass'), 70–89 % is good, 90 % and up excellent ('top').
+         * `next` is the next mark in this score's own points and `left` how many points it still needs (never 0 while
+         * short of it). Null unless both are numbers and the maximum is positive. domain/ScoreBand.kt is the same rule.
+         */
+        scoreBand: function (value, max) {
+            var number = function (raw) { var text = String(raw ?? '').trim().replace(',', '.'); return /^-?\d+(?:\.\d+)?$/.test(text) ? Number(text) : NaN; };
+            var points = number(value), top = number(max);
+            if (!isFinite(points) || !(top > 0)) return null;
+            var percent = Math.max(0, Math.min(100, points / top * 100)), mark = [50, 70, 90].find(function (at) { return percent < at; });
+            return {
+                band: percent >= 90 ? 'top' : percent >= 70 ? 'good' : percent >= 50 ? 'pass' : 'low',
+                percent: Math.round(percent * 10) / 10,
+                marks: [50, 70, 90].map(function (at) { return Math.round(at * top) / 100; }),
+                next: mark === undefined ? null : Math.round(mark * top) / 100,
+                left: mark === undefined ? 0 : Math.max(0.1, Math.ceil((mark * top / 100 - points) * 10 - 1e-9) / 10),
+            };
+        },
     };
 })();

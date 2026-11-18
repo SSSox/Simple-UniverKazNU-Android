@@ -22,9 +22,8 @@
     <string name="save">Save</string>
     <string name="save_enter">Save and sign in</string>
     <string name="logout">Sign out</string>
-    <string name="delete_title">Delete login and password?</string>
-    <string name="delete_message">Your session will end. You will need to enter your credentials again.</string>
-    <string name="delete_action">Delete</string>
+    <string name="logout_confirm_title">Sign out?</string>
+    <string name="logout_confirm_message">This ends your session and removes your login, password and PIN from this phone. Enter your login and password again to sign back in.</string>
     <string name="cancel">Cancel</string>
     <string name="storage_error">Could not read or save credentials. Enter them again or retry.</string>
     <string name="network_error">Could not open Univer. Check your connection and retry.</string>
@@ -257,9 +256,7 @@
     <string name="tab_app">App</string>
     <string name="language_hint">For the app and the website</string>
     <string name="logout_action">Sign out</string>
-    <string name="logout_hint">Automatic sign-in stops</string>
-    <string name="delete_row">Login saved on this device</string>
-    <string name="delete_hint">Your login and password are removed</string>
+    <string name="logout_hint">Removes your login, password and PIN from this phone</string>
     <string name="about">Univer for Android %1$s. Unofficial app, not affiliated with Al-Farabi KazNU. Sign-in, data and forms stay on univer.kaznu.kz.</string>
     <string name="stage_day">Monday</string>
     <string name="stage_now">Now</string>
@@ -282,4 +279,32 @@
     <string name="link_failed">The page didn\'t open. Check the connection and try again.</string>
     <string name="link_certificate">The site\'s certificate isn\'t valid, so the page wasn\'t opened.</string>
     <string name="link_blocked">This address can\'t be opened in the app.</string>
+    <!-- Grade report: the journal's «Поделиться успеваемостью», drawn as PDF or PNG. -->
+    <string name="report_dialog_title">Share grades</string>
+    <string name="report_pdf">PDF file: for printing and email</string>
+    <string name="report_png">PNG image: for messengers</string>
+    <string name="report_print">Print</string>
+    <string name="report_error">Could not prepare the grade report</string>
+    <string name="report_title">Student grades</string>
+    <string name="report_term_autumn">Academic year %1$d–%2$d, autumn term</string>
+    <string name="report_term_spring">Academic year %1$d–%2$d, spring term</string>
+    <string name="report_term_summer">Academic year %1$d–%2$d, summer term</string>
+    <string name="report_made">Made on %1$s from univer.kaznu.kz data</string>
+    <string name="report_guide_title">How to read this report</string>
+    <string name="report_guide" formatted="false">RK1, RK2 are midterm controls, each the result for part of the term. Each line shows the points earned and the maximum. The bar shows the share of the maximum, and its marks are the 50, 70 and 90&#160;% thresholds. The university sets the exact rules for admission and scholarships.</string>
+    <string name="report_legend_low" formatted="false">below 50&#160;%: short of points</string>
+    <string name="report_legend_pass" formatted="false">50–69&#160;%: admitted, scholarship at risk</string>
+    <string name="report_legend_good" formatted="false">70–89&#160;%: good</string>
+    <string name="report_legend_top" formatted="false">90&#160;% and above: excellent</string>
+    <string name="report_band_low">Below 50</string>
+    <string name="report_band_pass">Admitted</string>
+    <string name="report_band_good">Good</string>
+    <string name="report_band_top">Excellent</string>
+    <string name="report_short">%2$s short of %1$s</string>
+    <string name="report_reached">Every mark reached</string>
+    <string name="report_out_of">%1$s of %2$s</string>
+    <string name="report_no_grade">no grade yet</string>
+    <string name="report_no_grades">No grades yet</string>
+    <string name="report_continued">%1$s (continued)</string>
+    <string name="report_file">Grades %1$s</string>
 </resources>

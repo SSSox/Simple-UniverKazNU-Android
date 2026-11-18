@@ -603,11 +603,11 @@ class FileViewerActivity : AppCompatActivity() {
                             return WebResourceResponse(FileActions.mime(item), null, 200, "OK", NO_CACHE, stream)
                         }
                     }
-                    path.startsWith("/media/") -> path.removePrefix("/media/").takeIf { it.matches(Regex("[0-9a-f]{64}")) }?.let { name ->
+                    path.startsWith("/media/") -> path.removePrefix("/media/").takeIf { it.matches(MEDIA_NAME) }?.let { name ->
                         media?.open(name)?.let { (stream, type) -> return WebResourceResponse(type, null, 200, "OK", NO_CACHE, stream) }
                     }
                     // A page is drawn when WebView reads the answer, not when it asks: it may ask ahead of time.
-                    else -> Regex("^/page/(\\d{1,5})\\.png$").matchEntire(path)?.let { match ->
+                    else -> PAGE_PATH.matchEntire(path)?.let { match ->
                         val index = match.groupValues[1].toInt()
                         pdf?.takeIf { index < it.count }?.let { pages ->
                             return WebResourceResponse("image/png", null, 200, "OK", NO_CACHE, DeferredStream { pages.render(index, pageWidth) })
@@ -655,6 +655,9 @@ class FileViewerActivity : AppCompatActivity() {
         private val NO_CACHE = mapOf("Cache-Control" to "no-store")
         /** A table link inside the document: /table/{index}. */
         private val TABLE_PATH = Regex("^/table/(\\d{1,5})$")
+        /** Compiled once: each page image and media file of an open document asks through these. */
+        private val PAGE_PATH = Regex("^/page/(\\d{1,5})\\.png$")
+        private val MEDIA_NAME = Regex("[0-9a-f]{64}")
         /** [query]: words to find in the document as soon as it opens (from the search in Downloads). */
         fun intent(context: Context, recordId: String, language: AppLanguage, query: String? = null): Intent =
             Intent(context, FileViewerActivity::class.java).putExtra(EXTRA_RECORD, recordId).putExtra(EXTRA_LANGUAGE, language.siteCode)

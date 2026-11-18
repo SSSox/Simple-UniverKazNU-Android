@@ -29,6 +29,7 @@ import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.net.toUri
 import androidx.core.view.GravityCompat
+import androidx.core.view.OneShotPreDrawListener
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -50,6 +51,7 @@ import com.univerflow.kaznu.databinding.ActivityMainBinding
 import com.univerflow.kaznu.databinding.SettingsSheetBinding
 import com.univerflow.kaznu.domain.DownloadState
 import com.univerflow.kaznu.domain.HomeShortcuts
+import com.univerflow.kaznu.domain.Shortcuts
 import com.univerflow.kaznu.domain.Notices
 import com.univerflow.kaznu.domain.TextZoom
 import com.univerflow.kaznu.domain.StudyFolders
@@ -60,11 +62,13 @@ import com.univerflow.kaznu.main.LockFlow
 import com.univerflow.kaznu.main.MainChrome
 import com.univerflow.kaznu.main.NetworkWatch
 import com.univerflow.kaznu.main.NoticeFlow
+import com.univerflow.kaznu.main.ReportFlow
 import com.univerflow.kaznu.main.SettingsForms
 import com.univerflow.kaznu.main.SiteData
 import com.univerflow.kaznu.main.StatusBanner
 import com.univerflow.kaznu.main.TextSizeDialog
 import com.univerflow.kaznu.main.UpdateFlow
+import com.univerflow.kaznu.report.GradeReportFiles
 import com.univerflow.kaznu.ui.AppLockSession
 import com.univerflow.kaznu.ui.DocumentViewer
 import com.univerflow.kaznu.ui.DownloadsActivity
@@ -99,12 +103,16 @@ import com.univerflow.kaznu.web.WebsiteLanguageSync
 import com.univerflow.kaznu.web.PageCover
 import com.univerflow.kaznu.web.captureNewWindow
 import com.univerflow.kaznu.web.configureSecureSettings
+import com.univerflow.kaznu.web.enableBackForwardCache
+import com.univerflow.kaznu.web.flushCookiesSoon
+import com.univerflow.kaznu.web.Trackers
 import com.univerflow.kaznu.web.evaluate
 import com.univerflow.kaznu.web.httpErrorMessage
 import com.univerflow.kaznu.web.webErrorText
 import com.google.android.material.snackbar.Snackbar
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
@@ -140,10 +148,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var lock: LockFlow
     private lateinit var forms: SettingsForms
     private lateinit var downloads: DownloadLauncher
+    private lateinit var reports: ReportFlow
     private lateinit var updates: UpdateFlow
     private val hosts = Hosts()
     private val languages = LanguageResources(this)
-    private val logoutNavigation = LogoutNavigation { endSession(false) }
+    private val logoutNavigation = LogoutNavigation { forms.confirmSignOut() }
     private val fileChooser = FileChooser(this, { text(R.string.choose_file) }, { message(R.string.open_failed) })
     private val transientDialogs = mutableListOf<Dialog>()
     /**
@@ -163,6 +172,7 @@ class MainActivity : AppCompatActivity() {
     private var documentSourcePosition: Pair<Int, Int>? = null
     private var handledDownloadEvent: String? = null
     private var webOpened = false
+    private var reportedDrawn = false
     private var sessionChanging = false
     private var sessionEpoch = 0
     private var automationStatus = AutomationStatus.IDLE
@@ -181,8 +191,13 @@ class MainActivity : AppCompatActivity() {
     private var lostPageUrl: String? = null
     private var rendererRecoveryPending = false
     private val pageRecoveryTask = Runnable { recoverFailedPage() }
+    // The page plays its own entrance; the placeholder leaves at once instead of fading over it.
     private val cover = PageCover { visible, atOnce ->
-        if (atOnce) Motion.cover(binding.pageSkeleton) else Motion.show(binding.pageSkeleton, visible)
+        when {
+            !visible -> Motion.drop(binding.pageSkeleton)
+            atOnce -> Motion.cover(binding.pageSkeleton)
+            else -> Motion.show(binding.pageSkeleton, true)
+        }
     }
     /** The network is back: a page that failed for want of it is loaded again shortly. */
     private val network = NetworkWatch(this) {
@@ -205,6 +220,9 @@ class MainActivity : AppCompatActivity() {
         })[UniverViewModel::class.java]
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        // The page modules are read once the first frame is drawn, while the first page loads: its pass then finds them
+        // ready. Read during onCreate they held the asset lock the WebView's start needs and delayed that frame.
+        OneShotPreDrawListener.add(binding.root) { binding.root.post { MobilePageAdapter.preload(assets, lifecycleScope) } }
         AppLockSession.initialize(this)
         lockUi = LockUi(this, ::text)
         chrome = MainChrome(this, binding)
@@ -212,6 +230,7 @@ class MainActivity : AppCompatActivity() {
         lock = LockFlow(this, model, lockUi, hosts)
         forms = SettingsForms(this, model, lock, hosts)
         downloads = DownloadLauncher(this, model, hosts)
+        reports = ReportFlow(this, model, hosts)
         updates = UpdateFlow(this, model, hosts)
         // Leaving the app for longer than the chosen time locks it: the password leaves memory and the PIN is asked again.
         AppLockSession.track(this) {
@@ -274,6 +293,9 @@ class MainActivity : AppCompatActivity() {
         channel = ChannelGuard(binding.webView)
         mobilePage = MobilePageAdapter(binding.webView, nativeChrome = true, channel = channel, onConcealed = cover::concealed, onContentReady = {
             if (!rendererUnavailable && !sessionChanging && !pageFailed && SitePolicy.trusted(binding.webView.url)) {
+                // A page Back restores from memory gets no onPageFinished: its readiness also ends a failed load beneath it.
+                cover.loaded()
+                firstPageShown()
                 Motion.progress(binding.loading, false)
                 noticePresentation.apply()
                 automation.pageFinished()
@@ -282,10 +304,10 @@ class MainActivity : AppCompatActivity() {
             }
         })
         // Home tile pins and order arrive from page taps; the validated, stored list is sent back to the page.
-        // «Скачать все» only from the course page in view: never from a viewer over it or a changing or locked session.
+        // «Скачать все» and the grade report only from the page in view: never from a viewer over it or a changing or locked session.
         shortcutBridge = ShortcutBridge(binding.webView, channel, onDownloadAll = { batch ->
-            if (!documents.isOpen && !sessionChanging && !rendererUnavailable && !model.state.value.locked) downloads.downloadAll(batch.section, batch.urls)
-        }) { request ->
+            if (pageInView()) downloads.downloadAll(batch.section, batch.urls)
+        }, onReport = { report -> if (pageInView()) report?.let(reports::offer) ?: message(R.string.report_error) }) { request ->
             lifecycleScope.launch {
                 if (!attempt(false) { model.updateShortcuts(request) }) message(R.string.pin_failed)
                 shortcutBridge.configure(model.state.value.shortcuts)
@@ -316,6 +338,7 @@ class MainActivity : AppCompatActivity() {
         chrome.configure(canOpenDrawer = { !documents.isOpen }, onToolbar = ::toolbarAction, onNavigation = ::navigationAction)
         binding.errorRetry.setOnClickListener { retryFailedPage() }
         binding.errorBack.setOnClickListener {
+            if (sessionChanging) return@setOnClickListener
             if (model.sessionClearPending) finishInterruptedSessionClear()
             else if (rendererUnavailable) retry()
             else if (binding.webView.canGoBack()) binding.webView.goBack()
@@ -351,6 +374,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun text(id: Int) = labels().getString(id)
 
+    private fun pageInView() = !documents.isOpen && !sessionChanging && !rendererUnavailable && !model.state.value.locked
+
     private fun message(id: Int) { Snackbar.make(binding.content, text(id), Snackbar.LENGTH_LONG).show() }
 
     /** A dialog the lock screen closes. */
@@ -376,12 +401,17 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             rendererUnavailable -> finish()
+            // The old account's pages must not come back while its data is wiped, or after a wipe that stopped halfway
+            // (the next render tries that wipe again).
+            sessionChanging -> Unit
+            model.sessionClearPending -> leaveApp()
             webOpened -> {
                 if (backPending) return
                 backPending = true
                 mobilePage.dismissNavigation { dismissed ->
                     backPending = false
-                    if (!dismissed && !isFinishing && !isDestroyed) {
+                    // A sign-out may have started while the page answered.
+                    if (!dismissed && !isFinishing && !isDestroyed && !sessionChanging && !model.sessionClearPending) {
                         if (binding.webView.canGoBack()) binding.webView.goBack() else leaveApp()
                     }
                 }
@@ -432,6 +462,12 @@ class MainActivity : AppCompatActivity() {
             DownloadService.consume(event.id)
             downloadStartedBar?.dismiss()
             if (!model.state.value.locked && !AppLockSession.locked) route(event.link)
+            return
+        }
+        if (event.present != null && event.recordId != null) {
+            DownloadService.consume(event.id)
+            downloadStartedBar?.dismiss()
+            downloads.offerPresent(event.recordId, event.present)
             return
         }
         if (event.loginUrl != null && downloads.signInFor(event.loginUrl, event.batch)) { message(R.string.download_relogin); return }
@@ -497,6 +533,8 @@ class MainActivity : AppCompatActivity() {
         mobilePage.animations = state.animations
         Motion.enabled = state.animations
         mobilePage.shortcuts = ShortcutBridge.script(state.shortcuts)
+        // Both placeholders draw the home page with the student's own tiles, so the hand-off after a notice does not jump.
+        Shortcuts.tiles(state.shortcuts).let { binding.pageSkeleton.tiles = it; binding.noticeSkeleton.tiles = it }
         if (!rendererUnavailable && changedShortcuts) shortcutBridge.configure(state.shortcuts)
         if (!rendererUnavailable && (changedMobileLayout || changedAnimations || changedLanguage))
             mobilePage.apply(state.mobileLayout, state.language)
@@ -506,6 +544,7 @@ class MainActivity : AppCompatActivity() {
     /** No saved account yet: the first-run form instead of the website. */
     private fun renderFirstRun(state: AppState) {
         noticeLoading.dismiss()
+        firstPageShown()
         binding.setupContainer.isVisible = true
         binding.mainColumn.isVisible = false
         binding.webView.isVisible = false
@@ -562,6 +601,13 @@ class MainActivity : AppCompatActivity() {
         chrome.notices(if (state.canBrowse) Notices.unread(state.notices) else 0, state)
         notices.render(state)
         renderHeading()
+    }
+
+    /** Startup ends with the first page (or its error screen) in view: the system's start metrics count up to here. */
+    private fun firstPageShown() {
+        if (reportedDrawn) return
+        reportedDrawn = true
+        reportFullyDrawn()
     }
 
     /**
@@ -759,18 +805,20 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun endSession(delete: Boolean) {
+    /** Sign out, and the forgotten-PIN reset: the session is wiped and the saved login removed. */
+    private fun endSession() {
         if (sessionChanging) return
         sessionChanging = true
         model.guard.stop()
         lifecycleScope.launch {
             try {
-                model.endSession(delete)
+                model.endSession(delete = true)
                 clearSession()
                 automationStatus = AutomationStatus.IDLE
                 forms.dismiss()
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { forms.sheetError(R.string.storage_error) }
+            // The site's Logout link and the forgotten PIN have no sheet open: the failure is shown on the screen.
+            catch (_: Exception) { if (forms.showing) forms.sheetError(R.string.storage_error) else message(R.string.storage_error) }
             finally { sessionChanging = false; if (isActive) render(model.state.value) }
         }
     }
@@ -805,6 +853,8 @@ class MainActivity : AppCompatActivity() {
         sessionEpoch++
         downloads.reset()
         fileChooser.clear()
+        reports.cancel()
+        GradeReportFiles.clear(this)
         DownloadService.cancelAll(this)
         documents.close(false)
         documentSourcePosition = null
@@ -926,6 +976,7 @@ class MainActivity : AppCompatActivity() {
         Motion.progress(binding.loading, false)
         pageLoading = false
         renderHeading()
+        firstPageShown()
         automation.pause()
         // An error page is not the site's answer to a sign-in in flight: the next fresh form is not its rejection.
         model.guard.detach()
@@ -938,6 +989,7 @@ class MainActivity : AppCompatActivity() {
     private fun configureWebView() {
         WebView.setWebContentsDebuggingEnabled(applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0)
         binding.webView.configureSecureSettings()
+        binding.webView.enableBackForwardCache()
         baseTextZoom = binding.webView.settings.textZoom
         binding.webView.webViewClient = PageClient()
         binding.webView.webChromeClient = object : WebChromeClient() {
@@ -969,6 +1021,7 @@ class MainActivity : AppCompatActivity() {
             if (request.isForMainFrame && !SitePolicy.trusted(request.url.toString()))
                 return WebResourceResponse("text/plain", "UTF-8", 403, "Blocked", emptyMap(),
                     java.io.ByteArrayInputStream(byteArrayOf()))
+            if (Trackers.blocked(request.url.host)) return Trackers.emptyReply()
             return null
         }
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
@@ -1024,7 +1077,7 @@ class MainActivity : AppCompatActivity() {
             if (url != view.url) return
             noticePresentation.apply()
             if (!cover.leaving) Motion.progress(binding.loading, false)
-            CookieManager.getInstance().flush()
+            flushCookiesSoon()
             mobilePage.apply(model.state.value.mobileLayout, model.state.value.language)
             if (!SitePolicy.trusted(url) || sessionChanging) return
             val finishedEpoch = pageEpoch
@@ -1199,6 +1252,8 @@ class MainActivity : AppCompatActivity() {
     override fun onStart() {
         super.onStart()
         network.register()
+        // A shared or printed report stays only as long as its share may still read it: an hour, not until the next one.
+        lifecycleScope.launch(Dispatchers.IO) { GradeReportFiles.prune(applicationContext) }
     }
 
     override fun onStop() {
@@ -1259,7 +1314,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** What the screen's parts ask of the page and the session. */
-    private inner class Hosts : DownloadLauncher.Host, LockFlow.Host, SettingsForms.Host, UpdateFlow.Host, NoticeFlow.Host {
+    private inner class Hosts : DownloadLauncher.Host, LockFlow.Host, SettingsForms.Host, UpdateFlow.Host, NoticeFlow.Host, ReportFlow.Host {
         override fun text(id: Int) = this@MainActivity.text(id)
         override fun labels() = this@MainActivity.labels()
         override fun message(id: Int) = this@MainActivity.message(id)
@@ -1350,9 +1405,9 @@ class MainActivity : AppCompatActivity() {
             }
         }
         override fun dismissDialogs() { dismissTransientDialogs(); forms.dismiss(); notices.dismiss() }
-        override fun eraseAccount() = endSession(true)
+        override fun eraseAccount() = endSession()
         override fun save(form: SettingsSheetBinding, first: Boolean) = this@MainActivity.save(form, first)
-        override fun endSession(delete: Boolean) = this@MainActivity.endSession(delete)
+        override fun signOut() = endSession()
         override fun manualLogin(form: SettingsSheetBinding) = this@MainActivity.manualLogin(form)
         override fun setMobileLayout(enabled: Boolean, form: SettingsSheetBinding?) = this@MainActivity.setMobileLayout(enabled, form)
         override fun setTextZoom(percent: Int) = this@MainActivity.setTextZoom(percent)

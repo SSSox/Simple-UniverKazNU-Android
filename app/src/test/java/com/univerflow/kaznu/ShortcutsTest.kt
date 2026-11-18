@@ -35,6 +35,13 @@ class ShortcutsTest {
             Shortcuts.normalizeHidden(listOf("https://univer.kaznu.kz/user/loginMoodle", "https://univer.kaznu.kz/ssc/", "https://example.org/", messages)))
     }
 
+    @Test fun homeTileCountIsTheBuiltInsLeftPlusThePins() {
+        assertEquals(6, Shortcuts.tiles(HomeShortcuts()))
+        val state = HomeShortcuts(listOf(PinnedLink("Сообщения", messages), PinnedLink("FAQ", "https://univer.kaznu.kz/my/faq/")),
+            emptyList(), listOf("https://univer.kaznu.kz/student/umkd", "https://example.org/"))
+        assertEquals("A foreign address in the hidden list is no tile", 7, Shortcuts.tiles(state))
+    }
+
     @Test fun removingOnePinnedLinkOrTileKeepsTheOthers() {
         val state = HomeShortcuts(listOf(PinnedLink("Сообщения", messages)), emptyList(), listOf("https://univer.kaznu.kz/student/umkd"))
         val unpinned = Shortcuts.apply(state, ShortcutRequest.Pin(false, null, messages))!!

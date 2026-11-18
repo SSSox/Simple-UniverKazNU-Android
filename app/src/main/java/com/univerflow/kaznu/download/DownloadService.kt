@@ -21,6 +21,7 @@ import com.univerflow.kaznu.domain.AppLanguage
 import com.univerflow.kaznu.data.DownloadRepository
 import com.univerflow.kaznu.ui.LanguageResources
 import com.univerflow.kaznu.domain.DownloadFailure
+import com.univerflow.kaznu.domain.DownloadHistoryRules
 import com.univerflow.kaznu.domain.DownloadKeys
 import com.univerflow.kaznu.domain.DownloadRecord
 import com.univerflow.kaznu.domain.DownloadState
@@ -46,10 +47,11 @@ import java.util.UUID
 /**
  * [loginUrl] is set only when an ended session refused the file, so it can be fetched again after signing in; [batch] then
  * names its «Скачать все» run. [link] is a course material that turned out to be a teacher's link: the screen opens it
- * once instead of showing a message.
+ * once instead of showing a message. [present]: the file is already saved as record [recordId]; the address stays in
+ * memory for "Download again".
  */
 data class DownloadEvent(val id: String, val message: Int, val uri: Uri? = null, val mime: String? = null, val recordId: String? = null,
-    val loginUrl: String? = null, val link: String? = null, val batch: String? = null)
+    val loginUrl: String? = null, val link: String? = null, val batch: String? = null, val present: String? = null)
 
 /**
  * One running transfer of record [recordId]. Cancelling [job] does not interrupt a connect or read blocked on the network,
@@ -100,14 +102,14 @@ class DownloadService : Service() {
             if (transfers.isEmpty()) leaveForeground(startId)
             return START_NOT_STICKY
         }
-        if (transfers.containsKey(url)) return START_NOT_STICKY
+        if (transfers.containsKey(running(url!!))) return START_NOT_STICKY
         val requestEpoch = epoch
         val recordId = intent.getStringExtra("id") ?: UUID.randomUUID().toString()
         history.upsert(DownloadRecord(recordId, started = System.currentTimeMillis(),
-            source = intent.getStringExtra("source").orEmpty().take(200), key = DownloadKeys.of(url!!)))
+            source = intent.getStringExtra("source").orEmpty().take(200), key = DownloadKeys.of(url)))
         start(Request(url, intent.getStringExtra("agent").orEmpty(), intent.getStringExtra("referer"),
             intent.getStringExtra("disposition"), intent.getStringExtra("mime"), requestEpoch, intent.getStringExtra("folder"),
-            intent.getStringExtra("batch")?.takeIf { it.length <= 64 }), recordId)
+            intent.getStringExtra("batch")?.takeIf { it.length <= 64 }, intent.getBooleanExtra("again", false)), recordId)
         return START_NOT_STICKY
     }
 
@@ -134,9 +136,15 @@ class DownloadService : Service() {
         stopSelfResult(startId)
     }
 
+    /**
+     * A running transfer's place in [transfers]: the file's [DownloadKeys] digest, so a second tap on the same file (the
+     * page reloaded since, with a new ?v=) does not start a second copy beside it; the address itself when it has none.
+     */
+    private fun running(url: String) = DownloadKeys.of(url).ifEmpty { url }
+
     /** Runs [request] within the parallel limit; the service leaves the foreground with its last transfer. */
     private fun start(request: Request, recordId: String) {
-        val url = request.url
+        val key = running(request.url)
         val connection = AtomicReference<HttpURLConnection?>()
         connections.add(connection)
         val job = scope.launch(start = CoroutineStart.LAZY) {
@@ -156,17 +164,17 @@ class DownloadService : Service() {
             } finally {
                 withContext(NonCancellable + Dispatchers.IO) { connection.getAndSet(null)?.disconnect() }
                 connections.remove(connection)
-                transfers.remove(url)
+                transfers.remove(key)
                 if (transfers.isEmpty() && !closing) leaveForeground(startSequence)
             }
         }
-        transfers[url] = Transfer(recordId, job, connection)
+        transfers[key] = Transfer(recordId, job, connection)
         job.start()
     }
 
     /** What a start intent asks for. It lives only in memory for the transfer: never saved, logged or redelivered. */
     private class Request(val url: String, val agent: String, val referer: String?, val disposition: String?, val mime: String?, val epoch: Int, val folder: String?,
-        val batch: String? = null)
+        val batch: String? = null, val again: Boolean = false)
 
     /**
      * One validated response streamed into public Downloads with throttled progress (the record every 250 ms,
@@ -186,6 +194,7 @@ class DownloadService : Service() {
             val identity = DownloadTypes.resolve(originalName, metadata.mime ?: request.mime, response.prefix)
             val filename = identity.name
             val mime = identity.mime
+            if (!request.again && alreadySaved(request, recordId, filename, metadata.length)) return@use
             history.update(recordId) { it.copy(fileName = filename, mime = mime, total = metadata.length) }
             var lastNotice = 0L
             var lastRecord = 0L
@@ -221,6 +230,24 @@ class DownloadService : Service() {
             }
         }
         cookieManager.flush()
+    }
+
+    /**
+     * A file saved by a version that did not key downloads yet, recognised by the server's name and size: it takes this
+     * address's key and stays the only copy. A single file asks "already downloaded"; a «Скачать все» run skips it.
+     */
+    private suspend fun alreadySaved(request: Request, recordId: String, name: String, size: Long): Boolean {
+        val records = history.records.value
+        val source = records.firstOrNull { it.id == recordId }?.source.orEmpty()
+        val earlier = DownloadHistoryRules.unkeyed(records, name, size, source) ?: return false
+        if (!FileActions.exists(this, earlier)) return false
+        withContext(Dispatchers.Main) {
+            history.remove(recordId)
+            if (request.epoch != epoch) return@withContext
+            history.update(earlier.id) { if (it.key.isEmpty()) it.copy(key = DownloadKeys.of(request.url)) else it }
+            if (request.batch == null) publishEvent(R.string.download_again_title, recordId = earlier.id, present = request.url)
+        }
+        return true
     }
 
     /** A failed transfer: its reason is recorded and shown; after a logout the failure is part of the cancellation. */
@@ -292,18 +319,18 @@ class DownloadService : Service() {
             else -> R.string.download_failed
         }
         private fun publishEvent(message: Int, uri: Uri? = null, mime: String? = null, recordId: String? = null, loginUrl: String? = null,
-            link: String? = null, batch: String? = null) {
-            mutableEvent.value = DownloadEvent(UUID.randomUUID().toString(), message, uri, mime, recordId, loginUrl, link, batch)
+            link: String? = null, batch: String? = null, present: String? = null) {
+            mutableEvent.value = DownloadEvent(UUID.randomUUID().toString(), message, uri, mime, recordId, loginUrl, link, batch, present)
         }
         /** A handled one-shot event is cleared, so a later screen does not act on it again. */
         fun consume(id: String) { mutableEvent.value?.takeIf { it.id == id }?.let { mutableEvent.compareAndSet(it, null) } }
         fun start(context: Context, url: String, agent: String, referer: String?, disposition: String?, mime: String?,
-            language: AppLanguage, source: String = "", folder: String? = null, batch: String? = null) {
+            language: AppLanguage, source: String = "", folder: String? = null, batch: String? = null, again: Boolean = false) {
             require(SingleSignOnPolicy.downloadAllowed(url))
             ContextCompat.startForegroundService(context, Intent(context, DownloadService::class.java)
                 .putExtra("url", url).putExtra("agent", agent).putExtra("referer", referer)
                 .putExtra("disposition", disposition).putExtra("mime", mime).putExtra("language", language.siteCode)
-                .putExtra("source", source).putExtra("folder", folder).putExtra("batch", batch).putExtra("epoch", epoch))
+                .putExtra("source", source).putExtra("folder", folder).putExtra("batch", batch).putExtra("again", again).putExtra("epoch", epoch))
         }
         /** Cancels one transfer from the Downloads screen; a stopped service has nothing to cancel. */
         fun cancel(context: Context, id: String) {

@@ -191,3 +191,19 @@ test('the phone keeps the button in its corner at every stop, even over a link, 
   assert.notEqual(free.button().style.bottom, '16px');
   free.w.close(); p.w.close();
 });
+
+test('the phone raises its still button above the bottom edge and only fades it, the free one still slides', () => {
+  const p = page(site);
+  p.top.configure(true, 'ru', { edge: 16, lift: 28, height: 48, anchored: true }); p.scroll(2000); p.top.refresh();
+  const b = p.button();
+  assert.equal(b.style.bottom, '28px'); assert.equal(b.style.right, '16px');
+  assert.equal(b.classList.contains('fixed'), true);
+  const css = b.getRootNode().querySelector('style').textContent;
+  const rule = css.match(/\.top\.fixed\{([^}]*)\}/)[1];
+  assert.match(rule, /transform:none/); assert.doesNotMatch(rule, /bottom/);
+  // Windows keeps the slide and the climb.
+  const free = page(site);
+  free.top.configure(true, 'ru', { edge: 16, height: 48 }); free.scroll(2000); free.top.refresh();
+  assert.equal(free.button().classList.contains('fixed'), false);
+  free.w.close(); p.w.close();
+});

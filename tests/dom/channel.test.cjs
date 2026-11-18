@@ -69,8 +69,9 @@ test('a built-in swapped by the site cannot hand it the modules\' sender through
   p.w.stolen.filter(Boolean).forEach(fn => { try { fn('univer-pin:{"pin":true,"url":"https://evil.example/"}'); } catch (_) {} });
   assert.equal(p.app.length, 1, 'nothing the site called sent a keyed message');
   p.w.eval(`(function(__univerSend){${NATIVE} window.direct = __univerNative; })(window.__univerClaim('${SECRET}'));`);
-  p.w.direct('univer-other:x'); p.w.direct('univer-pin:{}');
-  assert.deepEqual(p.app.slice(1), [SECRET + 'univer-pin:{}'], 'only pin and download-all messages pass');
+  p.w.direct('univer-other:x'); p.w.direct('univer-pin:{}'); p.w.direct('univer-report:{"v":1}'); p.w.direct('univer-reports:{}');
+  p.w.direct('univer-report:' + 'x'.repeat(65536));
+  assert.deepEqual(p.app.slice(1), [SECRET + 'univer-pin:{}', SECRET + 'univer-report:{"v":1}'], 'only pin, download-all and bounded report messages pass');
   p.close();
 });
 

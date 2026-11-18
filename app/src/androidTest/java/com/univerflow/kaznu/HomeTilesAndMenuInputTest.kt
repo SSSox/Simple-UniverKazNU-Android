@@ -240,6 +240,6 @@ class HomeTilesAndMenuInputTest {
             eval("scrollTo(0,$y);window.__univerTopV1.refresh()")
             spots += eval("(function(){var b=document.getElementById('univer-app-top').shadowRoot.querySelector('.top');return b.classList.contains('on')+' '+b.style.bottom+' '+b.style.right;})()")
         }
-        assertEquals("Shown at every stop, always in the same corner", setOf("\"true 16px 16px\""), spots)
+        assertEquals("Shown at every stop, always in the same corner", setOf("\"true 28px 16px\""), spots)
     }
 }

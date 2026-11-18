@@ -46,6 +46,20 @@ class DocumentViewerTest {
                 assertEquals("A main-frame POST must be blocked before any network request", 403, blocked?.statusCode)
                 blocked?.data?.close()
                 assertNull(web.webViewClient.shouldInterceptRequest(web, request("https://univer.kaznu.kz/user/ajl")))
+                fun asset(url: String) = object : android.webkit.WebResourceRequest {
+                    override fun getUrl() = android.net.Uri.parse(url)
+                    override fun isForMainFrame() = false
+                    override fun isRedirect() = false
+                    override fun hasGesture() = false
+                    override fun getMethod() = "GET"
+                    override fun getRequestHeaders() = emptyMap<String, String>()
+                }
+                listOf("https://www.googletagmanager.com/gtag/js?id=G-TEST", "https://region1.google-analytics.com/g/collect?v=2").forEach {
+                    val reply = web.webViewClient.shouldInterceptRequest(web, asset(it))
+                    assertEquals("The site's analytics tag gets an empty local reply: $it", 204, reply?.statusCode)
+                    reply?.data?.close()
+                }
+                assertNull(web.webViewClient.shouldInterceptRequest(web, asset("https://univer.kaznu.kz/assets/app.js")))
                 viewer.close(false)
             }
         }
@@ -160,10 +174,18 @@ class DocumentViewerTest {
             }
             assertTrue(ready)
             instrumentation.runOnMainSync { viewer.webView!!.evaluateJavascript("document.getElementById('back').click()", null) }
-            instrumentation.waitForIdleSync()
+            // The close runs after the page's answer and the window's exit: wait for it instead of a fixed pause.
+            val closing = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+            var shut = false
+            while (!shut && System.nanoTime() < closing) {
+                instrumentation.runOnMainSync { shut = !viewer.isOpen && host.childCount == 1 }
+                if (!shut) Thread.sleep(100)
+            }
             Thread.sleep(300)
             scenario.onActivity {
-                assertFalse(viewer.isOpen); assertEquals(1, closed); assertEquals(1, host.childCount)
+                assertFalse(viewer.isOpen)
+                assertEquals("times the viewer reported closing", 1, closed)
+                assertEquals("views left in the host", 1, host.childCount)
                 (host.getChildAt(0) as WebView).destroyFixture()
             }
         }

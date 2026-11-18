@@ -37,22 +37,24 @@ test('every section heading becomes a button that shows how much it holds', () =
   p.w.close();
 });
 
-test('a tap folds a section, a second tap opens it, and the course remembers it', () => {
+test('a tap folds a section and a second tap opens it; the course opens unfolded the next time', () => {
   const p = page(); p.folds.apply();
   const lectures = p.heads()[0];
   lectures.click();
   assert.equal(lectures.getAttribute('aria-expanded'), 'false');
   assert.equal(p.d.querySelectorAll('[data-univer-folded-row]').length, 2);
-  const saved = p.w.localStorage.getItem('univer.mobile.umkd-folds.v1');
-  assert.deepEqual(JSON.parse(saved), {'/student/umkd/123/2026/1': ['Лекции']});
+  lectures.dispatchEvent(new p.w.KeyboardEvent('keydown', {key: 'Enter', bubbles: true}));
+  assert.equal(lectures.dataset.univerFold, 'open', 'Enter works like a tap');
+  assert.equal(p.d.querySelectorAll('[data-univer-folded-row]').length, 0);
+  lectures.click();
+  assert.equal(p.w.localStorage.length, 0, 'nothing about the folds is stored');
   p.w.close();
 
-  const again = page('/student/umkd/123/2026/1', {'univer.mobile.umkd-folds.v1': saved}); again.folds.apply();
-  assert.equal(again.heads()[0].dataset.univerFold, 'closed', 'the same course opens with the section folded');
-  assert.equal(again.heads()[1].dataset.univerFold, 'open');
-  again.heads()[0].dispatchEvent(new again.w.KeyboardEvent('keydown', {key: 'Enter', bubbles: true}));
-  assert.equal(again.heads()[0].dataset.univerFold, 'open', 'Enter works like a tap');
-  assert.equal(again.d.querySelectorAll('[data-univer-folded-row]').length, 0);
+  // A record left by an earlier version is removed and no longer folds anything.
+  const again = page('/student/umkd/123/2026/1', {'univer.mobile.umkd-folds.v1': JSON.stringify({'/student/umkd/123/2026/1': ['Лекции']})});
+  again.folds.apply();
+  assert.deepEqual(again.heads().map(h => h.dataset.univerFold), ['open', 'open', 'open']);
+  assert.equal(again.w.localStorage.getItem('univer.mobile.umkd-folds.v1'), null);
   again.w.close();
 });
 

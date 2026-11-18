@@ -724,9 +724,10 @@
         var tight = Array.from(quick.querySelectorAll('.univer-app-tile>a')).some(function (link) { return link.scrollWidth > link.clientWidth; });
         quick.classList.toggle('univer-app-quick-stacked', tight);
     }
+    // A bar already watched gets new names at its old size, so it is measured now. A new bar is measured by the observer's
+    // first report, which comes before the bar is painted: measuring it here too laid the whole page out once more.
     function watchTiles(quick) {
-        stackTiles(quick);
-        if (quick.__univerFit || !window.ResizeObserver) return;
+        if (quick.__univerFit || !window.ResizeObserver) { stackTiles(quick); return; }
         quick.__univerFit = new ResizeObserver(function () {
             if (window.__univerMobileV1) window.__univerMobileV1.mutate(function () { stackTiles(quick); }); else stackTiles(quick);
         });

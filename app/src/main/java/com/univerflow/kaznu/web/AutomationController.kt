@@ -1,6 +1,7 @@
 package com.univerflow.kaznu.web
 
 import android.os.SystemClock
+import android.webkit.CookieManager
 import android.webkit.WebView
 import com.univerflow.kaznu.UniverViewModel
 import com.univerflow.kaznu.domain.AppLanguage
@@ -95,10 +96,9 @@ class AutomationController(private val web: WebView, private val model: UniverVi
         pageStarted()
     }
 
+    /** The start page, in the app's language from the first frame (see [SitePolicy.startUrl]). */
     fun open() {
-        // Reuse the site's session language. The DOM observer applies a flag only on a real
-        // mismatch; unconditional /lang/change/ adds a request/redirect on every launch.
-        web.loadUrl(SitePolicy.HOME)
+        web.loadUrl(SitePolicy.startUrl(CookieManager.getInstance().getCookie(SitePolicy.ORIGIN), model.state.value.language))
     }
 
     fun applyLanguage(language: AppLanguage) {

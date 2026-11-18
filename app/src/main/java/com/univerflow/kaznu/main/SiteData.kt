@@ -25,7 +25,8 @@ import kotlin.coroutines.resumeWithException
 /** What the website leaves in the app's WebView profile, wiped when its session ends or the account changes. */
 object SiteData {
     /**
-     * Replaces the page with a blank one, then erases DOM storage, the cache, history, TLS decisions and every cookie;
+     * Replaces the page with a blank one and drops its history (Back keeps pages in memory, and a later step may fail),
+     * then erases DOM storage, the cache, TLS decisions and every cookie;
      * awaits the provider's deletion callback, or verifies DOM storage at the app's origins on older providers,
      * then removes and flushes cookies. [page] can be null after renderer loss; [context] is still required.
      * A step that gets no answer in its time fails the erase (it is not a cancellation), so the caller reports it and
@@ -40,6 +41,7 @@ object SiteData {
             withDeadline(5_000) {
                 while (page.evaluate("location.href==='about:blank'&&document.readyState==='complete'") != "true") delay(40)
             }
+            page.clearHistory()
         }
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DELETE_BROWSING_DATA)) {
             withDeadline(15_000) {
@@ -55,7 +57,6 @@ object SiteData {
         }
         if (page != null) {
             page.clearCache(true)
-            page.clearHistory()
             page.clearSslPreferences()
         }
         withDeadline(10_000) {

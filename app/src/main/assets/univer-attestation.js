@@ -65,9 +65,10 @@
         var name = el('span', 'univer-app-score-label', label), amount = el('span', 'univer-app-score-value', value || text().none);
         box.append(name, amount);
         // Univer grades control periods and the weighted total on a 100-point scale.
-        var score = number(value);
-        if (isFinite(score) && score >= 0 && score <= 100) {
-            var bar = el('span', 'univer-app-score-bar'); bar.style.setProperty('--univer-score', score + '%'); box.appendChild(bar);
+        var score = number(value), band = isFinite(score) && score >= 0 && score <= 100 ? dom.scoreBand(String(score), '100') : null;
+        if (band) {
+            var bar = el('span', 'univer-app-score-bar'); bar.style.setProperty('--univer-score', band.percent + '%');
+            box.dataset.band = bar.dataset.band = band.band; box.appendChild(bar);
         }
         Array.from(box.children).forEach(function (child) { child.setAttribute('aria-hidden', 'true'); });
         return box;

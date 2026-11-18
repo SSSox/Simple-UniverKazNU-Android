@@ -5,9 +5,15 @@ import java.net.URI
 /** Observed Univer Moodle entry and both current/legacy Moodle origins. No wildcard trust. */
 object SingleSignOnPolicy {
     const val ENTRY = "${SitePolicy.ORIGIN}/user/loginMoodle"
+    // Compiled once: these run on every navigation.
+    private val ENTRY_PATH = Regex("^/user/loginMoodle/?$", RegexOption.IGNORE_CASE)
+    private val SIGN_IN_PATH = Regex("""^/login(/index\.php)?/?$""", RegexOption.IGNORE_CASE)
+    private val LOGOUT_PATH = Regex("""^/login/logout\.php$""", RegexOption.IGNORE_CASE)
+    private val ACCOUNT_PATH = Regex("^/(login|auth|admin)(/|$)", RegexOption.IGNORE_CASE)
+    private val SECRET_QUERY = Regex("(^|&)(sesskey|token|wstoken|key|ticket|code)=", RegexOption.IGNORE_CASE)
 
     fun entry(url: String?): Boolean = SitePolicy.trusted(url) && runCatching {
-        Regex("^/user/loginMoodle/?$", RegexOption.IGNORE_CASE).matches(URI(url!!).rawPath)
+        ENTRY_PATH.matches(URI(url!!).rawPath)
     }.getOrDefault(false)
 
     fun moodle(url: String?): Boolean = runCatching {
@@ -18,12 +24,12 @@ object SingleSignOnPolicy {
 
     /** Moodle's own sign-in page, shown after its session ends. */
     fun moodleSignIn(url: String?): Boolean = moodle(url) && runCatching {
-        Regex("""^/login(/index\.php)?/?$""", RegexOption.IGNORE_CASE).matches(URI(url!!).rawPath)
+        SIGN_IN_PATH.matches(URI(url!!).rawPath)
     }.getOrDefault(false)
 
     /** Moodle's own Log out: the user ends the Moodle session, so it is not signed in again. */
     fun moodleLogout(url: String?): Boolean = moodle(url) && runCatching {
-        Regex("""^/login/logout\.php$""",RegexOption.IGNORE_CASE).matches(URI(url!!).rawPath)
+        LOGOUT_PATH.matches(URI(url!!).rawPath)
     }.getOrDefault(false)
 
     /**
@@ -33,8 +39,8 @@ object SingleSignOnPolicy {
     fun moodleResumable(url: String?): Boolean = moodle(url) && !moodleSignIn(url) && runCatching {
         val uri = URI(url!!)
         val path = uri.rawPath.orEmpty()
-        url.length <= 2_000 && !Regex("^/(login|auth|admin)(/|$)", RegexOption.IGNORE_CASE).containsMatchIn(path) &&
-            !Regex("(^|&)(sesskey|token|wstoken|key|ticket|code)=", RegexOption.IGNORE_CASE).containsMatchIn(uri.rawQuery.orEmpty())
+        url.length <= 2_000 && !ACCOUNT_PATH.containsMatchIn(path) &&
+            !SECRET_QUERY.containsMatchIn(uri.rawQuery.orEmpty())
     }.getOrDefault(false)
 
     /** Files may come from Univer or Moodle; every hop stays within the service it started on. */

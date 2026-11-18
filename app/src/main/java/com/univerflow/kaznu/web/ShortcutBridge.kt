@@ -3,6 +3,7 @@ package com.univerflow.kaznu.web
 import android.webkit.WebView
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
+import com.univerflow.kaznu.domain.GradeReport
 import com.univerflow.kaznu.domain.HomeShortcuts
 import com.univerflow.kaznu.domain.ShortcutRequest
 import com.univerflow.kaznu.domain.Shortcuts
@@ -11,19 +12,25 @@ import org.json.JSONObject
 import org.json.JSONTokener
 
 /**
- * Receives home-tile pin and order taps and a UMKD section's «Скачать все» from the site's main frame.
- * Only data crosses: a listener limited to the exact Univer origin, no callable host objects, and only messages
- * carrying [channel]'s key: the site's own scripts cannot pin a tile or start downloads.
+ * Receives home-tile pin and order taps, a UMKD section's «Скачать все» and the journal's «Поделиться успеваемостью»
+ * from the site's main frame. Only data crosses: a listener limited to the exact Univer origin, no callable host
+ * objects, and only messages carrying [channel]'s key: the site's own scripts cannot pin a tile, start downloads or
+ * open the share sheet.
  */
-class ShortcutBridge(private val web: WebView, private val channel: ChannelGuard, private val onDownloadAll: (DownloadBatch) -> Unit = {}, private val onRequest: (ShortcutRequest) -> Unit) {
+class ShortcutBridge(private val web: WebView, private val channel: ChannelGuard, private val onDownloadAll: (DownloadBatch) -> Unit = {},
+    private val onReport: (GradeReport?) -> Unit = {}, private val onRequest: (ShortcutRequest) -> Unit) {
     private var closed = false
 
     init {
         if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) WebViewCompat.addWebMessageListener(web, CHANNEL, setOf(SitePolicy.ORIGIN)) { _, message, origin, mainFrame, _ ->
             if (closed || !mainFrame || origin.toString() != SitePolicy.ORIGIN) return@addWebMessageListener
             val data = channel.unwrap(runCatching { message.data }.getOrNull()) ?: return@addWebMessageListener
-            if (data.startsWith(DownloadBatch.MESSAGE_PREFIX)) DownloadBatch.parse(data)?.let(onDownloadAll)
-            else parse(data)?.let(onRequest)
+            when {
+                data.startsWith(DownloadBatch.MESSAGE_PREFIX) -> DownloadBatch.parse(data)?.let(onDownloadAll)
+                // Our own journal sent it, so a report out of shape is said, not dropped in silence.
+                data.startsWith(GradeReport.MESSAGE_PREFIX) -> onReport(ReportMessage.parse(data))
+                else -> parse(data)?.let(onRequest)
+            }
         }
     }
 

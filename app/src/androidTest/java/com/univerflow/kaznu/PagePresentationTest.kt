@@ -58,11 +58,11 @@ class PagePresentationTest {
     private fun response(type: String, data: String) = WebResourceResponse(type, "UTF-8", ByteArrayInputStream(data.toByteArray()))
 
     private fun load(documentStart: Boolean = true, mobile: Boolean = true, frame: Boolean = false,
-        origin: String = SitePolicy.ORIGIN) {
+        origin: String = SitePolicy.ORIGIN, pageScript: String = "") {
         val html = """<html><head><meta name='viewport' content='width=1200'><style>
             body{width:1200px;background:#ddd}.wrappertable{width:1200px}.inner{width:1100px}
             </style><script>
-            window.injectedBeforePageScript=!!window.__univerPresentationV1;window.rawFrames=0;
+            window.injectedBeforePageScript=!!window.__univerPresentationV1;window.rawFrames=0;$pageScript
             function sample(){if(document.body&&getComputedStyle(document.body).visibility!=='hidden'&&
                 !document.documentElement.classList.contains('univer-mobile'))window.rawFrames++;
                 requestAnimationFrame(sample);}requestAnimationFrame(sample);
@@ -134,6 +134,47 @@ class PagePresentationTest {
         assertEquals("width=device-width, initial-scale=1", state.getString("viewport"))
         instrumentation.runOnMainSync { assertEquals(1f, web.alpha, 0f) }
         assertEquals("What stands over the page follows it", listOf(true, false), listOf(concealed.first(), concealed.last()))
+    }
+
+    /** The DOM-ready message, the commit and the load all ask for a pass: one in flight serves them, a new language restarts it. */
+    @Test fun requestsForTheSameDocumentJoinThePassAlreadyRunning() {
+        load()
+        instrumentation.runOnMainSync {
+            val before = adapter.passes
+            repeat(3) { adapter.apply(true, AppLanguage.RUSSIAN) }
+            assertTrue("at most one new pass for three requests", adapter.passes - before <= 1)
+            val running = adapter.passes
+            adapter.apply(true, AppLanguage.KAZAKH)
+            assertEquals("another language starts over", running + 1, adapter.passes)
+        }
+        assertTrue(ready.await(6, TimeUnit.SECONDS))
+        assertTrue(snapshot().getBoolean("mobile"))
+    }
+
+    /**
+     * An adapter that throws shows the page at once instead of rerunning for the whole readiness timeout, and the
+     * document-start script no longer keeps the body hidden.
+     */
+    @Test fun anAdapterThatThrowsShowsThePageWithoutWaitingForTheTimeout() {
+        // The clock starts before the document does, so the start script's own 8 s release can never pass for the fix.
+        val started = System.nanoTime()
+        load(documentStart = documentStartSupported(), pageScript = "window.__univerMobileV1={setNativeChrome:function(){}," +
+            "setEnabled:function(){throw new Error('broken')}};")
+        var shown = false
+        while (!shown && System.nanoTime() - started < 4_000_000_000L) {
+            Thread.sleep(50)
+            instrumentation.runOnMainSync { shown = web.alpha == 1f }
+            shown = shown && !snapshot().getBoolean("pending")
+        }
+        // A slow snapshot may return after the start script's own 8 s release: the time is checked, not only the state.
+        val seconds = (System.nanoTime() - started) / 1e9
+        assertTrue("shown=$shown after $seconds s, well before the 8 s timeout", shown && seconds < 4.5)
+    }
+
+    private fun documentStartSupported(): Boolean {
+        var supported = false
+        instrumentation.runOnMainSync { supported = WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT) }
+        return supported
     }
 
     @Test fun fallbackAlsoRevealsTheAdaptedDomBeforeSlowImagesFinish() {

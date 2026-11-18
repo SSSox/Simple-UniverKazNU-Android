@@ -1,16 +1,15 @@
 package com.univerflow.kaznu.main
 
 import android.content.ActivityNotFoundException
+import android.content.Context
 import android.content.pm.PackageInstaller
 import android.os.Build
 import android.provider.Settings
 import android.view.LayoutInflater
-import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.net.toUri
-import com.google.android.material.checkbox.MaterialCheckBox
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.univerflow.kaznu.R
 import com.univerflow.kaznu.UniverViewModel
@@ -91,19 +90,8 @@ class UpdateFlow(private val activity: AppCompatActivity, private val model: Uni
 
     private fun showPrompt(update: UpdateState) {
         val version = update.available ?: return
-        val labels = languages.of(model.state.value.language)
-        val never = MaterialCheckBox(labels).apply { text = host.text(R.string.update_never) }
-        val padding = (20 * activity.resources.displayMetrics.density).toInt()
-        val frame = FrameLayout(labels).apply { setPadding(padding, padding / 2, padding, 0); addView(never) }
-        prompt = MaterialAlertDialogBuilder(activity)
-            .setIcon(R.drawable.ic_downloads)
-            .setTitle(host.text(R.string.update_title))
-            .setMessage(labels.getString(R.string.update_message, version, update.current))
-            .setView(frame)
-            .setNegativeButton(host.text(R.string.update_later)) { _, _ -> if (never.isChecked) updates.skip(version) else updates.later() }
-            .setPositiveButton(host.text(R.string.update_install)) { _, _ -> install() }
-            .setOnCancelListener { if (never.isChecked) updates.skip(version) else updates.later() }
-            .show().also(host::track)
+        prompt = promptDialog(activity, languages.of(model.state.value.language), version, update.current,
+            never = { updates.skip(version) }, later = { updates.later(version) }, install = ::install).show().also(host::track)
     }
 
     private fun showProgress(update: UpdateState) {
@@ -150,5 +138,22 @@ class UpdateFlow(private val activity: AppCompatActivity, private val model: Uni
         UpdateFailure.VERIFY -> R.string.update_verify_failed
         UpdateFailure.SIGNATURE -> R.string.update_signature_failed
         UpdateFailure.INSTALL -> R.string.update_install_failed
+    }
+
+    companion object {
+        /**
+         * Install; Later (until the app restarts); or never for this version, while a newer one is offered again. Back
+         * counts as Later. [labels] is the app language's context; the QA test draws the same dialog.
+         */
+        fun promptDialog(activity: Context, labels: Context, version: String, current: String,
+            never: () -> Unit, later: () -> Unit, install: () -> Unit): MaterialAlertDialogBuilder =
+            MaterialAlertDialogBuilder(activity)
+                .setIcon(R.drawable.ic_downloads)
+                .setTitle(labels.getString(R.string.update_title))
+                .setMessage(labels.getString(R.string.update_message, version, current))
+                .setNeutralButton(labels.getString(R.string.update_never)) { _, _ -> never() }
+                .setNegativeButton(labels.getString(R.string.update_later)) { _, _ -> later() }
+                .setPositiveButton(labels.getString(R.string.update_install)) { _, _ -> install() }
+                .setOnCancelListener { later() }
     }
 }

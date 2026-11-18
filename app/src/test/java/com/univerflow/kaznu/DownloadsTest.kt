@@ -15,6 +15,28 @@ class DownloadsTest {
     private fun record(name: String, source: String = "", state: DownloadState = DownloadState.COMPLETED, started: Long = 1, id: String = name) =
         DownloadRecord(id = id, fileName = name, state = state, started = started, source = source)
 
+    @Test fun aFileSavedBeforeKeysIsFoundByNameAndSizeOrByNameAndPage() {
+        fun saved(name: String, size: Long, source: String = "Психология", key: String = "", finished: Long = 5) =
+            DownloadRecord(id = "$name/$size/$key/$finished", fileName = name, uri = "content://media/1", state = DownloadState.COMPLETED,
+                total = size, received = size, started = 1, finished = finished, source = source, key = key)
+        val syllabus = saved("Силлабус.docx", 40_255)
+        val records = listOf(syllabus, saved("Лекция 1.docx", 900, source = "Культурология"),
+            saved("Силлабус.docx", 40_255, key = "0123456789abcdef0123456789abcdef", finished = 9))
+        assertEquals(syllabus, DownloadHistoryRules.unkeyed(records, "Силлабус.docx", 40_255, "Другое"))
+        // The extension the type check corrected after saving still names the same file.
+        assertEquals(syllabus, DownloadHistoryRules.unkeyed(records, "Силлабус.doc", 40_255, ""))
+        assertNull(DownloadHistoryRules.unkeyed(records, "Силлабус.docx", 41_000, "Психология"))
+        assertNull("the same size alone is not the same file", DownloadHistoryRules.unkeyed(records, "Программа.docx", 40_255, "Психология"))
+        // Without a size, a lecture of the same name from another course is a different file.
+        assertNull(DownloadHistoryRules.unkeyed(records, "Лекция 1.docx", -1, "Психология"))
+        assertNotNull(DownloadHistoryRules.unkeyed(records, "Лекция 1.docx", -1, "Культурология"))
+        // Without a size, another type of the same name on the same page, or a page without a heading, is not it either.
+        assertNull(DownloadHistoryRules.unkeyed(records, "Лекция 1.pdf", -1, "Культурология"))
+        assertNull(DownloadHistoryRules.unkeyed(listOf(records.first { it.fileName == "Лекция 1.docx" }.copy(source = "")), "Лекция 1.docx", -1, ""))
+        assertNull(DownloadHistoryRules.unkeyed(listOf(syllabus.copy(state = DownloadState.FAILED)), "Силлабус.docx", 40_255, ""))
+        assertNull(DownloadHistoryRules.unkeyed(records, "", 40_255, ""))
+    }
+
     @Test fun kindsFollowTheWindowsGroupsAndFallBackToMime() {
         assertEquals(FileKind.PDF, FileKinds.of("Лекция 5.PDF"))
         assertEquals(FileKind.WORD, FileKinds.of("method.docx"))

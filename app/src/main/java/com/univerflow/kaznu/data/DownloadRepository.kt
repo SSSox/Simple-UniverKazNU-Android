@@ -24,6 +24,7 @@ import java.io.File
 
 /** JSON codec for the local download list. Unknown or damaged entries are skipped, not trusted. */
 object DownloadHistoryCodec {
+    private val KEY = Regex("[0-9a-f]{32}")
     fun encode(records: List<DownloadRecord>): String = JSONArray().apply {
         records.forEach { record ->
             put(JSONObject().put("id", record.id).put("fileName", record.fileName).put("uri", record.uri ?: JSONObject.NULL)
@@ -52,7 +53,7 @@ object DownloadHistoryCodec {
                     finished = if (item.isNull("finished")) null else item.optLong("finished"),
                     source = item.optString("source").take(200),
                     failure = if (item.isNull("failure")) null else runCatching { DownloadFailure.valueOf(item.getString("failure")) }.getOrNull(),
-                    key = item.optString("key").takeIf { it.matches(Regex("[0-9a-f]{32}")) }.orEmpty(),
+                    key = item.optString("key").takeIf { it.matches(KEY) }.orEmpty(),
                     place = item.optString("place").takeIf { !item.isNull("place") && it.isNotEmpty() && it.length <= 1024 },
                 )
             }.getOrNull()

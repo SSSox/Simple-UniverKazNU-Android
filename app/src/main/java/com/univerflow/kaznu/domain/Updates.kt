@@ -7,8 +7,11 @@ object Updates {
     const val REPOSITORY = "https://github.com/SSSox/Simple-UniverKazNU-Android"
     const val LATEST = "$REPOSITORY/releases/latest"
     const val APK = "Simple-UniverKazNU.apk"
-    /** Automatic checks run at most this often; the Settings button checks at once. */
-    const val CHECK_INTERVAL_MS = 6 * 60 * 60_000L
+    /**
+     * Every launch checks; a return to the screen later in the same run checks again after this long, so a release
+     * published while the app sat in the background is found too. The Settings button checks at once.
+     */
+    const val CHECK_INTERVAL_MS = 30 * 60_000L
     /** A failed automatic check waits this long, so an offline phone does not retry on every return to the app. */
     const val RETRY_INTERVAL_MS = 15 * 60_000L
     const val MAX_APK_BYTES = 64L * 1024 * 1024
@@ -44,9 +47,13 @@ object Updates {
             (host == "github.com" || host.endsWith(".githubusercontent.com"))
     }.getOrDefault(false)
 
-    /** A clock moved backwards counts as due, or the next check could be years away. */
-    fun due(now: Long, checkedAt: Long) = checkedAt <= 0 || now < checkedAt || now - checkedAt >= CHECK_INTERVAL_MS
+    /** The first entry of a run is always due. A clock moved backwards counts as due, or the next check could be years away. */
+    fun due(now: Long, checkedAt: Long, firstInRun: Boolean) =
+        firstInRun || checkedAt <= 0 || now < checkedAt || now - checkedAt >= CHECK_INTERVAL_MS
 
-    /** The dialog at entry: once per run, and never for a version the student chose not to see again. */
-    fun prompt(available: String?, skipped: String?, answered: Boolean) = available != null && available != skipped && !answered
+    /**
+     * The dialog for a found version: once per run for that version ([answered], "Later"), never for the version the
+     * student chose not to see again, and at once for anything newer than either.
+     */
+    fun prompt(available: String?, skipped: String?, answered: String?) = available != null && available != skipped && available != answered
 }

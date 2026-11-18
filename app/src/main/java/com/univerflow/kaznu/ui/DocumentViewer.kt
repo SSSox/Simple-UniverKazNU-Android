@@ -227,6 +227,7 @@ class DocumentViewer(
                 return WebResourceResponse("text/plain", "UTF-8", 403, "Blocked", emptyMap(),
                     java.io.ByteArrayInputStream(byteArrayOf()))
             }
+            if (Trackers.blocked(request.url.host)) return Trackers.emptyReply()
             return null
         }
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
@@ -277,7 +278,7 @@ class DocumentViewer(
             if (isService) update(this@DocumentViewer.language)
             fitMoodle(view, url)
             panel?.loading(false)
-            CookieManager.getInstance().flush()
+            flushCookiesSoon()
             adapter?.apply(readable, this@DocumentViewer.language)
             if (SitePolicy.trusted(url) && !failed && !isService) {
                 // Legacy print links call window.close()/history.back(), which have no usable source history here.

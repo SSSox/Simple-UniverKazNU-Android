@@ -43,7 +43,8 @@ class SettingsForms(private val activity: AppCompatActivity, private val model: 
     interface Host : ScreenFeedback {
         val sessionChanging: Boolean
         fun save(form: SettingsSheetBinding, first: Boolean)
-        fun endSession(delete: Boolean)
+        /** Ends the session and removes the saved login (the one Sign out). */
+        fun signOut()
         fun manualLogin(form: SettingsSheetBinding)
         fun openDownloads()
         fun setMobileLayout(enabled: Boolean, form: SettingsSheetBinding?)
@@ -218,9 +219,9 @@ class SettingsForms(private val activity: AppCompatActivity, private val model: 
         }
     }
 
-    /** Log out, PIN and biometrics, and removing the saved credentials. */
+    /** Sign out, PIN and biometrics. */
     private fun bindSecurity(form: SettingsSheetBinding) {
-        form.logout.setOnClickListener { host.endSession(false) }
+        form.logout.setOnClickListener { confirmSignOut() }
         form.securityPinAction.setOnClickListener {
             dismiss()
             if (model.state.value.lock.enabled) lock.changePin() else lock.startPinSetup()
@@ -234,13 +235,18 @@ class SettingsForms(private val activity: AppCompatActivity, private val model: 
                 else -> lock.enrollBiometric { updateSecurity(form, first = false) }
             }
         }
-        form.delete.setOnClickListener {
-            MaterialAlertDialogBuilder(activity)
-                .setIcon(R.drawable.ic_delete)
-                .setTitle(host.text(R.string.delete_title)).setMessage(host.text(R.string.delete_message))
-                .setNegativeButton(host.text(R.string.cancel), null)
-                .setPositiveButton(host.text(R.string.delete_action)) { _, _ -> host.endSession(true) }.show().also(host::track)
-        }
+    }
+
+    /**
+     * Sign out from Settings or from the site's own Logout link. There is one kind: a sign-out that kept the login for a
+     * one-tap return protected nothing (anyone holding the phone could tap it) and left a banner over the site.
+     */
+    fun confirmSignOut() {
+        if (host.sessionChanging) return
+        MaterialAlertDialogBuilder(activity)
+            .setTitle(host.text(R.string.logout_confirm_title)).setMessage(host.text(R.string.logout_confirm_message))
+            .setNegativeButton(host.text(R.string.cancel), null)
+            .setPositiveButton(host.text(R.string.logout_action)) { _, _ -> host.signOut() }.show().also(host::track)
     }
 
     private fun themeChoices(form: SettingsSheetBinding) =
@@ -316,10 +322,6 @@ class SettingsForms(private val activity: AppCompatActivity, private val model: 
         form.logoutTitle.text = text(R.string.logout)
         form.logoutHint.text = text(R.string.logout_hint)
         form.logout.text = text(R.string.logout_action)
-        form.deleteTitleRow.text = text(R.string.delete_row)
-        form.deleteHint.text = text(R.string.delete_hint)
-        form.delete.text = text(R.string.delete_action)
-        form.delete.isEnabled = state.hasCredentials
         form.about.text = languages.of(state.language).getString(R.string.about, versionName)
         (0 until form.settingsTabs.tabCount).forEach { index ->
             form.settingsTabs.getTabAt(index)?.text = text(listOf(R.string.tab_account, R.string.tab_view, R.string.tab_app)[index])

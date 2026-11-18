@@ -3,11 +3,14 @@ package com.univerflow.kaznu.domain
 /** Course and section names are page text, reduced to at most two safe path segments under our Downloads folder. */
 object StudyFolders {
     const val ROOT = "Univer УМКД"
+    private val INVISIBLE = Regex("[\\p{Cc}\\p{Cf}\\s]+")
+    private val SEPARATOR = Regex("\\s*[/\\\\|]\\s*")
+    private val COLON = Regex("\\s*:\\s*")
+    private val RESERVED = Regex("[*?\"<>]")
 
     fun name(value: String?): String {
-        var text = value.orEmpty().replace(Regex("[\\p{Cc}\\p{Cf}\\s]+"), " ")
-            .replace(Regex("\\s*[/\\\\|]\\s*"), ", ").replace(Regex("\\s*:\\s*"), " - ")
-            .replace(Regex("[*?\"<>]"), "").trim(' ', '.', ',', '-')
+        var text = value.orEmpty().replace(INVISIBLE, " ").replace(SEPARATOR, ", ").replace(COLON, " - ")
+            .replace(RESERVED, "").trim(' ', '.', ',', '-')
         if (text.length > 64) {
             val space = text.lastIndexOf(' ', 64)
             text = text.take(if (space >= 32) space else 64)

@@ -70,15 +70,23 @@
         });
         return Math.ceil(end) || FOLD;
     }
-    function updateFold(record) {
-        if (!record.body.getBoundingClientRect().width) return; // Hidden search/source pages have no useful geometry.
-        var long = record.body.scrollHeight > LONG, open = expanded.get(record.source) === true, t = text();
-        attr(record.body, 'data-collapsed', String(long && !open));
-        if (long && !open) attr(record.body, 'style', '--univer-news-fold:' + foldHeight(record.body) + 'px');
-        setHidden(record.button, !long);
-        attr(record.button, 'aria-expanded', String(!long || open));
-        setText(record.button, long ? (open ? t.collapse : t.expand) : '');
+    // An article's fold is measured, then written. A page of news measures every article before writing any: a read
+    // after a write lays the whole page out again, once per article (over 100 ms on a phone).
+    function measureFold(record) {
+        if (!record.body.getBoundingClientRect().width) return null; // Hidden search/source pages have no useful geometry.
+        var long = record.body.scrollHeight > LONG, open = expanded.get(record.source) === true;
+        return {long, open, height:long && !open ? foldHeight(record.body) : 0};
     }
+    function writeFold(record, fold) {
+        if (!fold) return;
+        var t = text();
+        attr(record.body, 'data-collapsed', String(fold.long && !fold.open));
+        if (fold.long && !fold.open) attr(record.body, 'style', '--univer-news-fold:' + fold.height + 'px');
+        setHidden(record.button, !fold.long);
+        attr(record.button, 'aria-expanded', String(!fold.long || fold.open));
+        setText(record.button, fold.long ? (fold.open ? t.collapse : t.expand) : '');
+    }
+    function updateFold(record) { writeFold(record, measureFold(record)); }
     function unfold(record) {
         window.__univerMotionUI?.stop(record.body);
         foldObserver?.unobserve(record.body); record.button.remove();
@@ -123,11 +131,13 @@
         folds.forEach((record, row) => {
             if (!record.body.isConnected || (!state.table.contains(row) && !state.results.contains(row))) { unfold(record); folds.delete(row); }
         });
+        var records = [];
         [state.table, state.results].forEach(root => root.querySelectorAll('tr.news').forEach(row => {
             var record = folds.get(row), cell = row.cells[1]; if (!cell) return;
             if (!record) { record = createFold(row, cell); folds.set(row, record); }
-            updateFold(record);
+            records.push(record);
         }));
+        records.map(measureFold).forEach((fold, index) => writeFold(records[index], fold));
     }
     function scheduleFolds() {
         if (!state || foldTimer !== null) return;

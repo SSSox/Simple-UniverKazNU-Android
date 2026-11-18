@@ -70,6 +70,8 @@ class DownloadLauncher(private val activity: AppCompatActivity, private val mode
     private val loginRequests = mutableListOf<Bundle>()
     /** Recent «Скачать все» runs by batch, so a run an ended session refused goes on after the sign-in. */
     private val sections = LinkedHashMap<String, Bundle>()
+    /** Single files handed to the service, by address: "Download again" repeats the tap with its own page and folder. */
+    private val sent = LinkedHashMap<String, Bundle>()
     private val loginAttempts = mutableMapOf<String, Long>()
     private val notificationPermission = activity.registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
     private val storagePermission = activity.registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -83,7 +85,7 @@ class DownloadLauncher(private val activity: AppCompatActivity, private val mode
     fun save(outState: Bundle) { legacyRequest?.let { outState.putBundle(LEGACY, it) } }
 
     /** Forgets pending requests: the session that asked for them is gone. */
-    fun reset() { legacyRequest = null; loginRequests.clear(); sections.clear() }
+    fun reset() { legacyRequest = null; loginRequests.clear(); sections.clear(); sent.clear() }
 
     fun download(url: String, userAgent: String, disposition: String?, mime: String?) {
         if (!SingleSignOnPolicy.downloadAllowed(url)) {
@@ -219,9 +221,12 @@ class DownloadLauncher(private val activity: AppCompatActivity, private val mode
                 }
             }
             if (!current()) return@launch
+            sent.remove(url); sent[url] = request
+            while (sent.size > 8) sent.remove(sent.keys.first())
             try {
                 DownloadService.start(activity, url, request.getString("agent").orEmpty(), request.getString("referer"),
-                    request.getString("disposition"), request.getString("mime"), model.state.value.language, request.getString("source").orEmpty(), request.getString("folder"))
+                    request.getString("disposition"), request.getString("mime"), model.state.value.language, request.getString("source").orEmpty(),
+                    request.getString("folder"), again = again)
                 host.downloadStarted()
                 askForNotifications()
             } catch (cancelled: CancellationException) { throw cancelled }
@@ -236,6 +241,13 @@ class DownloadLauncher(private val activity: AppCompatActivity, private val mode
         if (preferences.getBoolean("notifications_requested", false)) return
         preferences.edit { putBoolean("notifications_requested", true) }
         notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+
+    /** The service found [url] already saved as [recordId] (a file from before downloads were keyed): the same question. */
+    fun offerPresent(recordId: String, url: String) {
+        val record = DownloadRepository.get(activity).records.value.firstOrNull { it.id == recordId } ?: return
+        if (host.sessionChanging || model.state.value.locked || activity.isFinishing || activity.isDestroyed) return
+        offerDownloaded(record, sent[url] ?: request(url, host.userAgent, null, null))
     }
 
     /** "Already downloaded": open the saved copy, or download it again on request. */

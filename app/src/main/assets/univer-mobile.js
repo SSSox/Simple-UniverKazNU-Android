@@ -685,6 +685,9 @@
             '--univer-frame-height': Math.max(100, height - 100) + 'px'};
         Object.keys(values).forEach(function (key) { if (root.style.getPropertyValue(key) !== values[key]) root.style.setProperty(key, values[key]); });
     }
+    // The dialog sizes are CSS only: a pinch-zoom pan or the keyboard moving the visible viewport starts no adapter pass.
+    // A real resize still does, through the window's own event.
+    function viewportChanged() { quiet(dialogViewport); }
     // Replaces the text of a site text node; Original restores the recorded value.
     function rewriteText(node, value) {
         if (!punctuation.has(node)) punctuation.set(node, node.data);
@@ -1467,8 +1470,8 @@
         observer.observe(document.documentElement, OBSERVED);
         window.addEventListener('resize', schedule);
         window.addEventListener('univer-frame-ready', schedule);
-        window.visualViewport?.addEventListener('resize', dialogViewport);
-        window.visualViewport?.addEventListener('scroll', dialogViewport);
+        window.visualViewport?.addEventListener('resize', viewportChanged);
+        window.visualViewport?.addEventListener('scroll', viewportChanged);
         document.addEventListener('click', dismissMenu); document.addEventListener('keydown', dismissMenu);
     }
     function restoreViewport() {
@@ -1517,8 +1520,8 @@
         document.removeEventListener('click', dismissMenu); document.removeEventListener('keydown', dismissMenu);
         window.removeEventListener('resize', schedule);
         window.removeEventListener('univer-frame-ready', schedule);
-        window.visualViewport?.removeEventListener('resize', dialogViewport);
-        window.visualViewport?.removeEventListener('scroll', dialogViewport);
+        window.visualViewport?.removeEventListener('resize', viewportChanged);
+        window.visualViewport?.removeEventListener('scroll', viewportChanged);
         ['--univer-dialog-top','--univer-dialog-height','--univer-frame-height'].forEach(function (key) { document.documentElement.style.removeProperty(key); });
         document.documentElement.classList.remove('univer-mobile','univer-app-document','univer-native-chrome','univer-app-schedule-page','univer-app-unified');
         window.__univerMaterialsV1?.release();
@@ -1570,8 +1573,9 @@
         if (value && !enabled) enable();
         else if (!value && enabled) disable(language);
         adapt();
-        // «Наверх» after a long scroll, sized for the thumb and kept in its corner; Original has none.
-        window.__univerTopV1?.configure(enabled, language, {edge:16, height:48, anchored:true});
+        // «Наверх» after a long scroll, sized for the thumb and kept still in its corner, a little above the bottom edge;
+        // Original has none.
+        window.__univerTopV1?.configure(enabled, language, {edge:16, lift:28, height:48, anchored:true});
     }
     window.__univerMobileV1 = {setEnabled:setEnabled, mutate:function (action) {
         observer?.disconnect();

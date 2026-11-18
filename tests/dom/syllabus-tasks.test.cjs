@@ -548,3 +548,68 @@ test('arrows beside the week list step to the neighbouring week through the site
   assert.equal(p.d.querySelector('.univer-app-week-nav'), null); assert.equal(p.d.getElementById('weekSelect'), select); assert.notEqual(select.parentElement.className, 'univer-app-week-nav');
   p.close();
 });
+
+// A layout read with DOM writes still queued is a forced layout of the whole page. Redrawing the week's classes after
+// the syllabi arrive reads every height first, writes every class, then reads again: a handful of forced layouts per
+// redraw, not two or three per class.
+test('redrawing the classes lays the page out a few times per redraw, not once per class', async () => {
+  // A full week: the same three courses every day, eighteen classes.
+  const week = [0, 1, 2].map(row => [0, 1, 2, 3, 4, 5].map(() => lessons[row][0]));
+  const p = page(schedule(week), { routes: routes() });
+  p.w.Element.prototype.animate = function () { return { cancel() {}, finished: Promise.resolve() }; };
+  apply(p); await until(done(p));
+  const pending = new p.w.MutationObserver(() => {});
+  pending.observe(p.d, { childList: true, subtree: true, attributes: true, characterData: true });
+  let reads = 0, forced = 0;
+  const count = () => { reads++; if (pending.takeRecords().length) forced++; };
+  const rect = p.w.Element.prototype.getBoundingClientRect;
+  p.w.Element.prototype.getBoundingClientRect = function () { count(); return { width: 100, height: 30 + this.childElementCount, top: 0, left: 0, right: 100, bottom: 30 }; };
+  const scroll = Object.getOwnPropertyDescriptor(p.w.Element.prototype, 'scrollHeight');
+  Object.defineProperty(p.w.Element.prototype, 'scrollHeight', { configurable: true, get() { count(); return 40; } });
+  click(p, p.d.querySelector('.univer-app-syl-refresh'));
+  await until(done(p));
+  pending.disconnect();
+  p.w.Element.prototype.getBoundingClientRect = rect;
+  if (scroll) Object.defineProperty(p.w.Element.prototype, 'scrollHeight', scroll); else delete p.w.Element.prototype.scrollHeight;
+  const cards = p.d.querySelectorAll('.univer-app-lesson').length;
+  assert.ok(reads > cards, `the redraw measured the classes (${reads} reads for ${cards} classes)`);
+  assert.ok(forced < cards, `forced layouts: ${forced} of ${reads} reads for ${cards} classes`);
+  assert.deepEqual(p.errors, []);
+  apply(p, false); p.close();
+});
+
+test('a redraw that fails while it reads a class still draws what it queued: the work of the week folds', async () => {
+  const p = page(schedule(lessons), { routes: routes() });
+  apply(p); await until(done(p));
+  const fold = () => p.d.querySelector('.univer-app-syl-panel .univer-app-syl-fold');
+  const body = () => p.d.querySelector('.univer-app-syl-sro-body');
+  assert.equal(body().hidden, false);
+  // The first class's task box fails once when the redraw reads it.
+  const block = p.d.querySelector('.univer-app-lesson .univer-app-syl-task');
+  let armed = true;
+  Object.defineProperty(block, 'hidden', { configurable: true,
+    get() { if (armed) { armed = false; throw new Error('synthetic read failure'); } return this.hasAttribute('hidden'); },
+    set(value) { this.toggleAttribute('hidden', !!value); } });
+  try { click(p, fold()); } catch (_) {}
+  assert.equal(fold().getAttribute('aria-expanded'), 'false');
+  assert.equal(body().hidden, true, 'the panel change queued before the failure is drawn');
+  apply(p, false); p.close();
+});
+
+test('a class whose redraw fails to write does not stop the other classes from being redrawn', async () => {
+  const week = [0, 1, 2].map(row => [0, 1, 2].map(() => lessons[row][0]));
+  const p = page(schedule(week), { routes: routes() });
+  apply(p); await until(done(p));
+  const blocks = Array.from(p.d.querySelectorAll('.univer-app-syl-task'));
+  assert.ok(blocks.length >= 3, 'blocks ' + blocks.length);
+  const text = Object.getOwnPropertyDescriptor(p.w.Node.prototype, 'textContent');
+  let armed = true;
+  Object.defineProperty(blocks[0], 'textContent', { configurable: true,
+    get() { return text.get.call(this); },
+    set(value) { if (armed) { armed = false; throw new Error('synthetic write failure'); } text.set.call(this, value); } });
+  try { click(p, p.d.querySelector('.univer-app-syl-refresh')); } catch (_) {}
+  const states = blocks.map(b => b.dataset.state);
+  assert.ok(states.slice(1).every(s => s === 'loading'), 'the other classes were redrawn: ' + JSON.stringify(states));
+  assert.ok(p.errors.some(e => /synthetic write failure/.test(e)), 'the failure is still reported');
+  apply(p, false); p.close();
+});

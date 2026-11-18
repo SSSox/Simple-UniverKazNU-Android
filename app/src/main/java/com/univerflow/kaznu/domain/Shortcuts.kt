@@ -23,10 +23,14 @@ sealed interface ShortcutRequest {
 /** Port of the Windows Shortcuts rules, so both apps accept and keep the same links. */
 object Shortcuts {
     const val LIMIT = 24
+    /** Расписание, Успеваемость, Транскрипт, УМКД, СДО Moodle and Е-услуги. */
+    private const val BUILT_IN_TILES = 6
     const val MESSAGE_PREFIX = "univer-pin:"
     private const val TITLE_LIMIT = 120
     private const val ORIGIN_HOST = "univer.kaznu.kz"
     private val control = Regex("\\p{Cc}")
+    private val ACCOUNT = Regex("^/user/(logout|login)/?$", RegexOption.IGNORE_CASE)
+    private val BREAKS = Regex("[\\p{Cc}\\p{Zl}\\p{Zp}\\s]+")
     private val fixedPaths = Regex("^/(student/(myschedule|attendance/full|transcript|umkd)|user/loginMoodle|ssc(/UserServiceList|/StatementList)?)$", RegexOption.IGNORE_CASE)
 
     private fun uri(url: String?): URI? = runCatching { URI(url ?: return null) }.getOrNull()?.takeIf { it.isAbsolute }
@@ -44,7 +48,7 @@ object Shortcuts {
     fun allowed(url: String?): Boolean {
         if (url.isNullOrEmpty() || url.length > 2048 || control.containsMatchIn(url)) return false
         val uri = uri(url) ?: return false
-        if (trusted(uri)) return !Regex("^/user/(logout|login)/?$", RegexOption.IGNORE_CASE).matches(uri.path.orEmpty())
+        if (trusted(uri)) return !ACCOUNT.matches(uri.path.orEmpty())
         // Off-site useful links open in the user's browser; only plain web addresses qualify.
         return (uri.scheme == "https" || uri.scheme == "http") && uri.userInfo == null && !uri.host.isNullOrEmpty() &&
             !uri.host.equals(ORIGIN_HOST, true)
@@ -52,7 +56,7 @@ object Shortcuts {
 
     fun cleanTitle(title: String?): String {
         // U+2028/U+2029 are line breaks, not \\s, and they terminate a string in older JavaScript.
-        val value = (title ?: "").replace(Regex("[\\p{Cc}\\p{Zl}\\p{Zp}\\s]+"), " ").trim()
+        val value = (title ?: "").replace(BREAKS, " ").trim()
         return if (value.length > TITLE_LIMIT) value.take(TITLE_LIMIT).trimEnd() else value
     }
 
@@ -79,6 +83,9 @@ object Shortcuts {
         val uri = uri(url) ?: return null
         return "https://$ORIGIN_HOST${uri.path.orEmpty().trimEnd('/').lowercase()}"
     }
+
+    /** How many tiles the home screen shows: the built-in ones left and the pins (which never repeat them). */
+    fun tiles(state: HomeShortcuts) = (BUILT_IN_TILES - normalizeHidden(state.hidden).size).coerceAtLeast(0) + normalize(state.pins).size
 
     /** Removed built-in tiles; anything that is not one is dropped. */
     fun normalizeHidden(hidden: List<String>): List<String> = hidden.mapNotNull(::canonicalFixed).distinct()

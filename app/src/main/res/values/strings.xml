@@ -22,9 +22,8 @@
     <string name="save">Сохранить</string>
     <string name="save_enter">Сохранить и войти</string>
     <string name="logout">Выйти из аккаунта</string>
-    <string name="delete_title">Удалить логин и пароль?</string>
-    <string name="delete_message">Сессия будет завершена. Для следующего входа потребуется снова ввести данные.</string>
-    <string name="delete_action">Удалить</string>
+    <string name="logout_confirm_title">Выйти из аккаунта?</string>
+    <string name="logout_confirm_message">Сеанс завершится, а логин, пароль и PIN-код будут удалены с этого телефона. Чтобы войти снова, введите логин и пароль заново.</string>
     <string name="cancel">Отмена</string>
     <string name="storage_error">Не удалось прочитать или сохранить данные. Введите их заново или попробуйте ещё раз.</string>
     <string name="network_error">Не удалось открыть Univer. Проверьте подключение и попробуйте ещё раз.</string>
@@ -261,9 +260,7 @@
     <string name="tab_app">Приложение</string>
     <string name="language_hint">Для приложения и сайта</string>
     <string name="logout_action">Выйти</string>
-    <string name="logout_hint">Автоматический вход отключится</string>
-    <string name="delete_row">Данные входа на этом устройстве</string>
-    <string name="delete_hint">Логин и пароль будут удалены</string>
+    <string name="logout_hint">Логин, пароль и PIN-код удалятся с телефона</string>
     <string name="about">Univer для Android %1$s. Неофициальное приложение, не связано с КазНУ им. аль-Фараби. Вход, данные и формы остаются на сайте univer.kaznu.kz.</string>
     <string name="stage_day">Понедельник</string>
     <string name="stage_now">Сейчас</string>
@@ -287,4 +284,32 @@
     <string name="link_failed">Страница не открылась. Проверьте подключение и попробуйте ещё раз.</string>
     <string name="link_certificate">У сайта недействительный сертификат, поэтому страница не открыта.</string>
     <string name="link_blocked">Этот адрес нельзя открыть в приложении.</string>
+    <!-- Grade report: the journal's «Поделиться успеваемостью», drawn as PDF or PNG. -->
+    <string name="report_dialog_title">Поделиться успеваемостью</string>
+    <string name="report_pdf">PDF-файл: для печати и почты</string>
+    <string name="report_png">Картинка PNG: для мессенджеров</string>
+    <string name="report_print">Распечатать</string>
+    <string name="report_error">Не удалось подготовить отчёт об успеваемости</string>
+    <string name="report_title">Успеваемость студента</string>
+    <string name="report_term_autumn">%1$d–%2$d учебный год, осенний семестр</string>
+    <string name="report_term_spring">%1$d–%2$d учебный год, весенний семестр</string>
+    <string name="report_term_summer">%1$d–%2$d учебный год, летний семестр</string>
+    <string name="report_made">Сформировано %1$s по данным univer.kaznu.kz</string>
+    <string name="report_guide_title">Как читать отчёт</string>
+    <string name="report_guide" formatted="false">РК — рубежный контроль, итог за часть семестра. Рядом указаны набранные баллы и максимум. Полоса показывает долю от максимума, метки на ней — пороги 50, 70 и 90&#160;%. Точные правила допуска и стипендии устанавливает университет.</string>
+    <string name="report_legend_low" formatted="false">ниже 50&#160;%: недобор</string>
+    <string name="report_legend_pass" formatted="false">50–69&#160;%: допуск есть, стипендия под риском</string>
+    <string name="report_legend_good" formatted="false">70–89&#160;%: хорошо</string>
+    <string name="report_legend_top" formatted="false">90&#160;% и выше: отлично</string>
+    <string name="report_band_low">Недобор</string>
+    <string name="report_band_pass">Есть допуск</string>
+    <string name="report_band_good">Хорошо</string>
+    <string name="report_band_top">Отлично</string>
+    <string name="report_short">До %1$s не хватает %2$s</string>
+    <string name="report_reached">Все пороги пройдены</string>
+    <string name="report_out_of">%1$s из %2$s</string>
+    <string name="report_no_grade">оценки пока нет</string>
+    <string name="report_no_grades">Оценки пока не выставлены</string>
+    <string name="report_continued">%1$s (продолжение)</string>
+    <string name="report_file">Успеваемость %1$s</string>
 </resources>

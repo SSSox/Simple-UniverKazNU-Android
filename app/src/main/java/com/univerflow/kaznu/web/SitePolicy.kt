@@ -42,6 +42,15 @@ object SitePolicy {
     fun logout(url: String?): Boolean = trusted(url) && runCatching {
         URI(url!!).rawPath in setOf("/user/logout", "/user/logout/")
     }.getOrDefault(false)
+    /**
+     * Where a session starts. The site keeps its language in the server session (ASP.NET_SessionId), and a new one answers
+     * in Kazakh: without that cookie (first launch, after signing out) the start goes through the site's own flag link,
+     * which sets [language] and redirects to the start page, so no Kazakh page shows first. An existing session keeps
+     * its language: an unconditional switch would add a request and a redirect to every launch.
+     */
+    fun startUrl(cookies: String?, language: AppLanguage): String =
+        if (cookies.orEmpty().split(';').any { it.trim().startsWith("ASP.NET_SessionId=") }) HOME
+        else "$ORIGIN/lang/change/${language.siteCode}/"
     /** Only the site's real header flag endpoint changes the application language. */
     fun languageChange(url: String?): AppLanguage? = if (!trusted(url)) null else runCatching {
         val code = LANGUAGE_CHANGE.matchEntire(URI(url!!).rawPath)?.groupValues?.get(1)

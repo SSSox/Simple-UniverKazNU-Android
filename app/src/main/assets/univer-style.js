@@ -66,6 +66,8 @@
   --u-ink:#16283b; --u-text:#2a3d51; --u-muted:#5b6b7c; --u-line:#dfe5ec; --u-line-strong:#c8d3df;
   --u-bg:#f1f4f7; --u-surface:#fff; --u-surface-2:#f7f9fb;
   --u-teal:#0f766e; --u-teal-soft:#e3f3ef; --u-danger:#b42318; --u-danger-soft:#fdeceb;
+  --u-band-low:#d77a70; --u-band-low-ink:#a2453d; --u-band-low-soft:#fbf3f2; --u-band-pass:#cc9a4c; --u-band-pass-ink:#87591a; --u-band-pass-soft:#faf5ec;
+  --u-band-good:#5fa67f; --u-band-good-ink:#2e6f4c; --u-band-good-soft:#eef6f1; --u-band-top:#6b97cc; --u-band-top-ink:#30629c; --u-band-top-soft:#eef3f9;
   --u-shadow:none;
   --u-shadow-pop:0 12px 36px rgba(16,40,70,.12),0 2px 6px rgba(16,40,70,.06);
   --u-font:Roboto,'Noto Sans','Segoe UI',system-ui,sans-serif;
@@ -905,8 +907,13 @@ html:root:root.univer-mobile .univer-app-materials svg.star:active { transform:s
 /* Five stars stay on one line on narrow phones: the side padding gives way first (a share of the row's width), the touch height stays. */
 html:root:root.univer-mobile .univer-app-materials .univer-app-material-details .stars { flex-wrap:nowrap; }
 html:root:root.univer-mobile .univer-app-materials .univer-app-material-details svg.star { padding:13px min(13px, calc((100% - 115px) / 10)); }
-/* Room after the last row of a page for «Наверх» (48 px over a 16 px edge, kept in its corner): the last row scrolls clear of it. */
-html:root.univer-mobile:not(.univer-app-document) body::after { content:''; display:block; height:72px; }
+/* Room after the last row of a page for «Наверх» (48 px, 28 px over the bottom edge, kept in its corner): the last row scrolls clear of it. */
+html:root.univer-mobile:not(.univer-app-document) body::after { content:''; display:block; height:92px; }
+/* A row's action (Е-услуги → Услуги: «Подать заявку») ends before the button's column, so the button never covers it at any
+   scroll stop: the window less the row's start (40 px), the button's edge and gap (24 px) and the widest label, «Back to top»
+   (58 px of icon and padding and 5.4em of text, growing with the text size as the button does). A longer label wraps.
+   Only below 900 px: wider, the rows are a table whose action cell is as narrow as its label, and wrapping would break it. */
+@media (max-width:899.98px) { html:root.univer-mobile:not(.univer-app-document) a.univer-app-action-link { max-width:calc(100vw - 122px - 5.4em); white-space:normal!important; } }
 html:root.univer-mobile .univer-app-overview-upnext { display:flex; flex-direction:column; gap:2px; margin:6px 0!important; padding:10px 14px; border-radius:12px; background:var(--u-teal-soft,#e3f3ef); }
 html:root.univer-mobile .univer-app-overview-upnext>b { color:var(--u-teal,#0f766e); font-size:15px; font-weight:600; line-height:1.35; }
 html:root.univer-mobile .univer-app-overview-upnext>span { color:var(--u-ink,#16283b); font-size:13px; line-height:1.4; overflow-wrap:anywhere; }
@@ -1529,6 +1536,7 @@ html:root:root:root.univer-mobile .univer-app-overview-courses>li, html:root:roo
 html:root:root:root:root.univer-mobile #l4 .univer-app-overview-courses>li>a.univer-app-overview-course-link, html:root:root:root.univer-mobile .univer-app-overview-courses>li>a.univer-app-overview-course-link { display:block!important; flex:1 1 auto; min-width:0; min-height:0!important; padding:0!important; line-height:1.3!important; }
 /* Journal filters: subjects as chips in a row that scrolls sideways, class types as a segment under their name. */
 html:root:root:root:root.univer-mobile #l4 .univer-app-attendance-tools { margin:0 0 12px!important; padding:0!important; border:0!important; background:none!important; box-shadow:none!important; }
+html:root:root:root:root.univer-mobile #l4 button.univer-app-attendance-report { margin:12px 0 0!important; }
 html:root:root:root:root.univer-mobile #l4 :is(p.univer-app-attendance-course-caption,p.univer-app-attendance-filter-caption) { display:block; margin:0 0 6px!important; padding:0; color:var(--u-ink)!important; font-size:14px!important; font-weight:600; }
 html:root:root:root:root.univer-mobile #l4 p.univer-app-attendance-filter-caption { margin-top:12px!important; }
 html:root:root:root:root.univer-mobile #l4 .univer-app-attendance-course-list { display:flex; flex-wrap:nowrap!important; gap:6px; margin:0 -12px; padding:0 12px 2px; overflow-x:auto; scrollbar-width:none; overscroll-behavior-x:contain; }
@@ -1555,11 +1563,6 @@ html:root:root:root:root.univer-mobile #l4 .univer-app-score-head small { displa
 html:root:root:root:root.univer-mobile #l4 .univer-app-score-table .univer-app-type-row { gap:0; flex-wrap:nowrap; min-height:40px; padding:4px 14px!important; }
 html:root:root:root:root.univer-mobile #l4 .univer-app-type-label { min-width:0; color:var(--u-ink); font-size:15px; font-weight:500; }
 html:root:root:root:root.univer-mobile #l4 .univer-app-score-table .univer-app-score { display:block; position:static; min-width:0!important; padding:0!important; border:0; border-radius:0; background:none; box-shadow:none; color:var(--u-ink); font-size:15px; font-weight:500; font-variant-numeric:tabular-nums; }
-html:root:root:root:root.univer-mobile #l4 .univer-app-score-total { min-height:48px!important; }
-html:root:root:root:root.univer-mobile #l4 .univer-app-score-total>:first-child { color:var(--u-ink); font-size:15px; font-weight:700; }
-html:root:root:root:root.univer-mobile #l4 .univer-app-score-total .univer-app-score-value { display:block; color:var(--u-ink); font-size:17px; font-weight:700; line-height:1.2; }
-html:root:root:root:root.univer-mobile #l4 .univer-app-score-total .univer-app-score-bar { position:relative; display:block; left:auto; right:auto; bottom:auto; height:3px; margin:3px 0 0 auto; width:48px; border-radius:2px; overflow:hidden; background:var(--u-brand-line); }
-html:root:root:root:root.univer-mobile #l4 .univer-app-score-total .univer-app-score-bar::after { border-radius:2px; }
 html:root:root:root:root.univer-mobile #l4 p.univer-app-attendance-nothing, html:root:root:root:root.univer-mobile #l4 .univer-app-attendance-summary>.univer-app-type-row, html:root:root:root:root.univer-mobile #l4 p.univer-app-attendance-overall-value { margin:0!important; padding:10px 14px!important; }
 html:root:root:root:root.univer-mobile #l4 button.univer-app-attendance-details-toggle { display:flex!important; align-items:center; width:100%; height:44px!important; min-height:44px!important; margin:0!important; padding:0 14px!important; border:0!important; border-top:1px solid var(--u-line)!important; border-radius:0!important; background:none!important; box-shadow:none!important; color:var(--u-brand)!important; font-size:14px!important; font-weight:600!important; }
 html:root:root:root:root.univer-mobile #l4 .univer-app-lesson-label { gap:2px 10px; margin:12px 0 6px; }
@@ -1610,11 +1613,48 @@ html:root:root:root:root.univer-mobile #tools .univer-app-category li:has(>.univ
 html:root:root:root:root.univer-mobile #tools .univer-app-category li:has(>.univer-app-pin-row~.univer-app-pin-row)>.univer-app-pin-row { min-height:48px; box-sizing:border-box; padding:0 2px 0 0; border:1px solid var(--u-line); border-radius:10px; background:var(--u-surface); }
 html:root:root:root:root.univer-mobile #tools .univer-app-category li:has(>.univer-app-pin-row~.univer-app-pin-row)>.univer-app-pin-row:has(a[aria-current=page]) { border-color:var(--u-brand); background:var(--u-brand-soft); }
 html:root:root:root:root.univer-mobile #tools .univer-app-category li:has(>.univer-app-pin-row~.univer-app-pin-row)>.univer-app-pin-row:active { background:var(--u-brand-soft); }
+/* Score bands (dom.scoreBand): below 50 short, 50–69 admitted, 70–89 good, 90 and up excellent. The colour always
+   comes with words (band name, "До 70 не хватает 7", the legend), so it is never the only signal. Muted on purpose:
+   --u-band fills bars, --u-band-ink colours words (4.5:1 and up on --u-band-soft), --u-band-soft is the background. */
+html:root:root:root:root.univer-mobile [data-band=low] { --u-band:var(--u-band-low); --u-band-ink:var(--u-band-low-ink); --u-band-soft:var(--u-band-low-soft); }
+html:root:root:root:root.univer-mobile [data-band=pass] { --u-band:var(--u-band-pass); --u-band-ink:var(--u-band-pass-ink); --u-band-soft:var(--u-band-pass-soft); }
+html:root:root:root:root.univer-mobile [data-band=good] { --u-band:var(--u-band-good); --u-band-ink:var(--u-band-good-ink); --u-band-soft:var(--u-band-good-soft); }
+html:root:root:root:root.univer-mobile [data-band=top] { --u-band:var(--u-band-top); --u-band-ink:var(--u-band-top-ink); --u-band-soft:var(--u-band-top-soft); }
+html:root:root:root:root.univer-mobile .univer-app-overview-score[data-band] { background:var(--u-band-soft)!important; border-color:transparent!important; }
+html:root:root:root:root.univer-mobile .univer-app-overview-score-bar[data-band] { background:var(--u-band)!important; }
+html:root:root:root:root.univer-mobile #l4 .univer-app-score[data-band] .univer-app-score-bar { background:var(--u-band-soft)!important; }
+html:root:root:root:root.univer-mobile #l4 .univer-app-score-bar[data-band]::after { background:var(--u-band)!important; }
+/* A course's totals: each control period against the marks 50, 70 and 90, with how far the next mark is. */
+html:root:root:root:root.univer-mobile #l4 .univer-app-progress-list { grid-column:1/-1; display:grid; gap:6px; min-width:0; padding:10px 14px; }
+html:root:root:root:root.univer-mobile #l4 .univer-app-score-table+.univer-app-progress-list { border-top:1px solid var(--u-line); }
+html:root:root:root:root.univer-mobile #l4 p.univer-app-progress-title { margin:0!important; color:var(--u-muted); font-size:var(--u-fs-meta)!important; font-weight:600; line-height:1.4!important; }
+html:root:root:root:root.univer-mobile #l4 .univer-app-progress { display:grid; gap:4px; min-width:0; padding:10px 14px 8px; border:1px solid var(--u-line); border-radius:10px; background:var(--u-surface); }
+html:root:root:root:root.univer-mobile #l4 .univer-app-progress:not([data-band]) { padding:0 14px; border-color:transparent; background:none; }
+html:root:root:root:root.univer-mobile #l4 .univer-app-progress:not([data-band]) .univer-app-progress-value>b { font-size:var(--u-fs-body); }
+html:root:root:root:root.univer-mobile #l4 .univer-app-progress[data-band] { border-color:transparent; background:var(--u-band-soft); }
+html:root:root:root:root.univer-mobile #l4 .univer-app-progress-head { display:flex; flex-wrap:wrap; align-items:baseline; gap:2px 10px; }
+html:root:root:root:root.univer-mobile #l4 .univer-app-progress-label { color:var(--u-ink); font-size:var(--u-fs-body); font-weight:600; }
+html:root:root:root:root.univer-mobile #l4 .univer-app-progress-band { color:var(--u-band-ink); font-size:var(--u-fs-meta); font-weight:600; }
+html:root:root:root:root.univer-mobile #l4 .univer-app-progress-value { margin-left:auto; color:var(--u-muted); font-size:var(--u-fs-meta); font-variant-numeric:tabular-nums; white-space:nowrap; }
+html:root:root:root:root.univer-mobile #l4 .univer-app-progress-value>b { color:var(--u-ink); font-size:var(--u-fs-section); font-weight:600; }
+html:root:root:root:root.univer-mobile #l4 .univer-app-progress-track { position:relative; height:10px; margin:2px 0 0; border-radius:999px; background:var(--u-surface); box-shadow:inset 0 0 0 1px var(--u-line); overflow:hidden; }
+html:root:root:root:root.univer-mobile #l4 .univer-app-progress-fill { position:absolute; top:0; bottom:0; left:0; width:var(--univer-score); border-radius:inherit; background:var(--u-band); }
+html:root:root:root:root.univer-mobile #l4 .univer-app-progress-track>i { position:absolute; z-index:1; top:0; bottom:0; left:var(--at); width:2px; margin-left:-1px; background:var(--u-line-strong); }
+html:root:root:root:root.univer-mobile #l4 .univer-app-progress-track>i.univer-app-progress-passed { background:var(--u-surface); }
+html:root:root:root:root.univer-mobile #l4 .univer-app-progress-scale { position:relative; height:14px; color:var(--u-muted); font-size:var(--u-fs-caption); line-height:14px; font-variant-numeric:tabular-nums; }
+html:root:root:root:root.univer-mobile #l4 .univer-app-progress-scale>span { position:absolute; left:var(--at); transform:translateX(-50%); }
+html:root:root:root:root.univer-mobile #l4 p.univer-app-progress-next { display:block!important; margin:0!important; color:var(--u-text); font-size:var(--u-fs-meta)!important; line-height:1.4!important; }
+html:root:root:root:root.univer-mobile #l4 p.univer-app-band-legend { display:flex!important; flex-wrap:wrap; gap:4px 14px; margin:4px 0 10px!important; padding:10px 14px 0; border-top:1px solid var(--u-line); color:var(--u-muted); font-size:var(--u-fs-caption)!important; line-height:1.5!important; }
+html:root:root:root:root.univer-mobile #l4 .univer-app-band-legend-title { flex-basis:100%; color:var(--u-ink); font-weight:600; }
+html:root:root:root:root.univer-mobile #l4 .univer-app-band-legend-item { display:inline-flex; align-items:center; gap:6px; }
+html:root:root:root:root.univer-mobile #l4 .univer-app-band-legend-item::before { content:''; flex:none; width:10px; height:10px; border-radius:3px; background:var(--u-band); }
 :root.univer-mobile.univer-app-dark { color-scheme:dark;
   --u-brand:#8ebbf0; --u-brand-strong:#b5d3f6; --u-brand-soft:#1a2b40; --u-brand-line:#34507a;
   --u-ink:#e6ecf3; --u-text:#cfd8e2; --u-muted:#9fadbc; --u-line:#2b3746; --u-line-strong:#3b4a5b;
   --u-bg:#0f151c; --u-surface:#17202a; --u-surface-2:#1d2733;
   --u-teal:#5fd0c2; --u-teal-soft:#13302c; --u-danger:#ff8c82; --u-danger-soft:#3a1d1b;
+  --u-band-low:#b06f68; --u-band-low-ink:#d99088; --u-band-low-soft:#2a2020; --u-band-pass:#a3824c; --u-band-pass-ink:#cfa86a; --u-band-pass-soft:#2a2519;
+  --u-band-good:#558c6c; --u-band-good-ink:#80bb98; --u-band-good-soft:#1b2821; --u-band-top:#6487b2; --u-band-top-ink:#93b3d9; --u-band-top-soft:#1c2531;
   --u-shadow-pop:0 12px 36px rgba(0,0,0,.5),0 2px 6px rgba(0,0,0,.35);
   --u-brand-fill:#1b5fa6; --u-brand-strong-fill:#154d88; --u-muted-fill:#5b6b7c; --u-teal-fill:#0f766e; --u-danger-fill:#b42318;
   --u-select-arrow:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239fadbc' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");

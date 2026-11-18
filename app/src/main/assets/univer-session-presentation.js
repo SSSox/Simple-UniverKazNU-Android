@@ -7,6 +7,10 @@
     var timeoutMillis = 25000;
     var loginTimer, loginReleased = false;
     var loginPage = /^\/user\/login(?:moodle)?\/?$/i.test(location.pathname);
+    // The site keeps #auth_modal in every page with an inline display:none until simplemodal moves it into its container
+    // and shows it. Until then it is hidden without asking layout: each check was a forced style recalculation, run
+    // after every DOM change of the page (9 to 12 per page load).
+    function parked(box) { return !!box && box.style.display === 'none' && !document.getElementById('simplemodal-container'); }
     function visible(element) {
         if (!element || element.hidden || !element.getClientRects().length) return false;
         var css = getComputedStyle(element);
@@ -14,7 +18,7 @@
     }
     function authForm() {
         var form = document.querySelector('#auth_modal form#modal_auth_frm');
-        if (!form) return null;
+        if (!form || parked(form.closest('#auth_modal'))) return null;
         try { if (new URL(form.action, document.URL).origin !== origin) return null; } catch (_) { return null; }
         var login = form.querySelector('input#modal_auth_login[type="text"][name="login"]');
         var password = form.querySelector('input#modal_auth_pass[type="password"][name="password"]');
@@ -28,7 +32,7 @@
     // or it comes back.
     function arrivingDialog() {
         var box = document.readyState === 'loading' ? document.getElementById('auth_modal') : null;
-        return visible(box) ? box : null;
+        return !parked(box) && visible(box) ? box : null;
     }
     function restore(element, allowAgain) {
         var record = records.get(element);

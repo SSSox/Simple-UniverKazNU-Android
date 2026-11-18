@@ -308,10 +308,11 @@
 
     /* Grades and requests lists. */
     function scoreChip(score) {
-        var chip = el('span', 'univer-app-overview-score'), ratio = score.max && score.value ? Number(score.value.replace(',', '.')) / Number(score.max.replace(',', '.')) : NaN;
+        var chip = el('span', 'univer-app-overview-score'), band = dom.scoreBand(score.value, score.max);
         chip.setAttribute('role', 'img'); chip.setAttribute('aria-label', score.label + ': ' + (score.value || text().none) + (score.max ? ' / ' + score.max : ''));
         chip.append(el('span', 'univer-app-overview-score-label', score.label), el('span', 'univer-app-overview-score-value', score.value || text().none));
-        if (isFinite(ratio)) { var bar = el('span', 'univer-app-overview-score-bar'); bar.style.setProperty('--univer-score', Math.round(Math.max(0, Math.min(1, ratio)) * 100) + '%'); chip.appendChild(bar); }
+        // The bar's colour says where the grade stands against 50, 70 and 90 (the journal explains the colours).
+        if (band) { var bar = el('span', 'univer-app-overview-score-bar'); bar.style.setProperty('--univer-score', band.percent + '%'); chip.dataset.band = bar.dataset.band = band.band; chip.appendChild(bar); }
         Array.from(chip.children).forEach(function (c) { c.setAttribute('aria-hidden', 'true'); });
         return chip;
     }

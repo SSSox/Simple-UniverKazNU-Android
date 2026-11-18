@@ -37,6 +37,25 @@ class DownloadSearchTest {
         assertEquals("", DownloadKeys.of("relative/path"))
     }
 
+    @Test fun aStaticDocumentOfUniverIgnoresTheVersionTheSiteAddsOnEveryRender() {
+        // «Документы» link /Content/…pdf?v=<ticks>, and the ticks change on every load of the page (seen on 18 Nov 2026).
+        val doc = "https://univer.kaznu.kz/Content/instructions/%D0%9F%D0%BE%D0%BB%D0%B8%D1%82%D0%B8%D0%BA%D0%B0-2026.pdf"
+        assertEquals(DownloadKeys.of("$doc?v=639305994485158777"), DownloadKeys.of("$doc?v=639305994486748721"))
+        assertEquals(DownloadKeys.of(doc), DownloadKeys.of("$doc?v=1#page=3"))
+        assertEquals(DownloadKeys.of(doc), DownloadKeys.of("$doc/?v=2"))
+        assertNotEquals(DownloadKeys.of(doc), DownloadKeys.of("https://univer.kaznu.kz/Content/instructions/other.pdf"))
+        // Only the version goes: a document named by the rest of its query stays apart.
+        assertNotEquals(DownloadKeys.of("https://univer.kaznu.kz/print/report.pdf?id=1&v=1"), DownloadKeys.of("https://univer.kaznu.kz/print/report.pdf?id=2&v=1"))
+        assertEquals(DownloadKeys.of("https://univer.kaznu.kz/print/report.pdf?id=1&v=1"), DownloadKeys.of("https://univer.kaznu.kz/print/report.pdf?v=2&id=1"))
+        // Other addresses keep their query: it names which file they serve.
+        assertNotEquals(DownloadKeys.of("https://univer.kaznu.kz/student/files/get?id=1"), DownloadKeys.of("https://univer.kaznu.kz/student/files/get?id=2"))
+        assertNotEquals(DownloadKeys.of("https://univer.kaznu.kz/student/umkd/get/1/2/2026/1?part=1"),
+            DownloadKeys.of("https://univer.kaznu.kz/student/umkd/get/1/2/2026/1?part=2"))
+        // Another host's file, or Univer over another port, is not the site's static document.
+        assertNotEquals(DownloadKeys.of("https://dl.kaznu.kz/files/a.pdf?x=1"), DownloadKeys.of("https://dl.kaznu.kz/files/a.pdf?x=2"))
+        assertNotEquals(DownloadKeys.of("https://univer.kaznu.kz:8443/Content/a.pdf?v=1"), DownloadKeys.of("https://univer.kaznu.kz:8443/Content/a.pdf?v=2"))
+    }
+
     @Test fun theNewestFinishedCopyIsOfferedAndOtherStatesAreNot() {
         val key = DownloadKeys.of("https://univer.kaznu.kz/student/umkd/get/1/2/2026/1")
         val records = listOf(

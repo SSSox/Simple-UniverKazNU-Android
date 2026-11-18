@@ -927,6 +927,9 @@ ${P} #l4 .univer-scr-contact-extra { display:block; }
 ${P} #l4 .univer-scr-contact-extra::before { display:none; }
 ${P} #l4 .univer-scr-contact-label { display:block; color:var(--u-muted); font-size:var(--u-fs-meta); }
 ${P} #l4 details.univer-app-faq>summary.univer-scr-long-q { font-weight:500; }
+/* A long section title squeezed polish's count until its digits broke onto two lines (td.tt wraps anywhere); its fixed
+   22px height also let large text spill out of the pill. */
+${P} #l4 summary>.up-count { flex:none; height:auto; min-height:22px; white-space:nowrap; overflow-wrap:normal; }
 ${P} #l4 .univer-scr-contact-actions { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:8px; }
 ${P} #l4 a.univer-scr-action { display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:48px; padding:0 16px; border-radius:12px; background:var(--u-brand-fill,var(--u-brand)); color:#fff; font-size:var(--u-fs-body); font-weight:500; text-decoration:none; }
 ${P} #l4 a.univer-scr-action-call { border:1px solid var(--u-brand-line); background:var(--u-surface); color:var(--u-brand); }
@@ -980,16 +983,17 @@ ${P} #l4 tr.univer-scr-course>td:nth-child(2) { grid-column:1 / -1; order:-1; co
 ${P} #l4 tr.univer-scr-course>td:nth-child(2)::before { display:none; }
 ${P} #l4 tr.univer-scr-course>td:nth-child(n+3):nth-child(-n+7) { font-variant-numeric:tabular-nums; }
 
-/* IGPA: buttons that read on their fill, one clear selected period, one row of sections, full-width dates. */
+/* IGPA: buttons that read on their fill, one clear selected period, one row of sections (each on its own surface, so
+   neighbouring labels do not run together), full-width dates. */
 ${P} #l4 a.igpa-button-primary, ${P} #l4 button.igpa-button-primary { display:inline-flex; align-items:center; justify-content:center; min-height:44px; padding:0 18px; border:0; border-radius:10px; background:var(--u-brand-fill,var(--u-brand)); color:#fff; font:500 var(--u-fs-meta)/1.2 var(--u-font); text-decoration:none; }
 ${P} #l4 .igpa-period { display:grid; grid-template-columns:1fr 1fr; gap:4px; padding:4px; border:0; border-radius:12px; background:var(--u-surface-2); }
 ${P} #l4 .igpa-period>a { display:flex; align-items:center; justify-content:center; min-height:40px; margin:0; padding:0 10px; border:0; border-radius:9px; background:none; color:var(--u-muted); font:500 var(--u-fs-meta)/1.2 var(--u-font); text-align:center; text-decoration:none; }
 ${P} #l4 .igpa-year>a { display:inline-flex; align-items:center; justify-content:center; min-width:44px; min-height:44px; border-radius:10px; }
 ${P} #l4 .igpa-period>a.igpa-selected { background:var(--u-surface); color:var(--u-brand-strong); box-shadow:0 1px 3px rgba(16,40,70,.14); }
 ${P} #l4 nav.igpa-nav { display:grid; grid-template-columns:auto auto auto; gap:4px; padding:4px; border:0; border-radius:12px; background:var(--u-surface-2); }
-${P} #l4 nav.igpa-nav>a { display:flex; align-items:center; justify-content:center; gap:6px; min-width:0; min-height:44px; margin:0; padding:4px 8px; border:0; border-radius:9px; background:none; color:var(--u-muted); font:500 var(--u-fs-meta)/1.25 var(--u-font); text-align:center; text-decoration:none; }
+${P} #l4 nav.igpa-nav>a { display:flex; align-items:center; justify-content:center; gap:6px; min-width:0; min-height:44px; margin:0; padding:4px 8px; border:0; border-radius:9px; background:var(--u-surface); color:var(--u-muted); font:500 var(--u-fs-meta)/1.25 var(--u-font); text-align:center; text-decoration:none; }
 ${P} #l4 nav.igpa-nav>a.igpa-tab-active { background:var(--u-brand-fill,var(--u-brand)); color:#fff; }
-${P} #l4 nav.igpa-nav>a .igpa-count { min-width:20px; padding:0 6px; border-radius:10px; background:var(--u-surface); color:var(--u-brand); font-size:var(--u-fs-caption); }
+${P} #l4 nav.igpa-nav>a .igpa-count { min-width:20px; padding:0 6px; border-radius:10px; background:var(--u-surface-2); color:var(--u-brand); font-size:var(--u-fs-caption); }
 ${P} #l4 nav.igpa-nav>a.igpa-tab-active .igpa-count { background:#fff; color:var(--u-brand-fill,var(--u-brand)); }
 ${P} #l4 .igpa-ui input[type=date], ${P} #l4 #igpaAchievementForm input[type=date] { display:block; width:100%; max-width:none; min-height:48px; background-image:none; }
 ${P} #l4 .igpa-filter button[type=submit] { min-height:44px; padding:0 18px; border:1px solid var(--u-brand-line); border-radius:10px; background:var(--u-surface); color:var(--u-brand); font:500 var(--u-fs-meta)/1.2 var(--u-font); }

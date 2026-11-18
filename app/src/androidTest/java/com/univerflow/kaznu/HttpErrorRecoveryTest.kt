@@ -13,10 +13,12 @@ import android.widget.TextView
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.webkit.WebViewFeature
 import com.univerflow.kaznu.web.AutomationController
 import com.univerflow.kaznu.web.SitePolicy
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Assert.*
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.ByteArrayInputStream
@@ -103,8 +105,90 @@ class HttpErrorRecoveryTest {
         scenario.onActivity { assertEquals(View.VISIBLE, it.findViewById<View>(R.id.error_overlay).visibility) }
     }
 
-    /** All fixture traffic stays local; only in-memory UI state changes, never the saved account. */
-    private fun withFixture(method: String, verify: (ActivityScenario<MainActivity>, CountDownLatch, CountDownLatch, AtomicInteger) -> Unit) {
+    @Test fun aPageBackRestoresAfterAFailedLoadIsNotTakenForTheFailure() = withFixture("GET", commits = true) { scenario, first, recovered, requests ->
+        assumeTrue(WebViewFeature.isFeatureSupported(WebViewFeature.BACK_FORWARD_CACHE))
+        assertTrue(first.await(15, TimeUnit.SECONDS))
+        scenario.onActivity { it.findViewById<View>(R.id.error_retry).performClick() }
+        assertTrue(recovered.await(15, TimeUnit.SECONDS))
+        scenario.onActivity { it.findViewById<WebView>(R.id.web_view).loadUrl(unreachableUrl) }
+        assertTrue(failed.await(15, TimeUnit.SECONDS))
+        waitFor(scenario) { it.findViewById<View>(R.id.error_overlay).visibility == View.VISIBLE }
+        scenario.onActivity { it.findViewById<View>(R.id.error_back).performClick() }
+        // Restored from memory: no request and no onPageFinished; the adapter's pass reports the page ready.
+        waitFor(scenario) {
+            it.findViewById<WebView>(R.id.web_view).url == fixtureUrl && !field("pageLoading").getBoolean(it) &&
+                it.findViewById<View>(R.id.error_overlay).visibility != View.VISIBLE
+        }
+        assumeTrue("Back loaded the page again instead of restoring it", requests.get() == 2)
+        // A link that brings no page (a file) ends its wait on this page, not on the old failure's error screen.
+        scenario.onActivity { MainActivity::class.java.getDeclaredMethod("settlePage").apply { isAccessible = true }.invoke(it) }
+        Thread.sleep(400)
+        scenario.onActivity { assertNotEquals(View.VISIBLE, it.findViewById<View>(R.id.error_overlay).visibility) }
+    }
+
+    @Test fun backWaitsWhileTheSessionIsWiped() = withFixture("GET") { scenario, first, recovered, _ ->
+        assertTrue(first.await(15, TimeUnit.SECONDS))
+        scenario.onActivity { it.findViewById<View>(R.id.error_retry).performClick() }
+        assertTrue(recovered.await(15, TimeUnit.SECONDS))
+        val next = "$fixtureUrl/next"
+        scenario.onActivity { it.findViewById<WebView>(R.id.web_view).loadUrl(next) }
+        waitFor(scenario) { it.findViewById<WebView>(R.id.web_view).let { web -> web.url == next && web.canGoBack() } }
+        scenario.onActivity {
+            field("sessionChanging").setBoolean(it, true)
+            it.onBackPressedDispatcher.onBackPressed()
+            assertFalse("Back must not even ask the page", field("backPending").getBoolean(it))
+        }
+        Thread.sleep(1000)
+        scenario.onActivity {
+            assertEquals("The previous page must not come back during a sign-out", next, it.findViewById<WebView>(R.id.web_view).url)
+            field("sessionChanging").setBoolean(it, false)
+        }
+    }
+
+    @Test fun aBackPressedJustBeforeTheWipeDoesNotReturnDuringIt() = withFixture("GET") { scenario, first, recovered, _ ->
+        assertTrue(first.await(15, TimeUnit.SECONDS))
+        scenario.onActivity { it.findViewById<View>(R.id.error_retry).performClick() }
+        assertTrue(recovered.await(15, TimeUnit.SECONDS))
+        val next = "$fixtureUrl/next"
+        scenario.onActivity { it.findViewById<WebView>(R.id.web_view).loadUrl(next) }
+        waitFor(scenario) { it.findViewById<WebView>(R.id.web_view).let { web -> web.url == next && web.canGoBack() } }
+        // The page answers Back's question later, after the sign-out has begun.
+        scenario.onActivity {
+            it.onBackPressedDispatcher.onBackPressed()
+            assertTrue("Back asked the page first", field("backPending").getBoolean(it))
+            field("sessionChanging").setBoolean(it, true)
+        }
+        Thread.sleep(1000)
+        scenario.onActivity {
+            assertFalse("the page answered", field("backPending").getBoolean(it))
+            assertEquals("A Back pressed just before a sign-out must not bring the previous page back", next, it.findViewById<WebView>(R.id.web_view).url)
+            field("sessionChanging").setBoolean(it, false)
+        }
+    }
+
+    private fun waitFor(scenario: ActivityScenario<MainActivity>, check: (MainActivity) -> Boolean) {
+        val end = System.nanoTime() + TimeUnit.SECONDS.toNanos(15)
+        var done = false
+        while (!done && System.nanoTime() < end) {
+            scenario.onActivity { done = check(it) }
+            if (!done) Thread.sleep(100)
+        }
+        var state = ""
+        if (!done) scenario.onActivity {
+            state = "url=" + it.findViewById<WebView>(R.id.web_view).url + " pageLoading=" + field("pageLoading").getBoolean(it) +
+                " overlay=" + it.findViewById<View>(R.id.error_overlay).visibility + " history=" +
+                it.findViewById<WebView>(R.id.web_view).copyBackForwardList().let { list ->
+                    (0 until list.size).joinToString(",") { i -> (if (i == list.currentIndex) "*" else "") + list.getItemAtIndex(i).url }
+                }
+        }
+        assertTrue("still waiting: $state", done)
+    }
+
+    /**
+     * All fixture traffic stays local; only in-memory UI state changes, never the saved account. [commits] also passes
+     * the commit callback on, which a restored page needs to be adapted and shown.
+     */
+    private fun withFixture(method: String, commits: Boolean = false, verify: (ActivityScenario<MainActivity>, CountDownLatch, CountDownLatch, AtomicInteger) -> Unit) {
         val first = CountDownLatch(1)
         val recovered = CountDownLatch(1)
         val requests = AtomicInteger()
@@ -151,6 +235,7 @@ class HttpErrorRecoveryTest {
                         original.onReceivedError(view, request, error)
                         if (request.isForMainFrame) failed.countDown()
                     }
+                    override fun onPageCommitVisible(view: WebView, url: String?) { if (commits) original.onPageCommitVisible(view, url) }
                     override fun onFormResubmission(view: WebView, dontResend: android.os.Message, resend: android.os.Message) =
                         original.onFormResubmission(view, dontResend, resend)
                     override fun onPageFinished(view: WebView, url: String?) {

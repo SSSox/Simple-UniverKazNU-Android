@@ -35,9 +35,10 @@
             var finish = function () { if (motions.get(node) === animation) motions.delete(node); };
             animation.onfinish = animation.oncancel = finish;
         };
-        var resize = function (node, before, duration) {
+        // [measured]: the new height when the caller already read it, so a batch of boxes is laid out once, not per box.
+        var resize = function (node, before, duration, measured) {
             if (!node?.isConnected || !allowed() || reduce() || !node.animate) return;
-            var after = node.getBoundingClientRect().height;
+            var after = measured > 0 ? measured : node.getBoundingClientRect().height;
             if (before <= 0 || after <= 0 || Math.abs(before - after) < 1) return;
             // A long journal or menu would relayout on every frame of a height animation on a phone.
             if (Math.max(before, after) > innerHeight * 1.5) return;

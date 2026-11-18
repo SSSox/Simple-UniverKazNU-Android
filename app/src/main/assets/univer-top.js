@@ -1,8 +1,8 @@
 /* «Наверх»: one floating button once a page has been scrolled well down, in the reading layout only (Original has none).
    It lives in its own shadow root, so the site's styles stay out of it and showing or moving it never wakes the layout
    adapter's DOM observer. By default it never covers a control: from the bottom right it climbs the right edge, then
-   tries the left one, and stays hidden while no spot is free. The phone's anchored button keeps its corner instead.
-   Either way it hides while a dialog, menu or drag is under way. */
+   tries the left one, and stays hidden while no spot is free. The phone's anchored button keeps its corner instead and
+   only fades in and out there, without sliding. Either way it hides while a dialog, menu or drag is under way. */
 (function () {
     'use strict';
     if (location.origin !== 'https://univer.kaznu.kz' || window.__univerTopV1 || window !== window.top) return;
@@ -26,13 +26,15 @@
         '.top.on:active{transform:scale(.97)}' +
         '.top:focus-visible{outline:2px solid var(--u-brand,#1b5fa6);outline-offset:3px}' +
         '.top svg{flex:none;width:18px;height:18px}' +
+        '.top.fixed{transform:none;transition:opacity .16s ease,transform .1s ease,background-color .14s ease,visibility 0s linear .16s}' +
+        '.top.fixed.on{transition:opacity .16s ease,transform .1s ease,background-color .14s ease,visibility 0s}' +
         ':host-context(html.univer-app-dark) .top{background:#2563a8;box-shadow:0 6px 18px rgba(0,0,0,.45),0 1px 3px rgba(0,0,0,.3)}' +
         ':host-context(html.univer-app-dark) .top:hover{background:#2d70bb}' +
         ':host-context(html.univer-app-dark) .top:focus-visible{outline-color:#8ab8ec}' +
         '.top.still,.top.still.on{transition:none;transform:none}' +
         '@media (prefers-reduced-motion:reduce){.top,.top.on{transform:none;transition:opacity .16s ease,visibility 0s linear .16s}.top.on{transition:opacity .16s ease}}' +
         '@media print{.top{display:none!important}}';
-    var enabled = false, language = 'ru', host = null, button = null, label = null, visible = false, idle = 0, frame = 0, edge = EDGE, tall = HEIGHT, anchored = false;
+    var enabled = false, language = 'ru', host = null, button = null, label = null, visible = false, idle = 0, frame = 0, edge = EDGE, tall = HEIGHT, anchored = false, raised = EDGE;
     var still = function () { return window.__univerMotion === false; };
     var reduced = function () { return still() || !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches; };
     // The visible page area without scrollbars; the fixed button is placed against the same box.
@@ -54,6 +56,7 @@
         if (!host.isConnected) (document.body || document.documentElement).appendChild(host);
         if (label.textContent !== WORDS[language]) label.textContent = WORDS[language];
         button.classList.toggle('still', still());
+        button.classList.toggle('fixed', anchored);
         var height = tall + 'px';
         if (button.style.height !== height) { button.style.height = height; button.style.borderRadius = tall / 2 + 'px'; }
     }
@@ -107,10 +110,11 @@
     }
     // The lowest free spot on the right edge, then on the left, within the window's lower half. An anchored button (the
     // phone, where cards fill the width) keeps its corner like a floating action button: there every stop moved it or,
-    // when it waited for a free spot instead, made it blink in and out. The page end reserves room under it.
+    // when it waited for a free spot instead, made it blink in and out. The page end reserves room under it, and the
+    // phone's row actions end before its column.
     function findSpot() {
         var size = view(), width = Math.ceil(button.getBoundingClientRect().width) || 120;
-        if (anchored) return { side: 'right', lift: edge };
+        if (anchored) return { side: 'right', lift: raised };
         var sides = [{ side: 'right', left: size.width - edge - width }, { side: 'left', left: edge }];
         for (var s = 0; s < sides.length; s++) {
             if (sides[s].left < 0) continue;
@@ -167,7 +171,7 @@
         configure: function (on, lang, options) {
             enabled = !!on; language = WORDS[lang] ? lang : 'ru';
             edge = options && options.edge > 0 ? options.edge : EDGE; tall = options && options.height > 0 ? options.height : HEIGHT;
-            anchored = !!(options && options.anchored);
+            anchored = !!(options && options.anchored); raised = options && options.lift > 0 ? options.lift : edge;
             if (enabled) { refresh(); return; }
             clearTimeout(idle); idle = 0; visible = false;
             if (host) { host.remove(); host = null; button = label = null; }

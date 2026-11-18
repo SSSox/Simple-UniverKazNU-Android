@@ -29,8 +29,8 @@ data class UpdateState(val current: String, val available: String? = null, val s
     val phase: UpdatePhase = UpdatePhase.IDLE, val progress: Int = 0, val failure: UpdateFailure? = null,
     /** The system's install confirmation, opened by the screen in front. */
     val confirm: Intent? = null,
-    /** The dialog at entry has been answered in this run. */
-    val answered: Boolean = false)
+    /** The version whose dialog was answered in this run: "Later" holds it until the next launch. */
+    val answered: String? = null)
 
 /** One per process, so a download goes on through a rotation or a theme change of the screen that started it. */
 class UpdateManager private constructor(private val context: Context) {
@@ -59,7 +59,7 @@ class UpdateManager private constructor(private val context: Context) {
     /** The automatic check at entry. It never depends on the student's choices: they only decide what is shown. */
     fun checkIfDue() {
         val now = System.currentTimeMillis()
-        if (Updates.due(now, mutable.value.checkedAt) && now - attemptedAt >= Updates.RETRY_INTERVAL_MS) check()
+        if (Updates.due(now, mutable.value.checkedAt, firstInRun = attemptedAt == 0L) && now - attemptedAt >= Updates.RETRY_INTERVAL_MS) check()
     }
 
     fun check() {
@@ -77,24 +77,24 @@ class UpdateManager private constructor(private val context: Context) {
         }
     }
 
-    /** "Later": the dialog returns at the next entry. */
-    fun later() { mutable.update { it.copy(answered = true) } }
+    /** "Later": the dialog returns at the next launch, or at once for a newer version. */
+    fun later(version: String) { mutable.update { it.copy(answered = version) } }
 
     /** "Do not show again": this version stays in Settings, and a newer one is offered again. */
     fun skip(version: String) {
         runCatching { preferences.updateSkipped = version }
-        mutable.update { it.copy(skipped = version, answered = true) }
+        mutable.update { it.copy(skipped = version, answered = version) }
     }
 
     fun waitForInstallPermission(waiting: Boolean) {
         runCatching { preferences.updateResume = waiting }
-        if (waiting) mutable.update { it.copy(answered = true) }
+        if (waiting) mutable.update { it.copy(answered = it.available) }
     }
 
     fun install() {
         val version = mutable.value.available ?: return
         if (!begin(UpdatePhase.DOWNLOADING)) return
-        mutable.update { it.copy(answered = true) }
+        mutable.update { it.copy(answered = it.available) }
         work = scope.launch {
             val coroutine = currentCoroutineContext()
             var apk: File? = null

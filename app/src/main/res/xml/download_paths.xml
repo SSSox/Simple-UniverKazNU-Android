@@ -2,4 +2,6 @@
     <external-path name="downloads" path="Download/" />
     <!-- Photos taken for a site or Moodle upload form; removed on logout. -->
     <cache-path name="camera" path="camera/" />
+    <!-- Grade reports made for sharing or printing; removed after an hour and on logout. -->
+    <cache-path name="reports" path="reports/" />
 </paths>

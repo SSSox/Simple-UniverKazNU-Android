@@ -550,10 +550,37 @@
     function setAttribute(node, name, value) { if (node.getAttribute(name) !== value) node.setAttribute(name, value); }
     function motion() { return window.__univerMotionUI; }
     // A height change is animated from where the box was; a keyboard press (detail 0) changes it at once.
+    // Inside batch() the change waits for the others: every height is read, every box written, then read again once.
+    var queued = null;
     function resized(node, change, animate) {
+        if (queued) { queued.changes.push({node:node, change:change, animate:animate}); return; }
         var before = animate && node.isConnected ? node.getBoundingClientRect().height : 0;
         motion()?.stop(node); change();
         if (animate && before > 0) motion()?.resize(node, before);
+    }
+    // [read] measures once the batch's boxes are written, [write] uses what it measured; outside a batch both run at once.
+    function afterLayout(read, write) {
+        if (queued) queued.after.push({read:read, write:write}); else write(read());
+    }
+    // A week of classes redrawn one by one read a height after each write: the whole schedule was laid out again per
+    // class, about 100 ms a pass on a phone. Batched, the page is laid out three times however many classes change.
+    // A step that throws stops only itself: the rest still lands, since each box already took its new signature and would
+    // not be drawn again, and the first error is rethrown at the end.
+    function batch(work) {
+        if (queued) { work(); return; }
+        queued = {changes:[], after:[]};
+        var list, failure = null;
+        var step = function (run) { try { run(); } catch (error) { failure = failure || error; } };
+        try { step(work); } finally { list = queued; queued = null; }
+        // Heights are read only for a box that will animate: no motion object, reduced motion or animations off skip it.
+        var m = motion(), moving = !!m && !m.reduced() && window.__univerMotion !== false;
+        var before = list.changes.map(function (item) { return moving && item.animate && item.node.animate && item.node.isConnected ? item.node.getBoundingClientRect().height : 0; });
+        list.changes.forEach(function (item) { step(function () { m?.stop(item.node); item.change(); }); });
+        var read = list.after.map(function (item) { var out = {}; step(function () { out.value = item.read(); out.ok = true; }); return out; });
+        list.after.forEach(function (item, index) { if (read[index].ok) step(function () { item.write(read[index].value); }); });
+        var after = list.changes.map(function (item, index) { return before[index] > 0 && item.node.isConnected ? item.node.getBoundingClientRect().height : 0; });
+        list.changes.forEach(function (item, index) { if (before[index] > 0) step(function () { m?.resize(item.node, before[index], undefined, after[index]); }); });
+        if (failure) throw failure;
     }
     // "семинар 10 · макс. балл: 20": the entry's own name and its score. label stands for a missing name.
     function meta(entry, label) {
@@ -580,8 +607,9 @@
         foot.append(more, note);
         if (href) { var source = element('a', 'univer-app-syl-source', L.open); source.href = href; foot.appendChild(source); }
         box.append(topic, foot); draw(false);
-        // A short topic that still wraps past three lines also gets the button.
-        box.fit = function () { more.hidden = !long && !(topic.scrollHeight - topic.clientHeight > 2) && !expandedSet.has(key); };
+        // A short topic that still wraps past three lines also gets the button. short() reads layout, fit() only writes.
+        box.short = function () { return !long && !expandedSet.has(key) && !(topic.scrollHeight - topic.clientHeight > 2); };
+        box.fit = function (short) { more.hidden = short; };
         more.hidden = !long;
         return box;
     }
@@ -688,7 +716,8 @@
             });
             setHidden(ui.notes, !notes.length);
         }, animate && !first);
-        Array.from(ui.list.children).forEach(function (row) { row.block.fit(); });
+        afterLayout(function () { return Array.from(ui.list.children).map(function (row) { return [row.block, row.block.short()]; }); },
+            function (rows) { rows.forEach(function (pair) { pair[0].fit(pair[1]); }); });
     }
     // The classes of one course and kind in a week, in order: with as many syllabus rows as classes, each class takes its own.
     function share(state, card, entries) {
@@ -764,8 +793,11 @@
             }
             block.append(fold, body); block.blocks = blocks;
         }, appear);
-        if (card.block?.blocks && want === 'ready') card.block.blocks.forEach(function (box) { box.fit(); });
-        if (appear && card.block && want === 'ready') motion()?.reveal(card.block, 'content');
+        afterLayout(function () { return card.block?.blocks && want === 'ready' ? card.block.blocks.map(function (box) { return box.short(); }) : null; },
+            function (short) {
+                if (short) card.block.blocks.forEach(function (box, index) { box.fit(short[index]); });
+                if (appear && card.block && want === 'ready') motion()?.reveal(card.block, 'content');
+            });
     }
     // A schedule of another semester has other courses; nothing is read or shown for it.
     function foreign(state) { return !!model && model.state === 'ready' && !!state.week.term && !!model.term && state.week.term !== model.term; }
@@ -775,10 +807,12 @@
         setHidden(state.panel.root, idle);
         setAttribute(state.view, 'data-syllabus', preferences().lessons ? 'on' : 'off');
         if (idle) { state.cards.forEach(function (card) { if (card.block) { card.block.remove(); card.block = null; card.signature = undefined; } }); return; }
-        drawPanel(state, animate);
-        state.cards.forEach(function (card) { drawLesson(state, card, animate); });
+        batch(function () {
+            drawPanel(state, animate);
+            state.cards.forEach(function (card) { drawLesson(state, card, animate); });
+        });
     }
-    function renderAll(animate) { if (enabled) views.forEach(function (state) { render(state, animate); }); }
+    function renderAll(animate) { if (enabled) batch(function () { views.forEach(function (state) { render(state, animate); }); }); }
     function attach(record) {
         var week = shownWeek(); if (!week || !record.cards?.length || !record.card?.root?.isConnected) return;
         var state = {view:record.view, week:week, cards:[], subjects:[], expanded:new Set(), allSro:false, sroSignature:''};

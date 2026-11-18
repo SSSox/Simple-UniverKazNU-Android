@@ -3,19 +3,29 @@
     'use strict';
     if (location.origin !== 'https://univer.kaznu.kz' || window.__univerAttendanceV1) return;
     var dom = window.__univerDomV1, clean = dom.clean, ownRows = dom.ownRows, el = dom.el, setText = dom.setText;
-    var key = 'univer.mobile.attendance-kind.v1', selected = 'all', language = 'ru', state = null;
-    var courseKey = 'univer.mobile.attendance-course.v1:' + location.pathname, selectedCourse = 'all';
+    var selected = 'all', language = 'ru', state = null, selectedCourse = 'all';
     var hidden = new Map(), labels = new Map(), owned = [], identities = new WeakMap(), sequence = 0;
     // The user's own choice per course; without one, details open only when a single course is shown.
     var expanded = new Map(), focusToggle = null;
     var TYPES = ['lecture', 'seminar', 'sro'];
     var WORDS = {
-        en: {all:'All classes', lecture:'Lectures', seminar:'Seminars', sro:'Independent work', filter:'Class type', kind:'Class type', total:'Total', outOf:'of', totals:'Totals by class type', overall:'Overall course total', empty:'No classes of this type', ungraded:'No grades yet', none:'none', note:'The overall course total includes every class type.', lectureLabel:'Lecture', seminarLabel:'Seminar', sroLabel:'Independent work', overview:'Course summary', showDetails:'Show class log', hideDetails:'Hide class log', courses:'Courses', allCourses:'All', noClasses:'No classes yet'},
-        kz: {all:'Барлық сабақтар', lecture:'Дәрістер', seminar:'Семинарлар', sro:'СӨЖ', filter:'Сабақ түрі', kind:'Сабақ түрі', total:'Барлығы', outOf:'/', totals:'Сабақ түрлері бойынша қорытынды', overall:'Пән бойынша жалпы қорытынды', empty:'Бұл түрдегі сабақтар жоқ', ungraded:'Бағалар әлі қойылмаған', none:'жоқ', note:'Пән бойынша жалпы қорытынды сабақтардың барлық түрін қамтиды.', lectureLabel:'Дәріс', seminarLabel:'Семинар', sroLabel:'СӨЖ', overview:'Пәндер бойынша қорытынды', showDetails:'Сабақ журналын көрсету', hideDetails:'Сабақ журналын жасыру', courses:'Пәндер', allCourses:'Барлығы', noClasses:'Сабақтар әлі жоқ'},
-        ru: {all:'Все занятия', lecture:'Лекции', seminar:'Семинары', sro:'СРО', filter:'Тип занятий', kind:'Вид занятий', total:'Итого', outOf:'из', totals:'Итоги по видам занятий', overall:'Общий итог предмета', empty:'Нет занятий этого вида', ungraded:'Оценки пока не выставлены', none:'нет', note:'Общий итог предмета учитывает все виды занятий.', lectureLabel:'Лекция', seminarLabel:'Семинар', sroLabel:'СРО / СРОП', overview:'Сводка по предметам', showDetails:'Показать журнал занятий', hideDetails:'Скрыть журнал занятий', courses:'Предметы', allCourses:'Все', noClasses:'Занятия пока не добавлены'}
+        en: {all:'All classes', lecture:'Lectures', seminar:'Seminars', sro:'Independent work', filter:'Class type', kind:'Class type', total:'Total', outOf:'of', totals:'Totals by class type', overall:'Overall course total', empty:'No classes of this type', ungraded:'No grades yet', none:'none', note:'The overall course total includes every class type.', lectureLabel:'Lecture', seminarLabel:'Seminar', sroLabel:'Independent work', overview:'Course summary', showDetails:'Show class log', hideDetails:'Hide class log', courses:'Courses', allCourses:'All', noClasses:'No classes yet', low:'Below 50', pass:'Admitted', good:'Good', top:'Excellent', short:'{left} short of {at}', reached:'Every mark reached', legend:'Score colours', legendLow:'below 50: short', legendPass:'50–69: admitted, scholarship at risk', legendGood:'70–89: good', legendTop:'90 and above: excellent', report:'Share grades: PDF or image'},
+        kz: {all:'Барлық сабақтар', lecture:'Дәрістер', seminar:'Семинарлар', sro:'СӨЖ', filter:'Сабақ түрі', kind:'Сабақ түрі', total:'Барлығы', outOf:'/', totals:'Сабақ түрлері бойынша қорытынды', overall:'Пән бойынша жалпы қорытынды', empty:'Бұл түрдегі сабақтар жоқ', ungraded:'Бағалар әлі қойылмаған', none:'жоқ', note:'Пән бойынша жалпы қорытынды сабақтардың барлық түрін қамтиды.', lectureLabel:'Дәріс', seminarLabel:'Семинар', sroLabel:'СӨЖ', overview:'Пәндер бойынша қорытынды', showDetails:'Сабақ журналын көрсету', hideDetails:'Сабақ журналын жасыру', courses:'Пәндер', allCourses:'Барлығы', noClasses:'Сабақтар әлі жоқ', low:'Балл жетпейді', pass:'Рұқсат бар', good:'Жақсы', top:'Өте жақсы', short:'{at} шегіне {left} жетпейді', reached:'Барлық шектен өтті', legend:'Балл түстері', legendLow:'50-ден төмен: балл жетпейді', legendPass:'50–69: рұқсат бар, стипендия қауіпте', legendGood:'70–89: жақсы', legendTop:'90 және жоғары: өте жақсы', report:'Үлгерімді бөлісу: PDF не сурет'},
+        ru: {all:'Все занятия', lecture:'Лекции', seminar:'Семинары', sro:'СРО', filter:'Тип занятий', kind:'Вид занятий', total:'Итого', outOf:'из', totals:'Итоги по видам занятий', overall:'Общий итог предмета', empty:'Нет занятий этого вида', ungraded:'Оценки пока не выставлены', none:'нет', note:'Общий итог предмета учитывает все виды занятий.', lectureLabel:'Лекция', seminarLabel:'Семинар', sroLabel:'СРО / СРОП', overview:'Сводка по предметам', showDetails:'Показать журнал занятий', hideDetails:'Скрыть журнал занятий', courses:'Предметы', allCourses:'Все', noClasses:'Занятия пока не добавлены', low:'Недобор', pass:'Есть допуск', good:'Хорошо', top:'Отлично', short:'До {at} не хватает {left}', reached:'Все пороги пройдены', legend:'Цвета баллов', legendLow:'ниже 50: недобор', legendPass:'50–69: допуск есть, стипендия под риском', legendGood:'70–89: хорошо', legendTop:'90 и выше: отлично', report:'Поделиться успеваемостью: PDF или картинка'}
     };
-    try { var saved = sessionStorage.getItem(key); if (/^(all|lecture|seminar|sro)$/.test(saved)) selected = saved; } catch (_) {}
-    try { var course = sessionStorage.getItem(courseKey); if (course && course.length <= 1000) selectedCourse = course; } catch (_) {}
+    // The journal opens with every course and class type each time; the choice is not kept. A tap on a course in the
+    // home overview or in Текущая аттестация hands that course over once: it is read and removed here, so a refresh or
+    // a later visit shows everything again. Earlier versions also kept the class type and the last course chosen.
+    try {
+        var path = location.pathname.replace(/\/$/, ''), course = null;
+        [path + '/', path].forEach(function (variant) {
+            var name = 'univer.mobile.attendance-course.v1:' + variant, value = sessionStorage.getItem(name);
+            if (course === null && value) course = value;
+            sessionStorage.removeItem(name);
+        });
+        sessionStorage.removeItem('univer.mobile.attendance-kind.v1');
+        if (course && course.length <= 1000) selectedCourse = course;
+    } catch (_) {}
     function text() { return WORDS[language] || WORDS.ru; }
     // Server totals read as "РК1 (100): 51 РК2 (100): 0"; each control period becomes a score tile.
     function scores(value) {
@@ -33,26 +43,73 @@
             chip.setAttribute('aria-label', item.label + ': ' + (item.value || text().none) + (item.max ? ' / ' + item.max : ''));
             chip.append(el('span', 'univer-app-overview-score-label', item.label), el('span', 'univer-app-overview-score-value', item.value || '–'));
             var bar = scoreBar('univer-app-overview-score-bar', item.value, item.max); if (bar) chip.appendChild(bar);
+            band(chip, item.value, item.max);
             // The chip's label is what a screen reader announces; its parts are for the eye only.
             Array.from(chip.children).forEach(child => child.setAttribute('aria-hidden', 'true'));
             box.appendChild(chip);
         });
         return box;
     }
-    // A grade's share of its maximum as a filled bar ("12,5" of "25" fills half); null when either is not a number.
+    // A grade's share of its maximum as a filled bar ("12,5" of "25" fills half), coloured by its band; null when
+    // either is not a number.
     function scoreBar(className, value, max) {
-        var ratio = max && value ? Number(value.replace(',', '.')) / Number(max.replace(',', '.')) : NaN;
-        if (!isFinite(ratio)) return null;
+        var found = dom.scoreBand(value, max);
+        if (!found) return null;
         var bar = el('span', className); bar.setAttribute('aria-hidden', 'true');
-        bar.style.setProperty('--univer-score', Math.round(Math.max(0, Math.min(1, ratio)) * 1000) / 10 + '%');
+        bar.style.setProperty('--univer-score', found.percent + '%'); bar.dataset.band = found.band;
         return bar;
+    }
+    function band(node, value, max) { var found = dom.scoreBand(value, max); if (found) node.dataset.band = found.band; return found; }
+    function number(value) { return language === 'en' ? String(value).replace(',', '.') : String(value).replace('.', ','); }
+    function words(template, values) { return template.replace(/\{(\w+)\}/g, (_, key) => values[key]); }
+    // One control period's total against the marks 50, 70 and 90: its band in words, a bar with the marks drawn on it,
+    // and how far the next mark is. Colour is never the only signal; a missing grade is one quiet line.
+    function progress(item) {
+        var t = text(), found = dom.scoreBand(item.value, item.max), box = el('div', 'univer-app-progress');
+        box.setAttribute('role', 'group');
+        var head = el('div', 'univer-app-progress-head'), value = el('span', 'univer-app-progress-value');
+        value.append(el('b', '', item.value ? number(item.value) : '–'));
+        if (item.max) value.append(' ' + t.outOf + ' ' + number(item.max));
+        head.append(el('span', 'univer-app-progress-label', item.label), value);
+        box.appendChild(head);
+        if (!found) {
+            box.setAttribute('aria-label', item.label + ': ' + (item.value || t.none));
+            head.setAttribute('aria-hidden', 'true');
+            return box;
+        }
+        box.dataset.band = found.band;
+        var state = el('span', 'univer-app-progress-band', t[found.band]);
+        head.insertBefore(state, value);
+        var track = el('div', 'univer-app-progress-track'), scale = el('div', 'univer-app-progress-scale');
+        track.style.setProperty('--univer-score', found.percent + '%');
+        [50, 70, 90].forEach((at, index) => {
+            var tick = el('i'); tick.style.setProperty('--at', at + '%');
+            if (found.percent >= at) tick.className = 'univer-app-progress-passed';
+            var mark = el('span', '', number(found.marks[index])); mark.style.setProperty('--at', at + '%');
+            track.appendChild(tick); scale.appendChild(mark);
+        });
+        track.appendChild(el('span', 'univer-app-progress-fill'));
+        var next = el('p', 'univer-app-progress-next', found.next === null ? t.reached
+            : words(t.short, {at:number(found.next), left:number(found.left)}));
+        box.append(track, scale, next);
+        box.setAttribute('aria-label', [item.label + ': ' + number(item.value) + (item.max ? ' ' + t.outOf + ' ' + number(item.max) : ''), t[found.band], next.textContent].join('. '));
+        Array.from(box.children).forEach(child => child.setAttribute('aria-hidden', 'true'));
+        return box;
+    }
+    function legend() {
+        var t = text(), box = el('p', 'univer-app-band-legend');
+        box.appendChild(el('span', 'univer-app-band-legend-title', t.legend));
+        [['low', t.legendLow], ['pass', t.legendPass], ['good', t.legendGood], ['top', t.legendTop]].forEach(([key, label]) => {
+            var item = el('span', 'univer-app-band-legend-item', label); item.dataset.band = key; box.appendChild(item);
+        });
+        return box;
     }
     function withRole(node, role) { node.setAttribute('role', role); return node; }
     function cell(className, content) { return withRole(el('span', className, content), 'cell'); }
     // A period's name without its "(100)".
     function periodKey(value) { return value.replace(/\s*\(.*$/, '').replace(/\s+/g, ''); }
-    // Rows are class types, columns the control periods, the last row the course total: one number per place.
-    function scoreTable(columns, rows, periods) {
+    // Rows are class types, columns the control periods: one number per place. The course total follows as progress.
+    function scoreTable(columns, rows) {
         var t = text(), table = withRole(el('div', 'univer-app-score-table'), 'table'), head = withRole(el('div', 'univer-app-score-head'), 'row');
         table.setAttribute('aria-label', t.totals);
         table.style.setProperty('--univer-columns', String(columns.length));
@@ -73,18 +130,6 @@
             });
             table.appendChild(row);
         });
-        if (periods.length) {
-            var total = withRole(el('div', 'univer-app-score-total'), 'row');
-            total.appendChild(withRole(el('span', '', t.total), 'rowheader'));
-            columns.forEach(column => {
-                var found = periods.find(p => periodKey(p.label) === column.key), value = found?.value || '', score = cell('univer-app-score');
-                score.setAttribute('aria-label', t.total + ', ' + column.label + ': ' + (value || t.none) + (found?.max ? ' / ' + found.max : ''));
-                score.appendChild(el('b', 'univer-app-score-value', value || '–'));
-                var bar = scoreBar('univer-app-score-bar', value, found?.max); if (bar) score.appendChild(bar);
-                total.appendChild(score);
-            });
-            table.appendChild(total);
-        }
         return table;
     }
     function id(node) { if (!identities.has(node)) identities.set(node, ++sequence); return identities.get(node); }
@@ -261,12 +306,18 @@
         rows.forEach(row => row.values.forEach((entry, name) => {
             if (!columns.some(c => c.key === name)) columns.push({key:name, label:name, max:entry.period.match(/\(\s*(\d+(?:[.,]\d+)?)\s*\)/)?.[1] || ''});
         }));
-        if (columns.length) box.appendChild(scoreTable(columns, rows, periods));
-        else rows.forEach(item => {
+        if (columns.length && rows.length) box.appendChild(scoreTable(columns, rows));
+        else if (!columns.length) rows.forEach(item => {
             var row = el('div', 'univer-app-type-row'); row.dataset.kind = item.type;
             row.append(el('span', 'univer-app-type-label', t[item.type]), el('span', 'univer-app-type-empty', t.ungraded));
             box.appendChild(row);
         });
+        if (periods.length) {
+            var totals = el('div', 'univer-app-progress-list');
+            totals.appendChild(el('p', 'univer-app-progress-title', t.total));
+            periods.forEach(item => totals.appendChild(progress(item)));
+            box.appendChild(totals);
+        }
         // Anything the server wrote that is not a recognised period stays readable as its own line.
         if (group.overall && selected === 'all' && !periods.length) box.appendChild(el('p', 'univer-app-attendance-overall-value', clean(group.overall)));
         if (!any) box.appendChild(el('p', 'univer-app-attendance-nothing', selected === 'all' ? t.noClasses : t.empty));
@@ -293,13 +344,12 @@
                 : el('span', 'univer-app-attendance-overview-empty', group.overall ? clean(group.overall) : t.ungraded));
             rows.appendChild(row);
         });
-        list.append(el('p', 'univer-app-attendance-overview-title', t.overview), rows);
+        list.append(el('p', 'univer-app-attendance-overview-title', t.overview), rows, legend());
     }
-    function saveCourse() { try { if (selectedCourse === 'all') sessionStorage.removeItem(courseKey); else sessionStorage.setItem(courseKey, selectedCourse); } catch (_) {} }
     function chooseCourse(token, event) {
         // A name in the course summary is removed by the redraw (the summary hides once one course is chosen).
         var fromOverview = !!state && state.overview.contains(document.activeElement);
-        selectedCourse = token; saveCourse(); redraw();
+        selectedCourse = token; redraw();
         if (event?.detail > 0) revealOwned('forward');
         // Keyboard and TalkBack focus moves to the chosen course's chip instead of falling back to the page.
         var at = document.activeElement;
@@ -310,7 +360,7 @@
         if (state.host.getBoundingClientRect().top < 0) state.host.scrollIntoView?.({block:'start'});
     }
     function chooseType(type, event) {
-        selected = type; try { sessionStorage.setItem(key, type); } catch (_) {}
+        selected = type;
         redraw(); if (event.detail > 0) revealOwned('content');
     }
     function courseControls(groups) {
@@ -318,9 +368,9 @@
         // Текущая аттестация asks for a course by name; it becomes this page's own course choice (or all courses).
         if (selectedCourse.startsWith('name:')) {
             var wanted = selectedCourse.slice(5), match = courses.find(group => group.name.normalize('NFC').toLocaleLowerCase() === wanted);
-            selectedCourse = match ? match.token : 'all'; saveCourse();
+            selectedCourse = match ? match.token : 'all';
         }
-        if (selectedCourse !== 'all' && !courses.some(group => group.token === selectedCourse)) { selectedCourse = 'all'; saveCourse(); }
+        if (selectedCourse !== 'all' && !courses.some(group => group.token === selectedCourse)) { selectedCourse = 'all'; }
         state.courses.hidden = !courses.length; state.courses.setAttribute('aria-label', t.courses);
         setText(state.courseCaption, t.courses); setText(state.allCourse, t.allCourses);
         state.allCourse.setAttribute('aria-pressed', String(selectedCourse === 'all'));
@@ -386,6 +436,9 @@
         state.bar.setAttribute('aria-label', t.filter);
         // The note explains a type filter, so it appears only while one is active.
         state.caption.textContent = t.filter; state.note.textContent = t.note; state.note.hidden = selected === 'all';
+        setText(state.share, t.report);
+        dom.setHidden(state.share, typeof __univerNative !== 'function' || !/^\/student\/attendance\/full(\/|$)/.test(location.pathname) ||
+            !groups.some(group => group.heading && group.overall && scores(clean(group.overall)).length));
         var focused = root.querySelector('.univer-app-attendance-summary[data-univer-focus] .univer-app-attendance-details-toggle');
         if (focused) { focused.closest('.univer-app-attendance-summary').removeAttribute('data-univer-focus'); focused.focus?.({preventScroll:true}); }
     }
@@ -402,11 +455,41 @@
         allCourse.type = 'button'; allCourse.dataset.course = 'all'; allCourse.addEventListener('click', event => chooseCourse('all', event));
         courseList.appendChild(allCourse); courses.append(courseCaption, courseList);
         var note = el('p', 'univer-app-attendance-filter-note'), summaryList = el('section', 'univer-app-attendance-overview');
-        var tools = el('div', 'univer-app-attendance-tools'); tools.append(courses, caption, bar, note, summaryList);
+        // The report for printing or sending (a parent, a curator) is drawn by the app from every course's totals.
+        var share = el('button', 'univer-app-attendance-report'); share.type = 'button'; share.hidden = true;
+        share.addEventListener('click', event => { if (event.isTrusted && typeof __univerNative === 'function') __univerNative('univer-report:' + JSON.stringify(reportData())); });
+        var tools = el('div', 'univer-app-attendance-tools'); tools.append(courses, caption, bar, note, share, summaryList);
         insertAfterCell(groups[0].heading || groups[0].lessons[0].cell, tools, true);
         // The filter bar has its own lifetime; summary rebuilds must not remove it.
         var host = owned.pop();
-        state = {bar, host, caption, note, courses, courseCaption, courseList, allCourse, courseButtons:new Map(), overview:summaryList, signature:null};
+        state = {bar, host, caption, note, share, courses, courseCaption, courseList, allCourse, courseButtons:new Map(), overview:summaryList, signature:null};
+    }
+    // The academic year and term this journal shows: from its own address, or between the previous and next terms it
+    // links to (/full/2025/2 and /full/2026/2 surround 2026/1). Null when neither says.
+    function termOf() {
+        var own = location.pathname.match(/\/full\/(\d{4})\/([123])\/?$/);
+        if (own) return {year:Number(own[1]), term:Number(own[2])};
+        var steps = Array.from(document.querySelectorAll('#l4 a[href*="/student/attendance/full/"]'), link => {
+            var found = (link.getAttribute('href') || '').match(/\/full\/(\d{4})\/([12])\/?$/);
+            return found ? Number(found[1]) * 2 + Number(found[2]) - 1 : NaN;
+        }).filter(isFinite);
+        var low = Math.min.apply(null, steps), high = Math.max.apply(null, steps);
+        if (!steps.length || high - low !== 2) return null;
+        var middle = low + 1;
+        return {year:Math.floor(middle / 2), term:middle % 2 + 1};
+    }
+    // What the app's report needs and nothing more: the term, the name shown in the site header and each course's
+    // control-period totals, whatever course or class type is chosen. Native code checks every field again.
+    function reportData() {
+        var name = document.querySelector('#l2 a[href="/user/pass/"]');
+        return {
+            // The header reads "Surname Name (login: id)": the report names the student only.
+            v:1, term:termOf(), student:name ? clean(name).replace(/\s*\([^()]*\)$/, '').slice(0, 120) : '',
+            courses:model().filter(group => group.heading).slice(0, 60).map(group => ({
+                name:group.name.slice(0, 200),
+                scores:(group.overall ? scores(clean(group.overall)) : []).slice(0, 8).map(item => ({label:item.label, max:item.max, value:item.value})),
+            })),
+        };
     }
     // Language and every course, lesson and grade table with its text: polling rerenders only when one changes.
     function signatureOf(groups) {

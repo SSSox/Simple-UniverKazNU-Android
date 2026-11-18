@@ -14,19 +14,20 @@ The app is an unofficial client of the [Univer KazNU](https://univer.kaznu.kz/) 
 | Cookies and site data (session, page settings) | The app's WebView storage | Only to the Univer site and KazNU Moodle (`dl.kaznu.kz`, `dl.kaznu.edu.kz`) when you sign in through Univer |
 | Cookies and sign-ins of sites opened from links | A separate WebView profile of the app | Only to the sites whose links you tapped; Univer and Moodle do not get them |
 | Downloaded files | The phone's Downloads folder and the app's downloads list | Nowhere |
+| Grade report (PDF or PNG) | The app's temporary folder; deleted on sign-out, and once older than an hour at the next app start or new report | Only to the app you pick in the Share sheet, or to the print service |
 | Settings (language, text size, tiles, PIN code) | The app's settings on the phone | Nowhere |
 | Update check (the version found, the check time) | The app's settings on the phone | A plain request without a login or cookies goes to `github.com`: GitHub sees the IP address and the app's name |
 
 - The app does **not** collect analytics, show ads, use third-party tracking SDKs or send data to the developer.
-- Univer pages may include third-party services themselves (for example Google Analytics on the site). This is the site's behaviour; the app does not add it. Third-party cookies are disabled in the WebView.
+- The Univer site puts Google Analytics on its pages. The app does not load it: in the site window and in the documents and Moodle window, requests to Google Analytics and Google Tag Manager never reach the network, so Google Analytics does not receive which pages you open. The links window does not block them. Pages may still include other third-party services themselves; the app does not add them. Third-party cookies are disabled in the WebView.
 - Distance-course task information is read from the same Univer pages you would open manually and cached for 5 minutes in the site tab only.
 - The update file is downloaded only after you tap "Install", is kept in the app's temporary folder and is deleted after installation.
 - Cloud backup of app data and transfer to another device are disabled.
 
 ## Deleting data
 
-- "Sign out" deletes the WebView cookies, storage and cache, including the link window's data; the encrypted login and password stay for signing in again.
-- "Delete saved credentials" deletes the encrypted record and its key.
+- "Sign out" deletes the WebView cookies, storage and cache, including the link window's data, grade reports, the encrypted login and password and the PIN. Language and other settings stay.
+- "Delete data and sign in again" on the PIN screen (if the PIN is forgotten) deletes the same.
 - Uninstalling the app deletes all of its data; downloaded files stay in Downloads.
 
 ## Permissions

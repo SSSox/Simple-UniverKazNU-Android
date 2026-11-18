@@ -12,6 +12,7 @@ import com.univerflow.kaznu.domain.AppLanguage
 import com.univerflow.kaznu.main.SiteData
 import com.univerflow.kaznu.ui.DownloadsActivity
 import com.univerflow.kaznu.web.configureSecureSettings
+import com.univerflow.kaznu.web.enableBackForwardCache
 import kotlinx.coroutines.launch
 import org.junit.Assert.*
 import org.junit.Test
@@ -34,21 +35,25 @@ class SessionStorageEraseTest {
             instrumentation.runOnMainSync { web.evaluateJavascript(source) { result = it; callback.countDown() } }
             assertTrue(callback.await(10, TimeUnit.SECONDS)); return result
         }
-        fun loadFixture() {
+        fun loadFixture(url: String = "https://univer.kaznu.kz/fixture") {
             loaded = CountDownLatch(1)
-            instrumentation.runOnMainSync { web.loadUrl("https://univer.kaznu.kz/fixture") }
+            instrumentation.runOnMainSync { web.loadUrl(url) }
             assertTrue(loaded.await(10, TimeUnit.SECONDS))
         }
         try {
             scenario.onActivity { activity ->
-                web = WebView(activity); web.configureSecureSettings(); activity.setContentView(web)
+                // As in the main window: Back keeps left pages in memory, which the erase must drop too.
+                web = WebView(activity); web.configureSecureSettings(); web.enableBackForwardCache(); activity.setContentView(web)
                 web.webViewClient = object : WebViewClient() {
                     override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest) =
                         WebResourceResponse("text/html", "UTF-8", ByteArrayInputStream("<html><body>Local session fixture</body></html>".toByteArray()))
-                    override fun onPageFinished(view: WebView, url: String?) { if (url == "https://univer.kaznu.kz/fixture") loaded.countDown() }
+                    override fun onPageFinished(view: WebView, url: String?) { if (url?.startsWith("https://univer.kaznu.kz/fixture") == true) loaded.countDown() }
                 }
             }
             loadFixture()
+            loadFixture("https://univer.kaznu.kz/fixture/next")
+            instrumentation.runOnMainSync { assertTrue(web.canGoBack()) }
+            // The document the erase unloads writes the old account's key on its way out.
             assertEquals("true", eval("localStorage.setItem('qa_previous_account','before');addEventListener('pagehide',function(){localStorage.setItem('qa_previous_account','after');});true"))
             val erased = CountDownLatch(1)
             var failure: Throwable? = null

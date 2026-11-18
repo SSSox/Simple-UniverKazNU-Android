@@ -49,7 +49,7 @@ class NativeLayoutQaTest {
                 form.handle.visibility=android.view.View.GONE;form.closeSettings.visibility=android.view.View.GONE
                 form.accountSummary.visibility=android.view.View.GONE
                 form.editAccount.visibility=android.view.View.GONE;form.preferences.visibility=android.view.View.GONE
-                form.logout.visibility=android.view.View.GONE;form.delete.visibility=android.view.View.GONE;form.downloads.visibility=android.view.View.GONE
+                form.logout.visibility=android.view.View.GONE;form.downloads.visibility=android.view.View.GONE
                 val labels=AppLanguage.RUSSIAN.context(activity)
                 form.title.text=labels.getString(R.string.welcome);form.subtitle.text=labels.getString(R.string.welcome_hint)+"\n\n"+labels.getString(R.string.secure_hint)
                 form.save.text=labels.getString(R.string.save_enter)
@@ -62,7 +62,7 @@ class NativeLayoutQaTest {
                 form.brandBadge.visibility=android.view.View.GONE;form.handle.visibility=android.view.View.VISIBLE;form.closeSettings.visibility=android.view.View.VISIBLE
                 form.accountSummary.visibility=android.view.View.VISIBLE;form.editAccount.visibility=android.view.View.VISIBLE;form.credentials.visibility=android.view.View.GONE
                 form.preferences.visibility=android.view.View.VISIBLE;form.moreOptions.visibility=android.view.View.GONE
-                form.logout.visibility=android.view.View.VISIBLE;form.delete.visibility=android.view.View.VISIBLE;form.downloads.visibility=android.view.View.VISIBLE
+                form.logout.visibility=android.view.View.VISIBLE;form.downloads.visibility=android.view.View.VISIBLE
                 val labels=AppLanguage.RUSSIAN.context(activity)
                 form.title.text=labels.getString(R.string.settings);form.subtitle.text=labels.getString(R.string.secure_hint);form.languages.check(R.id.russian)
                 form.accountStatus.text=labels.getString(R.string.account_saved);form.textSizeValue.text="100%"
@@ -123,7 +123,7 @@ class NativeLayoutQaTest {
                     val form = SettingsSheetBinding.inflate(LayoutInflater.from(language.context(scaled)))
                     form.root.measure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
                     form.root.layout(0, 0, width, form.root.measuredHeight)
-                    listOf(form.save, form.logout, form.delete, form.russian, form.kazakh, form.english,form.editAccount,form.closeSettings,form.downloads,form.moreOptions).forEach { button ->
+                    listOf(form.save, form.logout, form.russian, form.kazakh, form.english,form.editAccount,form.closeSettings,form.downloads,form.moreOptions).forEach { button ->
                         assertTrue("${language.siteCode}: ${button.id} text fits", button.layout.height + button.compoundPaddingTop + button.compoundPaddingBottom <= button.height)
                         assertTrue(button.height >= (48 * density).toInt())
                     }

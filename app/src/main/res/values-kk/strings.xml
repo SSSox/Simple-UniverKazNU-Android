@@ -22,9 +22,8 @@
     <string name="save">Сақтау</string>
     <string name="save_enter">Сақтау және кіру</string>
     <string name="logout">Аккаунттан шығу</string>
-    <string name="delete_title">Логин мен құпиясөз жойылсын ба?</string>
-    <string name="delete_message">Сессия аяқталады. Келесі жолы деректерді қайта енгізу қажет болады.</string>
-    <string name="delete_action">Жою</string>
+    <string name="logout_confirm_title">Аккаунттан шығасыз ба?</string>
+    <string name="logout_confirm_message">Сеанс аяқталады, логин, құпиясөз және PIN-код осы телефоннан жойылады. Қайта кіру үшін логин мен құпиясөзді қайта енгізіңіз.</string>
     <string name="cancel">Бас тарту</string>
     <string name="storage_error">Деректерді оқу немесе сақтау мүмкін болмады. Оларды қайта енгізіңіз немесе қайталап көріңіз.</string>
     <string name="network_error">Univer ашылмады. Интернетке қосылуды тексеріп, қайталап көріңіз.</string>
@@ -257,9 +256,7 @@
     <string name="tab_app">Қолданба</string>
     <string name="language_hint">Қолданба мен сайт үшін</string>
     <string name="logout_action">Шығу</string>
-    <string name="logout_hint">Автоматты кіру өшеді</string>
-    <string name="delete_row">Осы құрылғыдағы кіру деректері</string>
-    <string name="delete_hint">Логин мен құпиясөз жойылады</string>
+    <string name="logout_hint">Логин, құпиясөз және PIN-код телефоннан жойылады</string>
     <string name="about">Android үшін Univer %1$s. Ресми емес қолданба, әл-Фараби атындағы ҚазҰУ-мен байланысы жоқ. Кіру, деректер мен пішіндер univer.kaznu.kz сайтында қалады.</string>
     <string name="stage_day">Дүйсенбі</string>
     <string name="stage_now">Қазір</string>
@@ -281,4 +278,32 @@
     <string name="link_failed">Бет ашылмады. Қосылымды тексеріп, қайталап көріңіз.</string>
     <string name="link_certificate">Сайттың сертификаты жарамсыз, сондықтан бет ашылмады.</string>
     <string name="link_blocked">Бұл мекенжайды қолданбада ашу мүмкін емес.</string>
+    <!-- Grade report: the journal's «Поделиться успеваемостью», drawn as PDF or PNG. -->
+    <string name="report_dialog_title">Үлгерімді бөлісу</string>
+    <string name="report_pdf">PDF файл: басып шығаруға және поштаға</string>
+    <string name="report_png">PNG сурет: мессенджерлерге</string>
+    <string name="report_print">Басып шығару</string>
+    <string name="report_error">Үлгерім есебін дайындау мүмкін болмады</string>
+    <string name="report_title">Студент үлгерімі</string>
+    <string name="report_term_autumn">%1$d–%2$d оқу жылы, күзгі семестр</string>
+    <string name="report_term_spring">%1$d–%2$d оқу жылы, көктемгі семестр</string>
+    <string name="report_term_summer">%1$d–%2$d оқу жылы, жазғы семестр</string>
+    <string name="report_made">univer.kaznu.kz деректері бойынша %1$s жасалды</string>
+    <string name="report_guide_title">Есепті қалай оқу керек</string>
+    <string name="report_guide" formatted="false">АБ (РК) — аралық бақылау, семестр бөлігінің қорытындысы. Жанында жинаған балл мен ең жоғары балл көрсетілген. Жолақ ең жоғары балдан алынған үлесті көрсетеді, ондағы белгілер — 50, 70 және 90&#160;% шектері. Рұқсат пен стипендияның нақты ережелерін университет белгілейді.</string>
+    <string name="report_legend_low" formatted="false">50&#160;%-дан төмен: балл жетпейді</string>
+    <string name="report_legend_pass" formatted="false">50–69&#160;%: рұқсат бар, стипендия қауіпте</string>
+    <string name="report_legend_good" formatted="false">70–89&#160;%: жақсы</string>
+    <string name="report_legend_top" formatted="false">90&#160;% және жоғары: өте жақсы</string>
+    <string name="report_band_low">Балл жетпейді</string>
+    <string name="report_band_pass">Рұқсат бар</string>
+    <string name="report_band_good">Жақсы</string>
+    <string name="report_band_top">Өте жақсы</string>
+    <string name="report_short">%1$s шегіне %2$s жетпейді</string>
+    <string name="report_reached">Барлық шектен өтті</string>
+    <string name="report_out_of">%1$s / %2$s</string>
+    <string name="report_no_grade">баға әлі жоқ</string>
+    <string name="report_no_grades">Бағалар әлі қойылмаған</string>
+    <string name="report_continued">%1$s (жалғасы)</string>
+    <string name="report_file">Үлгерім %1$s</string>
 </resources>
