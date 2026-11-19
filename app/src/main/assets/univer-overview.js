@@ -45,7 +45,7 @@
     function tickCounts(root) { var now = +new Date(); root.querySelectorAll('[data-univer-count-at]').forEach(function (node) { tick(node, now); }); }
 
     /* Site pages, each read once per visit. */
-    async function read(url) {
+    async function read(url, keep) {
         var abort = new AbortController(), timeout = setTimeout(function () { abort.abort(); }, READ_TIMEOUT);
         try {
             var response = await fetch(url, {credentials:'same-origin', cache:'no-store', signal:abort.signal});
@@ -54,10 +54,30 @@
             var html = await response.text(); if (html.length > MAX_HTML) throw new Error('Oversized');
             var doc = new DOMParser().parseFromString(html, 'text/html');
             if (doc.querySelector('#login_frm')) throw new Error('Session expired');
+            if (keep) keep(html);
             return doc;
         } finally { clearTimeout(timeout); }
     }
     function once(key, url) { if (!loads.has(key)) loads.set(key, read(url)); return loads.get(key); }
+    // The Бакалавр panels' pages (the week's schedule, the grades) are kept for KEPT_AGE in this app session, for the
+    // account that signed in last and the page's language: coming back to the tab within minutes reads nothing again.
+    // Sign-out erases the site's storage; another account never gets them.
+    var KEPT = 'univer.app.overview.v1:', KEPT_AGE = 10 * 60000, KEPT_SIZE = 1500000;
+    function account() { try { return localStorage.getItem('univer.app.account.v1') || ''; } catch (_) { return ''; } }
+    function kept(key, url) {
+        if (loads.has(key)) return loads.get(key);
+        var name = KEPT + language + ':' + url, owner = account(), saved = null;
+        try { saved = JSON.parse(sessionStorage.getItem(name)); } catch (_) { }
+        var age = saved ? Date.now() - saved.at : -1;
+        if (saved && saved.owner === owner && typeof saved.html === 'string' && age >= 0 && age < KEPT_AGE) {
+            var doc = new DOMParser().parseFromString(saved.html, 'text/html');
+            if (!doc.querySelector('#login_frm')) { loads.set(key, Promise.resolve(doc)); return loads.get(key); }
+        }
+        loads.set(key, read(url, function (html) {
+            try { if (html.length <= KEPT_SIZE) sessionStorage.setItem(name, JSON.stringify({owner:owner, at:Date.now(), html:html})); else sessionStorage.removeItem(name); } catch (_) { }
+        }));
+        return loads.get(key);
+    }
 
     /* The weekly schedule table, read the same way as the schedule page itself. */
     function minutes(value) { var m = value.split(':'); return +m[0] * 60 + +m[1]; }
@@ -356,8 +376,8 @@
 
     /* The tab pages. */
     // Draws the page read once under [key] into [body], or the failure note; a release in between leaves [body] alone.
-    function fill(body, key, url, epoch, render) {
-        once(key, url).then(function (doc) { if (epoch === generation) settled(body, function () { render(doc); }); }, function () { if (epoch === generation) fail(body); });
+    function fill(body, key, url, epoch, render, load) {
+        (load || once)(key, url).then(function (doc) { if (epoch === generation) settled(body, function () { render(doc); }); }, function () { if (epoch === generation) fail(body); });
     }
     function bachelor() {
         if (document.querySelector('.univer-app-overview-grid')) return;
@@ -368,13 +388,13 @@
         var anchor = document.querySelector('.univer-app-gpa') || document.querySelector('#l4 table.mt');
         if (!anchor) return; if (anchor.classList.contains('univer-app-gpa')) anchor.after(grid); else anchor.before(grid);
         var epoch = generation;
-        once('schedule', '/student/myschedule/').then(async function (doc) {
+        kept('schedule', '/student/myschedule/').then(async function (doc) {
             var update = todayUpdater(today.body, doc, epoch);
             await update();
             // A grid built again in the same generation (the site replaced the old one) keeps a single clock.
             if (epoch === generation) { clearInterval(scheduleTimer); scheduleTimer = setInterval(update, REFRESH); }
         }, function () { if (epoch === generation) fail(today.body); });
-        fill(grades.body, 'grades', '/student/attendance/full/', epoch, function (doc) { renderGrades(grades.body, courseScores(doc)); });
+        fill(grades.body, 'grades', '/student/attendance/full/', epoch, function (doc) { renderGrades(grades.body, courseScores(doc)); }, kept);
     }
     function desk() {
         if (document.querySelector('.univer-app-overview-requests-panel')) return;
