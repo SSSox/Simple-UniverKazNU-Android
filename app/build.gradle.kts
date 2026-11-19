@@ -26,6 +26,11 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    // The app speaks Russian (default), Kazakh and English; libraries' other translations would only add ~0.5 MB.
+    androidResources {
+        localeFilters += listOf("ru", "kk", "en")
+    }
+
     signingConfigs {
         if (releaseSigning != null) create("release") {
             storeFile = rootProject.file(releaseSigning.getProperty("storeFile"))
