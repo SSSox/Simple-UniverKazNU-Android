@@ -55,6 +55,8 @@ class SessionStorageEraseTest {
             instrumentation.runOnMainSync { assertTrue(web.canGoBack()) }
             // The document the erase unloads writes the old account's key on its way out.
             assertEquals("true", eval("localStorage.setItem('qa_previous_account','before');addEventListener('pagehide',function(){localStorage.setItem('qa_previous_account','after');});true"))
+            // Pages the app keeps for minutes in the tab's session storage (the Bachelor panels) go with the account too.
+            assertEquals("true", eval("sessionStorage.setItem('qa_session_page','grades');true"))
             val erased = CountDownLatch(1)
             var failure: Throwable? = null
             scenario.onActivity { activity -> activity.lifecycleScope.launch {
@@ -65,6 +67,7 @@ class SessionStorageEraseTest {
             instrumentation.runOnMainSync { assertFalse("Old account pages are not left in Back history", web.canGoBack()) }
             loadFixture()
             assertEquals("No cache of the previous account after erase", "null", eval("localStorage.getItem('qa_previous_account')"))
+            assertEquals("No session page of the previous account after erase", "null", eval("sessionStorage.getItem('qa_session_page')"))
         } finally {
             instrumentation.runOnMainSync { web.destroyFixture() }
             scenario.close()

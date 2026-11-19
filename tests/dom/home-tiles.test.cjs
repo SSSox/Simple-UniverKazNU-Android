@@ -51,3 +51,19 @@ test('menu pin buttons follow the pins and the menu links, and an unchanged menu
     assert.equal(buttons().length, 0);
   } finally { w.close(); }
 });
+
+test('a tap on a menu pin shows as pinned at once, before the app sends the list back', () => {
+  const w = new JSDOM('<!doctype html><html><body><details class="univer-app-menu"><div id="tools"><ul><li><a href="/student/rating/">Анкетирование</a></li></ul></div></details></body></html>',
+    { url: 'https://univer.kaznu.kz/student/bachelor/', runScripts: 'outside-only' }).window;
+  try {
+    // jsdom cannot make a trusted event, so the trusted-tap guard is lifted for this page only.
+    const untrusted = script.replace('!event.isTrusted || window', 'window');
+    assert.notEqual(untrusted, script);
+    w.eval(untrusted);
+    w.__univerShortcutsV1.apply('ru');
+    const button = w.document.querySelector('#tools .univer-app-pin');
+    assert.equal(button.getAttribute('aria-pressed'), 'false');
+    button.dispatchEvent(new w.MouseEvent('click', { bubbles: true, cancelable: true }));
+    assert.equal(w.document.querySelector('#tools .univer-app-pin').getAttribute('aria-pressed'), 'true');
+  } finally { w.close(); }
+});

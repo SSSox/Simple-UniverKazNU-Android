@@ -163,6 +163,8 @@
             if (!pin) pins = pins.filter(function (p) { return p.url !== href; });
         }
         notify('univer-pin:' + JSON.stringify({pin:pin, title:title, url:href}));
+        // The tap shows at once, before the app's stored list comes back through configure().
+        menuPinsDrawn = null;
         render();
     }
     function usefulSource() {
