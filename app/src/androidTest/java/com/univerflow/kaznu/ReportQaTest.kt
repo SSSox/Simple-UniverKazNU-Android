@@ -64,6 +64,27 @@ class ReportQaTest {
         }
     }
 
+    @Test fun aChosenGoalAndTheAbsencesAreOnThePaper() {
+        val goal = demo.copy(goal = Band.TOP, courses = demo.courses.mapIndexed { index, course -> course.copy(absences = if (index == 0) 4 else 0) })
+        for (language in AppLanguage.entries) {
+            val drawing = drawing(goal, language)
+            // The goal box under the guide, and one «Пропуски» line for the one course that has any.
+            assertEquals(drawing(demo, language).blocks.size + 2, drawing.blocks.size)
+            val pictures = drawing.writePng(File(qa, "report-goal-" + language.siteCode + ".png"))
+            assertEquals("a picture a page", drawing.writePdf(File(qa, "report-goal-" + language.siteCode + ".pdf")), pictures.size)
+            // The goal box sits under the guide on the first page.
+            val image = BitmapFactory.decodeFile(pictures.first().path)
+            val colours = HashSet<Int>()
+            for (y in 0 until image.height step 2) for (x in 0 until image.width step 2) colours += image.getPixel(x, y)
+            assertTrue("the goal's own colour marks its box", GradeReportDrawing.colour(Band.TOP) in colours)
+            image.recycle()
+        }
+        val words = AppLanguage.RUSSIAN.context(context)
+        assertEquals("Цель — «Отлично», от 90 % максимума. Под каждой оценкой указано, сколько баллов до неё осталось.",
+            words.getString(R.string.report_goal, words.getString(R.string.report_band_top), 90))
+        assertEquals("ещё 27 до 90", words.getString(R.string.report_short, "90", "27"))
+    }
+
     @Test fun aLongReportTurnsTheSamePagesAsAPdfAndAsPictures() {
         val course = GradeReport.Course("Длинное название предмета ".repeat(6).trim(), List(GradeReport.MAX_SCORES) { score("РК${it + 1}", "${40 + it * 7}") })
         val long = GradeReport(GradeReport.Term(2026, 2), "Демо Студент", List(GradeReport.MAX_COURSES) { course })

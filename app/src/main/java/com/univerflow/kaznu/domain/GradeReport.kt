@@ -4,11 +4,13 @@ package com.univerflow.kaznu.domain
  * The journal's grades for a printable report: the term, the name in the site header and each course's control-period
  * totals as the page read them. Any script on the site could send the same message, so the checks here are the only
  * trust: a field of the wrong kind, too long or too many voids the whole report, like «Скачать все».
+ * [goal] is the level chosen on the page (`PASS`, `GOOD` or `TOP`; null for none): what is left is counted to it.
  */
-data class GradeReport(val term: Term?, val student: String, val courses: List<Course>) {
+data class GradeReport(val term: Term?, val student: String, val courses: List<Course>, val goal: Band? = null) {
     /** [term] 1 is the autumn term, 2 the spring term and 3 the summer term of the academic year starting in [year]. */
     data class Term(val year: Int, val term: Int)
-    data class Course(val name: String, val scores: List<Score>)
+    /** [absences] is the count of the journal's «н» marks in the course's classes. */
+    data class Course(val name: String, val scores: List<Score>, val absences: Int = 0)
     /** A control period ("РК1") with its maximum and grade as written ("100", "63", "12,5"); either may be empty. */
     data class Score(val label: String, val max: String, val value: String)
 
@@ -17,6 +19,8 @@ data class GradeReport(val term: Term?, val student: String, val courses: List<C
         const val MAX_LENGTH = 64 * 1024
         const val MAX_COURSES = 60
         const val MAX_SCORES = 8
+        const val MAX_ABSENCES = 999
+        private val GOALS = mapOf("pass" to Band.PASS, "good" to Band.GOOD, "top" to Band.TOP)
         private val SPACES = Regex("\\s+")
         private val LABEL = Regex("^[\\p{L}\\p{N}*.()]{1,16}$")
         private val AMOUNT = Regex("^(?:-?\\d{1,6}(?:[.,]\\d{1,6})?)?$")
@@ -32,7 +36,9 @@ data class GradeReport(val term: Term?, val student: String, val courses: List<C
             val list = message["courses"] as? List<*> ?: return null
             if (list.isEmpty() || list.size > MAX_COURSES) return null
             val courses = list.map { course(it) ?: return null }
-            return GradeReport(term, student, courses)
+            // No goal is null or absent; any other value is not one of the three and voids the report.
+            val goal = message["goal"]?.let { GOALS[it as? String] ?: return null }
+            return GradeReport(term, student, courses, goal)
         }
 
         private fun term(value: Any): Term? {
@@ -54,7 +60,8 @@ data class GradeReport(val term: Term?, val student: String, val courses: List<C
                 val grade = (score["value"] as? String)?.trim()?.takeIf(AMOUNT::matches) ?: return null
                 Score(label, max, grade)
             }
-            return Course(name, scores)
+            val absences = map["absences"]?.let { whole(it)?.takeIf { count -> count in 0..MAX_ABSENCES } ?: return null } ?: 0
+            return Course(name, scores, absences)
         }
 
         private fun whole(value: Any?): Int? = (value as? Number)?.toDouble()?.takeIf { it % 1.0 == 0.0 && it in -1e6..1e6 }?.toInt()

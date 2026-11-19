@@ -77,7 +77,33 @@ class GradeReportTest {
             message(term = "2026/1"),
             message(student = "x".repeat(121)),
             message(student = 42),
+            message() + ("goal" to "great"),
+            message() + ("goal" to 90),
+            message(courses = listOf(course() + ("absences" to -1))),
+            message(courses = listOf(course() + ("absences" to 1000))),
+            message(courses = listOf(course() + ("absences" to 2.5))),
+            message(courses = listOf(course() + ("absences" to "4"))),
         )
         broken.forEachIndexed { index, value -> assertNull("case $index", GradeReport.of(value)) }
+    }
+
+    @Test fun aGoalCountsWhatIsLeftToItsOwnMarkLikeThePage() {
+        // The same cases as the goal test in tests/dom/score-bands.test.cjs.
+        fun aimed(value: String, max: String, goal: Band?) = ScoreBand.of(value, max, goal)!!.let { listOf(it.band, it.next, it.left, it.reached) }
+        assertEquals(listOf(Band.PASS, 90.0, 27.0, false), aimed("63", "100", Band.TOP))
+        assertEquals(listOf(Band.PASS, 70.0, 7.0, false), aimed("63", "100", Band.GOOD))
+        assertEquals(listOf(Band.PASS, null, 0.0, true), aimed("63", "100", Band.PASS))
+        assertEquals(listOf(Band.TOP, null, 0.0, true), aimed("92", "100", Band.TOP))
+        assertEquals(listOf(Band.LOW, 22.5, 10.5, false), aimed("12", "25", Band.TOP))
+        assertEquals(listOf(Band.PASS, 70.0, 7.0, false), aimed("63", "100", null))
+    }
+
+    @Test fun theGoalAndEachCoursesAbsencesTravelWithTheReport() {
+        val report = GradeReport.of(message(listOf(course() + ("absences" to 4), course("Психология"))) + ("goal" to "top"))!!
+        assertEquals(Band.TOP, report.goal)
+        assertEquals(listOf(4, 0), report.courses.map { it.absences })
+        // A page without a goal (or an older one without the fields) still makes a report.
+        val plain = GradeReport.of(message() + ("goal" to null))!!
+        assertNull(plain.goal); assertEquals(0, plain.courses[0].absences)
     }
 }

@@ -1648,6 +1648,22 @@ html:root:root:root:root.univer-mobile #l4 p.univer-app-band-legend { display:fl
 html:root:root:root:root.univer-mobile #l4 .univer-app-band-legend-title { flex-basis:100%; color:var(--u-ink); font-weight:600; }
 html:root:root:root:root.univer-mobile #l4 .univer-app-band-legend-item { display:inline-flex; align-items:center; gap:6px; }
 html:root:root:root:root.univer-mobile #l4 .univer-app-band-legend-item::before { content:''; flex:none; width:10px; height:10px; border-radius:3px; background:var(--u-band); }
+/* The goal: four chips that wrap on a narrow phone. What is left to it is the line a parent reads first, so it is set
+   heavier, in the band's ink; a reached goal stays plain. */
+html:root:root:root:root.univer-mobile #l4 .univer-app-goal { margin:12px 0 0!important; padding:0!important; border:0!important; background:none!important; }
+html:root:root:root:root.univer-mobile #l4 .univer-app-goal[hidden] { display:none!important; }
+html:root:root:root:root.univer-mobile #l4 p.univer-app-goal-caption { display:block; margin:0 0 6px!important; padding:0; color:var(--u-ink)!important; font-size:14px!important; font-weight:600; }
+html:root:root:root:root.univer-mobile #l4 .univer-app-goal-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; }
+@media (min-width:640px) { html:root:root:root:root.univer-mobile #l4 .univer-app-goal-list { grid-template-columns:repeat(4,max-content); } }
+html:root:root:root:root.univer-mobile #l4 .univer-app-goal-list>button { min-width:0; min-height:44px!important; height:auto; margin:0!important; padding:8px 12px!important; text-align:center; border:1px solid var(--u-line)!important; border-radius:10px!important; background:var(--u-surface)!important; box-shadow:none!important; color:var(--u-ink)!important; font-size:14px!important; font-weight:600!important; line-height:1.2!important; }
+html:root:root:root:root.univer-mobile #l4 .univer-app-goal-list>button[aria-pressed=true] { border-color:var(--u-brand)!important; background:var(--u-brand-soft)!important; color:var(--u-brand-strong)!important; }
+html:root:root:root:root.univer-mobile #l4 p.univer-app-progress-next[data-univer-left] { color:var(--u-band-ink)!important; font-size:var(--u-fs-body)!important; font-weight:650; }
+html:root:root:root:root.univer-mobile #l4 .univer-app-fresh { padding:1px 7px; border-radius:999px; background:var(--u-brand); color:#fff; font-size:var(--u-fs-caption); font-weight:600; line-height:1.5; }
+html:root:root:root:root.univer-mobile.univer-app-dark #l4 .univer-app-fresh { color:var(--u-bg); }
+html:root:root:root:root.univer-mobile .univer-app-overview-score[data-univer-fresh]::after { content:''; position:absolute; top:4px; right:4px; width:7px; height:7px; border-radius:50%; background:var(--u-brand); }
+html:root:root:root:root.univer-mobile #l4 p.univer-app-attendance-absences { margin:0!important; padding:10px 14px!important; border-top:1px solid var(--u-line); color:var(--u-text)!important; font-size:var(--u-fs-meta)!important; line-height:1.4!important; }
+html:root:root:root:root.univer-mobile #l4 p.univer-app-attendance-absences>b { margin-left:4px; color:var(--u-ink); font-weight:650; }
+html:root:root:root:root.univer-mobile #l4 p.univer-app-attendance-absences>span { color:var(--u-muted); }
 :root.univer-mobile.univer-app-dark { color-scheme:dark;
   --u-brand:#8ebbf0; --u-brand-strong:#b5d3f6; --u-brand-soft:#1a2b40; --u-brand-line:#34507a;
   --u-ink:#e6ecf3; --u-text:#cfd8e2; --u-muted:#9fadbc; --u-line:#2b3746; --u-line-strong:#3b4a5b;

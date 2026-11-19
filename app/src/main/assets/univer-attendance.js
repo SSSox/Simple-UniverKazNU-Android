@@ -9,9 +9,9 @@
     var expanded = new Map(), focusToggle = null;
     var TYPES = ['lecture', 'seminar', 'sro'];
     var WORDS = {
-        en: {all:'All classes', lecture:'Lectures', seminar:'Seminars', sro:'Independent work', filter:'Class type', kind:'Class type', total:'Total', outOf:'of', totals:'Totals by class type', overall:'Overall course total', empty:'No classes of this type', ungraded:'No grades yet', none:'none', note:'The overall course total includes every class type.', lectureLabel:'Lecture', seminarLabel:'Seminar', sroLabel:'Independent work', overview:'Course summary', showDetails:'Show class log', hideDetails:'Hide class log', courses:'Courses', allCourses:'All', noClasses:'No classes yet', low:'Below 50', pass:'Admitted', good:'Good', top:'Excellent', short:'{left} short of {at}', reached:'Every mark reached', legend:'Score colours', legendLow:'below 50: short', legendPass:'50–69: admitted, scholarship at risk', legendGood:'70–89: good', legendTop:'90 and above: excellent', report:'Share grades: PDF or image'},
-        kz: {all:'Барлық сабақтар', lecture:'Дәрістер', seminar:'Семинарлар', sro:'СӨЖ', filter:'Сабақ түрі', kind:'Сабақ түрі', total:'Барлығы', outOf:'/', totals:'Сабақ түрлері бойынша қорытынды', overall:'Пән бойынша жалпы қорытынды', empty:'Бұл түрдегі сабақтар жоқ', ungraded:'Бағалар әлі қойылмаған', none:'жоқ', note:'Пән бойынша жалпы қорытынды сабақтардың барлық түрін қамтиды.', lectureLabel:'Дәріс', seminarLabel:'Семинар', sroLabel:'СӨЖ', overview:'Пәндер бойынша қорытынды', showDetails:'Сабақ журналын көрсету', hideDetails:'Сабақ журналын жасыру', courses:'Пәндер', allCourses:'Барлығы', noClasses:'Сабақтар әлі жоқ', low:'Балл жетпейді', pass:'Рұқсат бар', good:'Жақсы', top:'Өте жақсы', short:'{at} шегіне {left} жетпейді', reached:'Барлық шектен өтті', legend:'Балл түстері', legendLow:'50-ден төмен: балл жетпейді', legendPass:'50–69: рұқсат бар, стипендия қауіпте', legendGood:'70–89: жақсы', legendTop:'90 және жоғары: өте жақсы', report:'Үлгерімді бөлісу: PDF не сурет'},
-        ru: {all:'Все занятия', lecture:'Лекции', seminar:'Семинары', sro:'СРО', filter:'Тип занятий', kind:'Вид занятий', total:'Итого', outOf:'из', totals:'Итоги по видам занятий', overall:'Общий итог предмета', empty:'Нет занятий этого вида', ungraded:'Оценки пока не выставлены', none:'нет', note:'Общий итог предмета учитывает все виды занятий.', lectureLabel:'Лекция', seminarLabel:'Семинар', sroLabel:'СРО / СРОП', overview:'Сводка по предметам', showDetails:'Показать журнал занятий', hideDetails:'Скрыть журнал занятий', courses:'Предметы', allCourses:'Все', noClasses:'Занятия пока не добавлены', low:'Недобор', pass:'Есть допуск', good:'Хорошо', top:'Отлично', short:'До {at} не хватает {left}', reached:'Все пороги пройдены', legend:'Цвета баллов', legendLow:'ниже 50: недобор', legendPass:'50–69: допуск есть, стипендия под риском', legendGood:'70–89: хорошо', legendTop:'90 и выше: отлично', report:'Поделиться успеваемостью: PDF или картинка'}
+        en: {all:'All classes', lecture:'Lectures', seminar:'Seminars', sro:'Independent work', filter:'Class type', kind:'Class type', total:'Total', outOf:'of', totals:'Totals by class type', overall:'Overall course total', empty:'No classes of this type', ungraded:'No grades yet', none:'none', note:'The overall course total includes every class type.', lectureLabel:'Lecture', seminarLabel:'Seminar', sroLabel:'Independent work', overview:'Course summary', showDetails:'Show class log', hideDetails:'Hide class log', courses:'Courses', allCourses:'All', noClasses:'No classes yet', low:'Below 50', pass:'Satisfactory', good:'Good', top:'Excellent', short:'{left} short of {at}', reached:'Every mark reached', goal:'Goal', noGoal:'None', goalReached:'Goal reached', absences:'Absences', absenceKinds:{lecture:'lectures', seminar:'seminars', sro:'independent work', other:'other'}, fresh:'new', freshSaid:'new since your last visit', legend:'Score colours', legendLow:'below 50: short', legendPass:'50–69: satisfactory, scholarship at risk', legendGood:'70–89: good', legendTop:'90 and above: excellent', report:'Share grades: PDF or image'},
+        kz: {all:'Барлық сабақтар', lecture:'Дәрістер', seminar:'Семинарлар', sro:'СӨЖ', filter:'Сабақ түрі', kind:'Сабақ түрі', total:'Барлығы', outOf:'/', totals:'Сабақ түрлері бойынша қорытынды', overall:'Пән бойынша жалпы қорытынды', empty:'Бұл түрдегі сабақтар жоқ', ungraded:'Бағалар әлі қойылмаған', none:'жоқ', note:'Пән бойынша жалпы қорытынды сабақтардың барлық түрін қамтиды.', lectureLabel:'Дәріс', seminarLabel:'Семинар', sroLabel:'СӨЖ', overview:'Пәндер бойынша қорытынды', showDetails:'Сабақ журналын көрсету', hideDetails:'Сабақ журналын жасыру', courses:'Пәндер', allCourses:'Барлығы', noClasses:'Сабақтар әлі жоқ', low:'Балл жетпейді', pass:'Қанағаттанарлық', good:'Жақсы', top:'Өте жақсы', short:'{at} шегіне {left} жетпейді', reached:'Барлық шектен өтті', goal:'Мақсат', noGoal:'Жоқ', goalReached:'Мақсатқа жетті', absences:'Қатыспаған сабақтар', absenceKinds:{lecture:'дәріс', seminar:'семинар', sro:'СӨЖ', other:'басқа'}, fresh:'жаңа', freshSaid:'соңғы кіруден кейін жаңа', legend:'Балл түстері', legendLow:'50-ден төмен: балл жетпейді', legendPass:'50–69: қанағаттанарлық, стипендия қауіпте', legendGood:'70–89: жақсы', legendTop:'90 және жоғары: өте жақсы', report:'Үлгерімді бөлісу: PDF не сурет'},
+        ru: {all:'Все занятия', lecture:'Лекции', seminar:'Семинары', sro:'СРО', filter:'Тип занятий', kind:'Вид занятий', total:'Итого', outOf:'из', totals:'Итоги по видам занятий', overall:'Общий итог предмета', empty:'Нет занятий этого вида', ungraded:'Оценки пока не выставлены', none:'нет', note:'Общий итог предмета учитывает все виды занятий.', lectureLabel:'Лекция', seminarLabel:'Семинар', sroLabel:'СРО / СРОП', overview:'Сводка по предметам', showDetails:'Показать журнал занятий', hideDetails:'Скрыть журнал занятий', courses:'Предметы', allCourses:'Все', noClasses:'Занятия пока не добавлены', low:'Недобор', pass:'Удовлетворительно', good:'Хорошо', top:'Отлично', short:'ещё {left} до {at}', reached:'Все пороги пройдены', goal:'Цель', noGoal:'Нет', goalReached:'Цель достигнута', absences:'Пропуски', absenceKinds:{lecture:'лекции', seminar:'семинары', sro:'СРО', other:'другие'}, fresh:'новое', freshSaid:'новое с прошлого захода', legend:'Цвета баллов', legendLow:'ниже 50: недобор', legendPass:'50–69: удовлетворительно, стипендия под риском', legendGood:'70–89: хорошо', legendTop:'90 и выше: отлично', report:'Поделиться успеваемостью: PDF или картинка'}
     };
     // The journal opens with every course and class type each time; the choice is not kept. A tap on a course in the
     // home overview or in Текущая аттестация hands that course over once: it is read and removed here, so a refresh or
@@ -33,14 +33,53 @@
         while ((match = pattern.exec(value))) found.push({label:match[1].replace(/\s+/g, ''), max:match[2] || '', value:match[3] || ''});
         return found;
     }
+    // Absences are the journal's own «н» marks in a class's date cells; anything else in a cell is not counted.
+    function absences(table) {
+        var count = 0;
+        ownRows(table).forEach(row => Array.from(row.cells).forEach(cell => { if (cell.tagName === 'TD' && /^н$/i.test(clean(cell))) count++; }));
+        return count;
+    }
+    // Every class counts (labs and practicals with no known type too); a type counts only its own.
+    function missed(group, type) {
+        return group.lessons.filter(lesson => !type || lesson.type === type)
+            .reduce((sum, lesson) => sum + lesson.tables.reduce((n, table) => n + absences(table), 0), 0);
+    }
+    // «Новое»: the course totals as they stood at the previous visit (base) and now (current), per term and account.
+    // A visit is an app session (a sessionStorage mark) or 12 hours: a reload within one keeps its marks, the next visit
+    // starts from what this one showed. Nothing is new on the first visit or for another account.
+    var SEEN_KEY = 'univer.app.grades-seen.v1', VISIT_KEY = 'univer.app.grades-visit.v1', VISIT_AGE = 12 * 3600000, fresh = new Set();
+    function seenKey(name, label) { return name.normalize('NFC').toLocaleLowerCase() + '|' + label; }
+    function isFresh(name, label) { return fresh.has(seenKey(name, label)); }
+    function freshness(groups) {
+        if (!/^\/student\/attendance\/full(\/|$)/.test(location.pathname)) return;
+        var values = {}, count = 0;
+        groups.forEach(group => { if (group.heading && group.overall) scores(clean(group.overall)).forEach(item => { values[seenKey(group.name, item.label)] = item.value; count++; }); });
+        if (!count) return;
+        var owner = '', store = null, visited = false, now = Date.now(), term = termOf(), key = term ? term.year + '/' + term.term : 'current';
+        try { owner = localStorage.getItem('univer.app.account.v1') || ''; store = JSON.parse(localStorage.getItem(SEEN_KEY) || 'null'); } catch (_) { store = null; }
+        try { visited = sessionStorage.getItem(VISIT_KEY) === '1'; } catch (_) {}
+        if (!store || typeof store !== 'object' || store.owner !== owner || !store.terms || typeof store.terms !== 'object') store = {owner, at:0, terms:{}};
+        if (!visited || !(now - store.at >= 0 && now - store.at < VISIT_AGE)) {
+            Object.keys(store.terms).forEach(name => { var entry = store.terms[name]; if (entry && entry.current) entry.base = entry.current; });
+            store.at = now;
+            try { sessionStorage.setItem(VISIT_KEY, '1'); } catch (_) {}
+        }
+        var entry = store.terms[key] && typeof store.terms[key] === 'object' ? store.terms[key] : (store.terms[key] = {});
+        var base = entry.base && typeof entry.base === 'object' ? entry.base : null;
+        fresh = new Set(base ? Object.keys(values).filter(name => values[name] && base[name] !== values[name]) : []);
+        entry.current = values;
+        var terms = Object.keys(store.terms); if (terms.length > 6) terms.filter(name => name !== key).slice(0, terms.length - 6).forEach(name => delete store.terms[name]);
+        try { localStorage.setItem(SEEN_KEY, JSON.stringify(store)); } catch (_) {}
+    }
     // The chip the home screen shows, so a grade looks alike wherever it is read.
-    function gradeChips(list) {
+    function gradeChips(list, name) {
         var box = el('span', 'univer-app-overview-scores');
         list.forEach(item => {
-            var chip = el('span', 'univer-app-overview-score');
+            var chip = el('span', 'univer-app-overview-score'), isNew = isFresh(name, item.label);
             chip.setAttribute('role', 'group');
+            if (isNew) chip.dataset.univerFresh = 'true';
             // The eye reads a dash for a missing grade; a screen reader says the word ("нет", "none", "жоқ").
-            chip.setAttribute('aria-label', item.label + ': ' + (item.value || text().none) + (item.max ? ' / ' + item.max : ''));
+            chip.setAttribute('aria-label', item.label + ': ' + (item.value || text().none) + (item.max ? ' / ' + item.max : '') + (isNew ? ', ' + text().freshSaid : ''));
             chip.append(el('span', 'univer-app-overview-score-label', item.label), el('span', 'univer-app-overview-score-value', item.value || '–'));
             var bar = scoreBar('univer-app-overview-score-bar', item.value, item.max); if (bar) chip.appendChild(bar);
             band(chip, item.value, item.max);
@@ -64,22 +103,24 @@
     function words(template, values) { return template.replace(/\{(\w+)\}/g, (_, key) => values[key]); }
     // One control period's total against the marks 50, 70 and 90: its band in words, a bar with the marks drawn on it,
     // and how far the next mark is. Colour is never the only signal; a missing grade is one quiet line.
-    function progress(item) {
-        var t = text(), found = dom.scoreBand(item.value, item.max), box = el('div', 'univer-app-progress');
+    function progress(item, name) {
+        var t = text(), found = dom.scoreBand(item.value, item.max, dom.goal()), box = el('div', 'univer-app-progress');
         box.setAttribute('role', 'group');
-        var head = el('div', 'univer-app-progress-head'), value = el('span', 'univer-app-progress-value');
+        var head = el('div', 'univer-app-progress-head'), value = el('span', 'univer-app-progress-value'), isNew = isFresh(name, item.label);
         value.append(el('b', '', item.value ? number(item.value) : '–'));
         if (item.max) value.append(' ' + t.outOf + ' ' + number(item.max));
-        head.append(el('span', 'univer-app-progress-label', item.label), value);
+        head.append(el('span', 'univer-app-progress-label', item.label));
+        if (isNew) head.appendChild(el('span', 'univer-app-fresh', t.fresh));
+        head.appendChild(value);
         box.appendChild(head);
         if (!found) {
-            box.setAttribute('aria-label', item.label + ': ' + (item.value || t.none));
+            box.setAttribute('aria-label', item.label + ': ' + (item.value || t.none) + (isNew ? '. ' + t.freshSaid : ''));
             head.setAttribute('aria-hidden', 'true');
             return box;
         }
         box.dataset.band = found.band;
         var state = el('span', 'univer-app-progress-band', t[found.band]);
-        head.insertBefore(state, value);
+        head.insertBefore(state, head.children[1]);
         var track = el('div', 'univer-app-progress-track'), scale = el('div', 'univer-app-progress-scale');
         track.style.setProperty('--univer-score', found.percent + '%');
         [50, 70, 90].forEach((at, index) => {
@@ -89,10 +130,13 @@
             track.appendChild(tick); scale.appendChild(mark);
         });
         track.appendChild(el('span', 'univer-app-progress-fill'));
-        var next = el('p', 'univer-app-progress-next', found.next === null ? t.reached
+        var next = el('p', 'univer-app-progress-next', found.next === null ? (found.reached ? t.goalReached : t.reached)
             : words(t.short, {at:number(found.next), left:number(found.left)}));
+        // What is left is the part a parent looks for: it stands out; a reached goal or the top band is plain.
+        if (found.next !== null) next.dataset.univerLeft = 'true';
         box.append(track, scale, next);
-        box.setAttribute('aria-label', [item.label + ': ' + number(item.value) + (item.max ? ' ' + t.outOf + ' ' + number(item.max) : ''), t[found.band], next.textContent].join('. '));
+        box.setAttribute('aria-label', [item.label + ': ' + number(item.value) + (item.max ? ' ' + t.outOf + ' ' + number(item.max) : ''), t[found.band], next.textContent]
+            .concat(isNew ? [t.freshSaid] : []).join('. '));
         Array.from(box.children).forEach(child => child.setAttribute('aria-hidden', 'true'));
         return box;
     }
@@ -315,8 +359,19 @@
         if (periods.length) {
             var totals = el('div', 'univer-app-progress-list');
             totals.appendChild(el('p', 'univer-app-progress-title', t.total));
-            periods.forEach(item => totals.appendChild(progress(item)));
+            periods.forEach(item => totals.appendChild(progress(item, group.name)));
             box.appendChild(totals);
+        }
+        // The journal's «н» marks of the classes shown: every class with all types, the chosen type alone.
+        var gone = missed(group, selected === 'all' ? '' : selected);
+        if (gone > 0) {
+            var lost = el('p', 'univer-app-attendance-absences', t.absences + ': '); lost.appendChild(el('b', '', String(gone)));
+            if (selected === 'all') {
+                var parts = TYPES.concat(['']).map(type => [type, group.lessons.filter(l => type ? l.type === type : !TYPES.includes(l.type))
+                    .reduce((n, lesson) => n + lesson.tables.reduce((m, table) => m + absences(table), 0), 0)]).filter(([, n]) => n > 0);
+                if (parts.length > 1 || (parts.length === 1 && parts[0][0])) lost.appendChild(el('span', '', ' · ' + parts.map(([type, n]) => t.absenceKinds[type || 'other'] + ' ' + n).join(', ')));
+            }
+            box.appendChild(lost);
         }
         // Anything the server wrote that is not a recognised period stays readable as its own line.
         if (group.overall && selected === 'all' && !periods.length) box.appendChild(el('p', 'univer-app-attendance-overall-value', clean(group.overall)));
@@ -330,7 +385,12 @@
         return insertAfterCell(group.heading || group.lessons[0].cell, box);
     }
     // Adapter-owned updates pause the shared DOM observer, so they never re-trigger adaptation.
-    function redraw() { var action = () => render(model()); if (window.__univerMobileV1) window.__univerMobileV1.mutate(action); else action(); }
+    function redraw() {
+        var action = () => { var groups = model(), signature = signatureOf(groups); render(groups); if (state) state.signature = signature; };
+        if (window.__univerMobileV1) window.__univerMobileV1.mutate(action); else action();
+    }
+    // Another goal: every hint counts what is left to it (the report reads it when it is made).
+    dom.onGoal(() => { if (state) redraw(); });
     function overview(groups) {
         var list = state.overview, courses = groups.filter(group => group.heading), t = text();
         list.textContent = ''; list.hidden = selectedCourse !== 'all' || courses.length < 2 || selected !== 'all';
@@ -340,7 +400,7 @@
             var row = el('li'), name = el('button', 'univer-app-attendance-overview-name', group.name);
             name.type = 'button'; name.addEventListener('click', event => chooseCourse(group.token, event)); row.appendChild(name);
             var periods = group.overall ? scores(clean(group.overall)) : [];
-            row.appendChild(periods.length ? gradeChips(periods)
+            row.appendChild(periods.length ? gradeChips(periods, group.name)
                 : el('span', 'univer-app-attendance-overview-empty', group.overall ? clean(group.overall) : t.ungraded));
             rows.appendChild(row);
         });
@@ -437,8 +497,15 @@
         // The note explains a type filter, so it appears only while one is active.
         state.caption.textContent = t.filter; state.note.textContent = t.note; state.note.hidden = selected === 'all';
         setText(state.share, t.report);
-        dom.setHidden(state.share, typeof __univerNative !== 'function' || !/^\/student\/attendance\/full(\/|$)/.test(location.pathname) ||
-            !groups.some(group => group.heading && group.overall && scores(clean(group.overall)).length));
+        var graded = groups.some(group => group.heading && group.overall && scores(clean(group.overall)).length);
+        dom.setHidden(state.share, typeof __univerNative !== 'function' || !/^\/student\/attendance\/full(\/|$)/.test(location.pathname) || !graded);
+        dom.setHidden(state.goal, !graded || selected !== 'all');
+        setText(state.goalCaption, t.goal); state.goal.setAttribute('aria-label', t.goal);
+        state.goal.querySelectorAll('button[data-goal]').forEach(button => {
+            var name = button.dataset.goal;
+            setText(button, name === 'none' ? t.noGoal : t[name]);
+            button.setAttribute('aria-pressed', String((dom.goal() || 'none') === name));
+        });
         var focused = root.querySelector('.univer-app-attendance-summary[data-univer-focus] .univer-app-attendance-details-toggle');
         if (focused) { focused.closest('.univer-app-attendance-summary').removeAttribute('data-univer-focus'); focused.focus?.({preventScroll:true}); }
     }
@@ -458,11 +525,19 @@
         // The report for printing or sending (a parent, a curator) is drawn by the app from every course's totals.
         var share = el('button', 'univer-app-attendance-report'); share.type = 'button'; share.hidden = true;
         share.addEventListener('click', event => { if (event.isTrusted && typeof __univerNative === 'function') __univerNative('univer-report:' + JSON.stringify(reportData())); });
-        var tools = el('div', 'univer-app-attendance-tools'); tools.append(courses, caption, bar, note, share, summaryList);
+        // The level to aim at (a parent's question: how far is «Отлично»?). The hints and the report count to it.
+        var goal = el('div', 'univer-app-goal'), goalCaption = el('p', 'univer-app-goal-caption'), goalList = el('div', 'univer-app-goal-list');
+        goal.setAttribute('role', 'group'); goal.hidden = true; goalCaption.setAttribute('aria-hidden', 'true');
+        ['none', 'pass', 'good', 'top'].forEach(name => {
+            var button = el('button'); button.type = 'button'; button.dataset.goal = name;
+            button.addEventListener('click', () => dom.setGoal(name === 'none' ? null : name)); goalList.appendChild(button);
+        });
+        goal.append(goalCaption, goalList);
+        var tools = el('div', 'univer-app-attendance-tools'); tools.append(courses, caption, bar, note, goal, share, summaryList);
         insertAfterCell(groups[0].heading || groups[0].lessons[0].cell, tools, true);
         // The filter bar has its own lifetime; summary rebuilds must not remove it.
         var host = owned.pop();
-        state = {bar, host, caption, note, share, courses, courseCaption, courseList, allCourse, courseButtons:new Map(), overview:summaryList, signature:null};
+        state = {bar, host, caption, note, share, goal, goalCaption, courses, courseCaption, courseList, allCourse, courseButtons:new Map(), overview:summaryList, signature:null};
     }
     // The academic year and term this journal shows: from its own address, or between the previous and next terms it
     // links to (/full/2025/2 and /full/2026/2 surround 2026/1). Null when neither says.
@@ -488,12 +563,14 @@
             courses:model().filter(group => group.heading).slice(0, 60).map(group => ({
                 name:group.name.slice(0, 200),
                 scores:(group.overall ? scores(clean(group.overall)) : []).slice(0, 8).map(item => ({label:item.label, max:item.max, value:item.value})),
+                absences:Math.min(999, missed(group)),
             })),
+            goal:dom.goal(),
         };
     }
     // Language and every course, lesson and grade table with its text: polling rerenders only when one changes.
     function signatureOf(groups) {
-        return language + '|' + groups.map(g => id(g.heading || g.lessons[0].cell) + ':' + (g.token || '') +
+        return language + '|' + (dom.goal() || '') + '|' + groups.map(g => id(g.heading || g.lessons[0].cell) + ':' + (g.token || '') +
             g.lessons.map(l => id(l.link) + clean(l.link) + l.tables.map(t => id(t) + clean(t)).join('|')).join('/') +
             (g.overall ? clean(g.overall) : '')).join(';');
     }
@@ -506,6 +583,7 @@
         if (!groups.length) return;
         var signature = signatureOf(groups);
         if (!state) buildTools(groups);
+        if (state.signature !== signature) freshness(groups);
         // The signature is kept only after a complete render, so a failed one is retried on the next pass.
         if (state.signature !== signature) { render(groups); state.signature = signature; }
     }

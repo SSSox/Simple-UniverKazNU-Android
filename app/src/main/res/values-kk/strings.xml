@@ -292,15 +292,18 @@
     <string name="report_guide_title">Есепті қалай оқу керек</string>
     <string name="report_guide" formatted="false">АБ (РК) — аралық бақылау, семестр бөлігінің қорытындысы. Жанында жинаған балл мен ең жоғары балл көрсетілген. Жолақ ең жоғары балдан алынған үлесті көрсетеді, ондағы белгілер — 50, 70 және 90&#160;% шектері. Рұқсат пен стипендияның нақты ережелерін университет белгілейді.</string>
     <string name="report_legend_low" formatted="false">50&#160;%-дан төмен: балл жетпейді</string>
-    <string name="report_legend_pass" formatted="false">50–69&#160;%: рұқсат бар, стипендия қауіпте</string>
+    <string name="report_legend_pass" formatted="false">50–69&#160;%: қанағаттанарлық, стипендия қауіпте</string>
     <string name="report_legend_good" formatted="false">70–89&#160;%: жақсы</string>
     <string name="report_legend_top" formatted="false">90&#160;% және жоғары: өте жақсы</string>
     <string name="report_band_low">Балл жетпейді</string>
-    <string name="report_band_pass">Рұқсат бар</string>
+    <string name="report_band_pass">Қанағаттанарлық</string>
     <string name="report_band_good">Жақсы</string>
     <string name="report_band_top">Өте жақсы</string>
     <string name="report_short">%1$s шегіне %2$s жетпейді</string>
     <string name="report_reached">Барлық шектен өтті</string>
+    <string name="report_goal">Мақсат — «%1$s», ең жоғары балдың %2$d&#160;%%-ынан бастап. Әр бағаның астында мақсатқа дейін қанша балл қалғаны көрсетілген.</string>
+    <string name="report_goal_reached">Мақсатқа жетті</string>
+    <string name="report_absences">Қатыспаған сабақтар: %1$d</string>
     <string name="report_out_of">%1$s / %2$s</string>
     <string name="report_no_grade">баға әлі жоқ</string>
     <string name="report_no_grades">Бағалар әлі қойылмаған</string>

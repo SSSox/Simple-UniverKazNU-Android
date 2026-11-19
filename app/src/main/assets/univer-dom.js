@@ -27,8 +27,25 @@
             reader.releaseLock();
         }
     }
+    // The level the student (or a parent) aims at, chosen on the grades page: 'pass' (Удовлетворительно, 50 %), 'good'
+    // (70 %) or 'top' (90 %); null is none. Kept in the site's localStorage, so it goes with the account on logout.
+    var GOAL_KEY = 'univer.app.grade-goal.v1', GOALS = {pass:50, good:70, top:90}, aim = null, aimRead = false, aimHeard = [];
+    function goal() {
+        if (!aimRead) { aimRead = true; try { var kept = localStorage.getItem(GOAL_KEY); if (GOALS[kept]) aim = kept; } catch (_) {} }
+        return aim;
+    }
     window.__univerDomV1 = {
         boundedText: boundedText,
+        goal: goal,
+        /** Chooses the goal ('pass', 'good', 'top' or null) and tells every listener. */
+        setGoal: function (name) {
+            var next = GOALS[name] ? name : null;
+            if (next === goal()) return;
+            aim = next;
+            try { if (aim) localStorage.setItem(GOAL_KEY, aim); else localStorage.removeItem(GOAL_KEY); } catch (_) {}
+            aimHeard.slice().forEach(function (heard) { try { heard(aim); } catch (_) {} });
+        },
+        onGoal: function (heard) { if (typeof heard === 'function' && aimHeard.indexOf(heard) < 0) aimHeard.push(heard); },
         /** A node's text (or a string) with runs of whitespace collapsed. */
         clean: function (node) { return (typeof node === 'string' ? node : node?.textContent || '').replace(/\s+/g, ' ').trim(); },
         /** Text for matching a search: composed, lower case, "ё" read as "е". */
@@ -48,19 +65,23 @@
          * Where a score ("63" of "100", "12,5" of "25") stands against the marks students go by, as a share of its
          * maximum: below 50 % is short ('low'), 50–69 % admits ('pass'), 70–89 % is good, 90 % and up excellent ('top').
          * `next` is the next mark in this score's own points and `left` how many points it still needs (never 0 while
-         * short of it). Null unless both are numbers and the maximum is positive. domain/ScoreBand.kt is the same rule.
+         * short of it). With a [goal] ('pass', 'good', 'top'), `next` is the goal's mark instead, and a score at or above
+         * it has nothing left (`reached`). Null unless both are numbers and the maximum is positive.
+         * domain/ScoreBand.kt is the same rule.
          */
-        scoreBand: function (value, max) {
+        scoreBand: function (value, max, goal) {
             var number = function (raw) { var text = String(raw ?? '').trim().replace(',', '.'); return /^-?\d+(?:\.\d+)?$/.test(text) ? Number(text) : NaN; };
             var points = number(value), top = number(max);
             if (!isFinite(points) || !(top > 0)) return null;
-            var percent = Math.max(0, Math.min(100, points / top * 100)), mark = [50, 70, 90].find(function (at) { return percent < at; });
+            var percent = Math.max(0, Math.min(100, points / top * 100)), aimed = GOALS[goal] || null;
+            var mark = aimed ? (percent < aimed ? aimed : undefined) : [50, 70, 90].find(function (at) { return percent < at; });
             return {
                 band: percent >= 90 ? 'top' : percent >= 70 ? 'good' : percent >= 50 ? 'pass' : 'low',
                 percent: Math.round(percent * 10) / 10,
                 marks: [50, 70, 90].map(function (at) { return Math.round(at * top) / 100; }),
                 next: mark === undefined ? null : Math.round(mark * top) / 100,
                 left: mark === undefined ? 0 : Math.max(0.1, Math.ceil((mark * top / 100 - points) * 10 - 1e-9) / 10),
+                reached: !!aimed && mark === undefined,
             };
         },
     };

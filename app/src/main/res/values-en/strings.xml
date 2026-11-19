@@ -293,15 +293,18 @@
     <string name="report_guide_title">How to read this report</string>
     <string name="report_guide" formatted="false">RK1, RK2 are midterm controls, each the result for part of the term. Each line shows the points earned and the maximum. The bar shows the share of the maximum, and its marks are the 50, 70 and 90&#160;% thresholds. The university sets the exact rules for admission and scholarships.</string>
     <string name="report_legend_low" formatted="false">below 50&#160;%: short of points</string>
-    <string name="report_legend_pass" formatted="false">50–69&#160;%: admitted, scholarship at risk</string>
+    <string name="report_legend_pass" formatted="false">50–69&#160;%: satisfactory, scholarship at risk</string>
     <string name="report_legend_good" formatted="false">70–89&#160;%: good</string>
     <string name="report_legend_top" formatted="false">90&#160;% and above: excellent</string>
     <string name="report_band_low">Below 50</string>
-    <string name="report_band_pass">Admitted</string>
+    <string name="report_band_pass">Satisfactory</string>
     <string name="report_band_good">Good</string>
     <string name="report_band_top">Excellent</string>
     <string name="report_short">%2$s short of %1$s</string>
     <string name="report_reached">Every mark reached</string>
+    <string name="report_goal">Goal: “%1$s”, from %2$d&#160;%% of the maximum. Each grade shows how many points are left to it.</string>
+    <string name="report_goal_reached">Goal reached</string>
+    <string name="report_absences">Absences: %1$d</string>
     <string name="report_out_of">%1$s of %2$s</string>
     <string name="report_no_grade">no grade yet</string>
     <string name="report_no_grades">No grades yet</string>

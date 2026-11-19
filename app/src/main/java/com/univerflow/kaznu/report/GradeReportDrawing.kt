@@ -14,6 +14,7 @@ import android.text.Spanned
 import android.text.StaticLayout
 import android.text.TextPaint
 import android.text.style.ForegroundColorSpan
+import android.text.style.StyleSpan
 import androidx.core.graphics.createBitmap
 import androidx.core.graphics.withTranslation
 import com.univerflow.kaznu.R
@@ -44,6 +45,7 @@ class GradeReportDrawing(private val words: Context, private val language: AppLa
     val blocks: List<Block> = buildList {
         add(header())
         add(guide())
+        report.goal?.let { add(goal(it)) }
         report.courses.forEach { addAll(course(it)) }
     }
     /** Courses that went on over a page break in the last [writePdf] or [writePng]. */
@@ -178,16 +180,42 @@ class GradeReportDrawing(private val words: Context, private val language: AppLa
         }
     }
 
+    /** The goal chosen on the page, in words: the reader knows what the «left» numbers are counted to. */
+    private fun goal(goal: Band): Block {
+        val pad = 10f
+        val name = words.getString(bandName(goal))
+        val text = SpannableStringBuilder(words.getString(R.string.report_goal, name, ScoreBand.goalMark(goal)))
+        text.indexOf(name).takeIf { it >= 0 }?.let { text.setSpan(StyleSpan(Typeface.BOLD), it, it + name.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE) }
+        val body = layout(text, paint(10.5f, INK), width - 2 * pad - 4f)
+        val height = body.height + 2 * pad
+        return Block(height, GAP) { canvas ->
+            canvas.drawRoundRect(RectF(0f, 0f, width, height), 8f, 8f, fill(soft(goal)))
+            canvas.drawRoundRect(RectF(0f, 0f, 4f, height), 2f, 2f, fill(colour(goal)))
+            canvas.text(body, pad + 4f, pad)
+        }
+    }
+
     /** The course's name with its first period, then each further period on its own: a page turns only between them. */
     private fun course(course: GradeReport.Course): List<Block> {
         val name = layout(course.name, paint(13f, INK, bold = true), width)
-        val rows = if (course.scores.isEmpty()) listOf(emptyRow(words.getString(R.string.report_no_grades))) else course.scores.map(::scoreRow)
+        val rows = (if (course.scores.isEmpty()) listOf(emptyRow(words.getString(R.string.report_no_grades))) else course.scores.map(::scoreRow)) +
+            listOfNotNull(absences(course.absences))
         val first = rows.first()
         val top = name.height + 6f
         return listOf(Block(top + first.height, GAP) { canvas ->
             canvas.text(name, 0f, 0f)
             canvas.withTranslation(0f, top) { first.draw(this) }
         }) + rows.drop(1).map { Block(it.height, it.gap, course.name, it.draw) }
+    }
+
+    /** "Пропуски: 4": the journal's «н» marks, after the course's periods; nothing when there are none. */
+    private fun absences(count: Int): Block? {
+        if (count <= 0) return null
+        val text = SpannableStringBuilder(words.getString(R.string.report_absences, count))
+        val digits = count.toString()
+        text.lastIndexOf(digits).takeIf { it >= 0 }?.let { text.setSpan(StyleSpan(Typeface.BOLD), it, it + digits.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE) }
+        val line = layout(text, paint(10f, TEXT), width - 20f)
+        return Block(line.height + 4f, ROW_GAP) { canvas -> canvas.text(line, 10f, 2f) }
     }
 
     private fun carried(name: String): Block {
@@ -199,7 +227,7 @@ class GradeReportDrawing(private val words: Context, private val language: AppLa
 
     /** One control period: "РК1 Хорошо … 87 из 100", the bar with its marks, then how far the next mark is. */
     private fun scoreRow(score: GradeReport.Score): Block {
-        val standing = ScoreBand.of(score.value, score.max) ?: return emptyRow(
+        val standing = ScoreBand.of(score.value, score.max, report.goal) ?: return emptyRow(
             if (score.value.isEmpty()) words.getString(R.string.report_no_grade) else amount(score), label(score))
         val pad = 10f
         val band = colour(standing.band)
@@ -212,8 +240,9 @@ class GradeReportDrawing(private val words: Context, private val language: AppLa
         val bold = paint(11f, INK, bold = true)
         val head = layout(left, bold, width - 2 * pad - bold.measureText(amount) - 8f)
         val nextText = standing.next?.let { words.getString(R.string.report_short, ScoreBand.format(it, language), ScoreBand.format(standing.left, language)) }
-            ?: words.getString(R.string.report_reached)
-        val nextPaint = paint(9.5f, TEXT)
+            ?: words.getString(if (standing.reached) R.string.report_goal_reached else R.string.report_reached)
+        // What is left is the line a parent reads first: heavier, larger and in the band's ink; a reached mark stays plain.
+        val nextPaint = if (standing.next != null) paint(10.5f, ink, bold = true) else paint(9.5f, TEXT)
         val small = paint(8f, MUTED)
         val labels = standing.marks.map { ScoreBand.format(it, language) }
         // How far the next mark is sits under the bar's start, left of the 50 mark, when it fits there; else on its own line.

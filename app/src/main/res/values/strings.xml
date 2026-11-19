@@ -298,15 +298,18 @@
     <string name="report_guide_title">Как читать отчёт</string>
     <string name="report_guide" formatted="false">РК — рубежный контроль, итог за часть семестра. Рядом указаны набранные баллы и максимум. Полоса показывает долю от максимума, метки на ней — пороги 50, 70 и 90&#160;%. Точные правила допуска и стипендии устанавливает университет.</string>
     <string name="report_legend_low" formatted="false">ниже 50&#160;%: недобор</string>
-    <string name="report_legend_pass" formatted="false">50–69&#160;%: допуск есть, стипендия под риском</string>
+    <string name="report_legend_pass" formatted="false">50–69&#160;%: удовлетворительно, стипендия под риском</string>
     <string name="report_legend_good" formatted="false">70–89&#160;%: хорошо</string>
     <string name="report_legend_top" formatted="false">90&#160;% и выше: отлично</string>
     <string name="report_band_low">Недобор</string>
-    <string name="report_band_pass">Есть допуск</string>
+    <string name="report_band_pass">Удовлетворительно</string>
     <string name="report_band_good">Хорошо</string>
     <string name="report_band_top">Отлично</string>
-    <string name="report_short">До %1$s не хватает %2$s</string>
+    <string name="report_short">ещё %2$s до %1$s</string>
     <string name="report_reached">Все пороги пройдены</string>
+    <string name="report_goal">Цель — «%1$s», от %2$d&#160;%% максимума. Под каждой оценкой указано, сколько баллов до неё осталось.</string>
+    <string name="report_goal_reached">Цель достигнута</string>
+    <string name="report_absences">Пропуски: %1$d</string>
     <string name="report_out_of">%1$s из %2$s</string>
     <string name="report_no_grade">оценки пока нет</string>
     <string name="report_no_grades">Оценки пока не выставлены</string>
