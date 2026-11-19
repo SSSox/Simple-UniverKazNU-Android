@@ -7,6 +7,8 @@ const { JSDOM, VirtualConsole } = require('jsdom');
 // pass measures tables, and are not taken for a site change that starts a second pass.
 const kotlin = fs.readFileSync('app/src/main/java/com/univerflow/kaznu/web/MobilePageAdapter.kt', 'utf8');
 const scripts = JSON.parse('[' + kotlin.match(/val SCRIPTS = listOf\(([^)]*)\)/)[1] + ']');
+// The probe MobilePageAdapter.applyTo evaluates, in its order (its Kotlin templates filled in).
+const probe = kotlin.match(/val apply = ([\s\S]*?release\(\);")/)[1].split(/"\s*\+\s*"/).join('').replace(/^"|"$/g, '');
 
 function page(path, body, { dark = false } = {}) {
   const html = '<html><head><style>table.mt td{background:#fff;color:#000}</style></head><body><table class="wrappertable"><tr id="l4"><td class="center">' + body + '</td></tr></table></body></html>';
@@ -19,9 +21,8 @@ function page(path, body, { dark = false } = {}) {
   // Every pass ends by fitting the tables: one call is one pass.
   const tables = w.__univerTablesV1, fit = tables.fit, passes = [];
   tables.fit = function () { passes.push({ style: !!w.document.getElementById('univer-style'), top: !!w.document.getElementById('univer-app-top') }); return fit.apply(this, arguments); };
-  // The probe MobilePageAdapter.applyTo evaluates, in its order.
-  w.eval('window.__univerMotion=true;window.__univerDark=' + dark + ';window.__univerMobileV1.setNativeChrome(true);' +
-    'window.__univerMobileV1.setEnabled(true,"ru");window.__univerStyleV1&&window.__univerStyleV1.apply(true);window.__univerPresentationV1?.release();');
+  w.eval(probe.replace(/\$\{quote\(language\.siteCode\)\}/g, '"ru"').replace(/\$animations/g, 'true').replace(/\$dark/g, String(dark))
+    .replace(/\$shortcuts/g, 'null').replace(/\$nativeChrome/g, 'true').replace(/\$enabled/g, 'true'));
   return { w, passes };
 }
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));

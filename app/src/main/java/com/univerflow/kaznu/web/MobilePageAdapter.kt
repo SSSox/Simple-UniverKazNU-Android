@@ -149,7 +149,7 @@ class MobilePageAdapter(
         val apply = "window.__univerMotion=$animations;window.__univerDark=$dark;" +
             "window.__univerShortcutsV1&&window.__univerShortcutsV1.configure($shortcuts);" +
             "window.__univerMobileV1.setNativeChrome($nativeChrome);" +
-            "window.__univerMobileV1.setEnabled($enabled,${quote(language.siteCode)});" +
+            "window.__univerMobileV1.setEnabled($enabled,${quote(language.siteCode)},true);" +
             "window.__univerStyleV1&&window.__univerStyleV1.apply($enabled);" +
             "window.__univerPresentationV1?.release();"
         // The token names this document, so the injection below cannot act on a page that replaced it.

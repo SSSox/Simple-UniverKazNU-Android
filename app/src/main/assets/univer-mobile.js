@@ -1571,7 +1571,8 @@
         // A marker removed or toggled off (today's column after midnight, menu footers, module markers) leaves class="".
         document.querySelectorAll('[class=""]').forEach(function (node) { if (!emptyClassNodes.has(node)) node.removeAttribute('class'); });
     }
-    function setEnabled(value, language) {
+    // [styled]: the app (MobilePageAdapter) will apply the presentation stylesheet; it then goes in before the pass.
+    function setEnabled(value, language, styled) {
         // AJAX is handled by the observer. Repeated native renders need no full DOM/layout traversal.
         if (enabled === !!value && selectedLanguage === language) {
             if (enabled) dialogViewport();
@@ -1583,7 +1584,7 @@
         // The presentation stylesheet and «Наверх» go in before the pass: tables are measured with the final styles, and
         // the pass begins by disconnecting the observer, which drops their mutation records (no second pass for them).
         // Original removes the stylesheet afterwards (MobilePageAdapter calls apply(false) after this).
-        if (enabled) window.__univerStyleV1?.apply(true);
+        if (enabled && styled) window.__univerStyleV1?.apply(true);
         // «Наверх» after a long scroll, sized for the thumb and kept still in its corner, a little above the bottom edge;
         // Original has none.
         window.__univerTopV1?.configure(enabled, language, {edge:16, lift:28, height:48, anchored:true});
