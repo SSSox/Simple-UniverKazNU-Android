@@ -24,3 +24,30 @@ test('the news page the site opens after sign-in is the home page, a later news 
   assert.equal(isHome('https://univer.kaznu.kz/news/student/2/'), false);
   assert.equal(isHome('https://univer.kaznu.kz/news/student/12/'), false);
 });
+
+test('menu pin buttons follow the pins and the menu links, and an unchanged menu is not redrawn', () => {
+  const menu = '<details class="univer-app-menu"><summary>Все разделы</summary><div id="tools"><ul>' +
+    '<li><a href="/student/rating/">Анкетирование</a></li><li><a href="/student/schedule/exam/">Экзамены</a></li></ul></div></details>';
+  const w = new JSDOM('<!doctype html><html><body>' + menu + '</body></html>', { url: 'https://univer.kaznu.kz/student/bachelor/', runScripts: 'outside-only' }).window;
+  try {
+    w.eval(script);
+    const shortcuts = w.__univerShortcutsV1, d = w.document, buttons = () => Array.from(d.querySelectorAll('#tools .univer-app-pin'));
+    shortcuts.apply('ru');
+    assert.equal(buttons().length, 2);
+    assert.deepEqual(buttons().map(b => b.getAttribute('aria-pressed')), ['false', 'false']);
+    shortcuts.configure([{ title: 'Анкетирование', url: 'https://univer.kaznu.kz/student/rating/' }]);
+    assert.deepEqual(buttons().map(b => b.getAttribute('aria-pressed')), ['true', 'false']);
+    // Another pass over the same menu leaves it as it is, even a label the page changed meanwhile.
+    const first = buttons()[0]; first.setAttribute('aria-label', 'changed');
+    shortcuts.apply('ru');
+    assert.equal(buttons()[0], first); assert.equal(first.getAttribute('aria-label'), 'changed');
+    // A link the site adds gets its button on the next pass; a language change relabels all of them.
+    const li = d.createElement('li'); li.innerHTML = '<a href="/student/umkd/">УМКД</a>'; d.querySelector('#tools ul').appendChild(li);
+    shortcuts.apply('ru');
+    assert.equal(buttons().length, 3);
+    shortcuts.apply('en');
+    assert.ok(buttons()[0].getAttribute('aria-label').startsWith('Unpin'), buttons()[0].getAttribute('aria-label'));
+    shortcuts.release();
+    assert.equal(buttons().length, 0);
+  } finally { w.close(); }
+});

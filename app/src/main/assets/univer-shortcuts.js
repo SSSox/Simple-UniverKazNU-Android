@@ -184,8 +184,16 @@
         if (button.getAttribute('aria-pressed') !== String(on)) button.setAttribute('aria-pressed', String(on));
         if (button.getAttribute('aria-label') !== label) { button.setAttribute('aria-label', label); button.title = label; }
     }
+    // Every pass (each AJAX change, the keyboard) comes here; the menu's links seldom change, so the pin buttons are
+    // redrawn only when the links, the pins or the language do.
+    var menuPinsDrawn = null;
     function menuPins(menu) {
-        menu.querySelectorAll('#tools li a[href]').forEach(function (a) {
+        var anchors = Array.from(menu.querySelectorAll('#tools li a[href]')), signature = [language, pinsKey, hiddenKey].join('|');
+        var drawn = menuPinsDrawn;
+        if (drawn && drawn.signature === signature && drawn.anchors.length === anchors.length &&
+            anchors.every(function (a, i) { return a === drawn.anchors[i] && a.href === drawn.hrefs[i] && a.parentNode === drawn.rows[i]; })) return;
+        menuPinsDrawn = null;
+        anchors.forEach(function (a) {
             if (!pinnable(a) || !cleanText(a)) return;
             var entry = menuRows.get(a);
             if (!entry) {
@@ -197,6 +205,7 @@
             }
             pinButton(entry.row, a, cleanText(a));
         });
+        menuPinsDrawn = {signature:signature, anchors:anchors, hrefs:anchors.map(function (a) { return a.href; }), rows:anchors.map(function (a) { return a.parentNode; })};
     }
     function usefulBox(menu) {
         var source = usefulSource(), box = menu.querySelector('.univer-app-useful');
@@ -1076,7 +1085,7 @@
             menuRows.forEach(function (entry, a) {
                 while (entry.label.firstChild) a.insertBefore(entry.label.firstChild, entry.label);
                 entry.label.remove(); entry.row.before(a); entry.row.remove();
-            }); menuRows.clear();
+            }); menuRows.clear(); menuPinsDrawn = null;
             document.documentElement.classList.remove('univer-app-home');
             owned.forEach(function (node) { window.__univerMotionUI?.stop(node); node.remove(); }); owned = [];
             document.querySelectorAll('.univer-app-desk-cards,.univer-app-quick,.univer-app-useful,.univer-app-gpa,.univer-app-ssc-nav,.univer-app-service-search,.univer-app-service-empty,.univer-app-credentials').forEach(function (node) { node.remove(); });
