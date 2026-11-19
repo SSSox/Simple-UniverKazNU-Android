@@ -688,6 +688,10 @@
     // The dialog sizes are CSS only: a pinch-zoom pan or the keyboard moving the visible viewport starts no adapter pass.
     // A real resize still does, through the window's own event.
     function viewportChanged() { quiet(dialogViewport); }
+    // Only a new width changes the layout a pass makes (tables fitted to it, the menu). The resize that follows the
+    // viewport meta of enable() reports the width the first pass already laid out; the keyboard changes only the height.
+    var passWidth = -1;
+    function resized() { if (innerWidth !== passWidth) schedule(); }
     // Replaces the text of a site text node; Original restores the recorded value.
     function rewriteText(node, value) {
         if (!punctuation.has(node)) punctuation.set(node, node.data);
@@ -1367,6 +1371,7 @@
             adaptFrames();
             guarded(function () { window.__univerTablesV1?.fit(); });
             scrollHints();
+            passWidth = innerWidth;
         } finally {
             window.__univerPresentationV1?.release();
             if (enabled) observer?.observe(document.documentElement, OBSERVED);
@@ -1471,7 +1476,7 @@
         (document.head || document.documentElement).appendChild(style);
         observer = new MutationObserver(schedule);
         observer.observe(document.documentElement, OBSERVED);
-        window.addEventListener('resize', schedule);
+        window.addEventListener('resize', resized);
         window.addEventListener('univer-frame-ready', schedule);
         window.visualViewport?.addEventListener('resize', viewportChanged);
         window.visualViewport?.addEventListener('scroll', viewportChanged);
@@ -1521,7 +1526,7 @@
         enabled = false; helpless = new WeakSet();
         if (observer) observer.disconnect();
         document.removeEventListener('click', dismissMenu); document.removeEventListener('keydown', dismissMenu);
-        window.removeEventListener('resize', schedule);
+        window.removeEventListener('resize', resized);
         window.removeEventListener('univer-frame-ready', schedule);
         window.visualViewport?.removeEventListener('resize', viewportChanged);
         window.visualViewport?.removeEventListener('scroll', viewportChanged);

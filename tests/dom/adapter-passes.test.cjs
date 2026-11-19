@@ -83,3 +83,17 @@ test('the help box folds; other boxes are read for its addresses once, not on ev
   assert.equal(reads, 0);
   w.__univerMobileV1.setEnabled(false, 'ru'); w.close();
 });
+
+test('a resize that keeps the width (the keyboard, the viewport the adapter set) starts no pass; a new width does', async () => {
+  const { w, passes } = page('/student/attendance/full/', news);
+  await wait(250);
+  assert.equal(passes.length, 1);
+  w.dispatchEvent(new w.Event('resize'));
+  await wait(250);
+  assert.equal(passes.length, 1);
+  Object.defineProperty(w, 'innerWidth', { configurable: true, value: 952 });
+  w.dispatchEvent(new w.Event('resize'));
+  await wait(250);
+  assert.equal(passes.length, 2);
+  w.__univerMobileV1.setEnabled(false, 'ru'); w.close();
+});

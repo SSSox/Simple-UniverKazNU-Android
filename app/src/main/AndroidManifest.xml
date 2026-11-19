@@ -38,7 +38,10 @@
             android:exported="false" android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/download_paths" />
         </provider>
+        <!-- Turning the phone keeps the page: a recreated WebView loads and adapts it again, and the student turns it for a
+             wide table. Theme and language changes still recreate the screen. -->
         <activity android:name=".MainActivity" android:exported="true"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

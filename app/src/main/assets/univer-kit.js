@@ -23,7 +23,7 @@
                 var owner = target.closest(groups);
                 if (owner && changed.indexOf(owner) < 0) changed.push(owner);
             });
-            if (enabled && observer === sizes) changed.forEach(place);
+            if (enabled && observer === sizes) quietly(function () { changed.forEach(place); });
         });
         if (group.__univerKitSizes === sizes) return;
         group.__univerKitSizes = sizes;
@@ -43,7 +43,9 @@
         thumb.style.width = width + 'px'; thumb.style.height = height + 'px'; thumb.style.transform = 'translate(' + x + 'px,' + y + 'px)';
         if (fresh || !allowed()) { thumb.getBoundingClientRect(); thumb.style.transition = ''; }
     };
-    var refresh = function () { if (enabled) document.querySelectorAll(groups).forEach(place); };
+    // Thumbs are the app's own nodes: placing one starts no adapter pass (on Android the pass would redo the page).
+    var quietly = function (work) { var mobile = window.__univerMobileV1; if (mobile && mobile.quiet) mobile.quiet(work); else work(); };
+    var refresh = function () { if (enabled) quietly(function () { document.querySelectorAll(groups).forEach(place); }); };
     var clear = function () {
         if (sizes) { sizes.disconnect(); sizes = null; }
         document.querySelectorAll('.univer-kit-thumb').forEach(function (thumb) { thumb.parentNode.classList.remove('univer-kit-slid'); thumb.remove(); });

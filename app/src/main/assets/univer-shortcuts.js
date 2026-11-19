@@ -737,9 +737,8 @@
     // first report, which comes before the bar is painted: measuring it here too laid the whole page out once more.
     function watchTiles(quick) {
         if (quick.__univerFit || !window.ResizeObserver) { stackTiles(quick); return; }
-        quick.__univerFit = new ResizeObserver(function () {
-            if (window.__univerMobileV1) window.__univerMobileV1.mutate(function () { stackTiles(quick); }); else stackTiles(quick);
-        });
+        // The stacking class is the app's own: it starts no adapter pass.
+        quick.__univerFit = new ResizeObserver(function () { quiet(function () { stackTiles(quick); }); });
         quick.__univerFit.observe(quick);
     }
 
