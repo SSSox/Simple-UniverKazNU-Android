@@ -238,7 +238,12 @@ test('a plan found once is kept for the semester: a day-old programme and a mont
   const month = page(schedule(lessons, 4), { routes: routes(), local: aged(copy => {
     Object.values(copy.courses).forEach(course => { course.at -= course.status === 'ready' ? 30 * day : 3600000; }); copy.list.at -= 2 * day; copy.program.at -= 3600000; copy.pattern.at -= 3 * day;
   }) });
+  // The store (up to 1.5 MB) is parsed once for the page, not once per course.
+  const parse = month.w.JSON.parse, big = [];
+  month.w.JSON.parse = function (text) { if (typeof text === 'string' && text.length > 1000) big.push(text.length); return parse.apply(this, arguments); };
   apply(month); await until(done(month));
+  month.w.JSON.parse = parse;
+  assert.equal(big.length, 1, 'the plan store was parsed ' + big.length + ' times');
   assert.deepEqual(reads(month), []);
   assert.ok(topics(lessonOf(month, 'Политология', 'лекция')).length === 1);
   apply(month, false); month.close();

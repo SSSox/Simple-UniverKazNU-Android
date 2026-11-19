@@ -248,12 +248,18 @@
     // The account that signed in last (univer-automation.js notes it at the login form). Another account's programme,
     // course list and weeks are dropped; course plans are the same for everyone and stay.
     function account() { try { return localStorage.getItem('univer.app.account.v1') || ''; } catch (_) { return ''; } }
+    // The plan store reaches 1.5 MB and a page reads it once per course: it is parsed once and the same object is
+    // handed out while the stored text stays the one parsed (another page, or a document Back restores, may change it).
+    // Callers change that object and then keep() it.
+    var parsed = new Map();
     function stored(key) {
         try {
-            var value = JSON.parse(localStorage.getItem(key) || 'null') || {};
+            var raw = localStorage.getItem(key), memo = parsed.get(key), value;
+            if (memo && memo.raw === raw) value = memo.value;
+            else { value = JSON.parse(raw || 'null') || {}; parsed.set(key, {raw:raw, value:value}); }
             if (key === STORE && (value.owner || '') !== account()) { delete value.program; delete value.list; delete value.pattern; value.owner = account(); }
             return value;
-        } catch (_) { return {}; }
+        } catch (_) { parsed.delete(key); return {}; }
     }
     function keep(key, value) {
         try {
@@ -265,7 +271,8 @@
                 delete value.courses[oldest]; serialized = JSON.stringify(value);
             }
             localStorage.setItem(key, serialized);
-        } catch (_) { }
+            parsed.set(key, {raw:serialized, value:value});
+        } catch (_) { parsed.delete(key); }
     }
     function preferences() {
         if (!prefs) { var saved = stored(PREFS); prefs = {lessons:saved.lessons !== false, sro:saved.sro !== false, folded:saved.folded && typeof saved.folded === 'object' ? saved.folded : {}}; }
@@ -914,7 +921,7 @@
         (records || []).forEach(function (record) { if (record?.view && !views.has(record.view)) attach(record); });
     }
     function release() {
-        enabled = false; generation++; active = 0; model = null; programPromise = null; prefs = null;
+        enabled = false; generation++; active = 0; model = null; programPromise = null; prefs = null; parsed.clear();
         controllers.forEach(function (abort) { abort.abort(); }); controllers.clear(); teachers.clear(); timers.forEach(clearTimeout); timers.clear();
         views.forEach(function (state) {
             motion()?.stop(state.panel.root); state.panel.root.remove(); state.view.removeAttribute('data-syllabus');
