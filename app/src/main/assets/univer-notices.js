@@ -72,6 +72,10 @@
     function blocks(doc, base, page) {
         var root = doc.getElementById('l4') || doc.body, out = [], texts = new Set();
         if (!root) return out;
+        // A message's text is part of the page's text: a page that does not both ask and name a task has none, and its
+        // elements are not read one by one (most pages).
+        var all = clean(root.textContent);
+        if (!REQUIRED.test(all) || !TASK.test(all)) return out;
         root.querySelectorAll(MESSAGE).forEach(function (node) {
             if (out.length >= 5 || node.closest(SKIP)) return;
             var text = clean(node.textContent);
@@ -164,7 +168,9 @@
         if (current.fetching) window.__univerNoticeFetch = true;
         // This page's questionnaire count, each section, then the pages the counts point to (at most 3 in all), for
         // the names and dates they list.
-        if (current.fetching) (async function () {
+        // The section reads wait until the page is idle: they parse whole pages while the student starts reading.
+        var later = function (work) { if (typeof requestIdleCallback === 'function') requestIdleCallback(work, {timeout:4000}); else setTimeout(work, 1500); };
+        if (current.fetching) later(function () { (async function () {
             var opened = 0, seen = {};
             async function count(link, doc) {
                 var known = seen[link.u];
@@ -199,7 +205,7 @@
                 }
                 channel(JSON.stringify(result));
             }
-        })().catch(function () { }).finally(function () { window.__univerNoticeFetch = false; });
+        })().catch(function () { }).finally(function () { window.__univerNoticeFetch = false; }); });
     }
     return JSON.stringify(current);
 })
