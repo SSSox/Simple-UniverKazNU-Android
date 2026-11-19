@@ -169,8 +169,8 @@
     function siteStyle(doc, on) {
         var style = doc.getElementById('univer-app-site-dark');
         if (!on) { if (style) style.remove(); return; }
-        // Rebuilt only when the document's stylesheets change.
-        var count = doc.styleSheets.length - (style ? 1 : 0);
+        // Rebuilt only when the site's stylesheets change; the adapter's own ones (added during a pass) are not read.
+        var count = doc.styleSheets.length - doc.querySelectorAll('style[id^="univer"]').length;
         if (style && style.__univerSheets === count) return;
         var text = siteRules(doc);
         if (!style) { style = doc.createElement('style'); style.id = 'univer-app-site-dark'; }

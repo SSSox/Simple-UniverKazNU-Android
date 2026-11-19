@@ -1572,10 +1572,14 @@
         localizeChrome(language);
         if (value && !enabled) enable();
         else if (!value && enabled) disable(language);
-        adapt();
+        // The presentation stylesheet and «Наверх» go in before the pass: tables are measured with the final styles, and
+        // the pass begins by disconnecting the observer, which drops their mutation records (no second pass for them).
+        // Original removes the stylesheet afterwards (MobilePageAdapter calls apply(false) after this).
+        if (enabled) window.__univerStyleV1?.apply(true);
         // «Наверх» after a long scroll, sized for the thumb and kept still in its corner, a little above the bottom edge;
         // Original has none.
         window.__univerTopV1?.configure(enabled, language, {edge:16, lift:28, height:48, anchored:true});
+        adapt();
     }
     window.__univerMobileV1 = {setEnabled:setEnabled, mutate:function (action) {
         observer?.disconnect();
