@@ -133,3 +133,7 @@ repomix-output.*
 .openviking/
 .tokeneconomizer/
 .context-optimizer/
+/CLAUDE.md
+/CLAUDE.local.md
+/AGENTS.md
+/GEMINI.md
