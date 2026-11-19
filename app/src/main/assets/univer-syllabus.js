@@ -916,8 +916,10 @@
     function apply(lang, records) {
         if (document.readyState === 'loading') return;
         language = lang; enabled = true;
-        if (!style || !style.isConnected) { style = document.createElement('style'); style.id = 'univer-syllabus-style'; window.__univerPaletteV1.fill(style, css()); (document.head || document.documentElement).appendChild(style); }
         views.forEach(function (state, view) { if (!view.isConnected) views.delete(view); });
+        // Only a page with the schedule's agenda gets the syllabus style (and the work of darkening it).
+        if (!views.size && !(records || []).some(function (record) { return record?.view; })) return;
+        if (!style || !style.isConnected) { style = document.createElement('style'); style.id = 'univer-syllabus-style'; window.__univerPaletteV1.fill(style, css()); (document.head || document.documentElement).appendChild(style); }
         (records || []).forEach(function (record) { if (record?.view && !views.has(record.view)) attach(record); });
     }
     function release() {

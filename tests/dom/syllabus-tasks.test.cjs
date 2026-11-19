@@ -618,3 +618,10 @@ test('a class whose redraw fails to write does not stop the other classes from b
   assert.ok(p.errors.some(e => /synthetic write failure/.test(e)), 'the failure is still reported');
   apply(p, false); p.close();
 });
+
+test('a page without the schedule gets no syllabus style', () => {
+  const p = page(site('<table class="mt"><tr><td>Синтетическая страница</td></tr></table>'));
+  apply(p);
+  assert.equal(p.d.getElementById('univer-syllabus-style'), null);
+  apply(p, false); p.close();
+});

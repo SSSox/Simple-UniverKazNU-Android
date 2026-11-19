@@ -3,7 +3,7 @@
     'use strict';
     if (location.origin !== 'https://univer.kaznu.kz') return;
     if (window.__univerMobileV1) return;
-    var enabled = false, observer = null, queued = false, viewport = null, originalViewport = null;
+    var enabled = false, observer = null, queued = false, viewport = null, originalViewport = null, helpless = new WeakSet();
     // Site nodes that already had an empty class attribute when the mobile layout started; Original keeps theirs. One the
     // site empties or inserts later loses it, which looks the same: only [class] selectors could tell.
     var emptyClassNodes = new WeakSet();
@@ -1236,10 +1236,13 @@
         });
     }
     // Only the observed static help box and app/resource links are folded, never account notices/forms.
+    // A table without the help addresses is not read again on later passes (AJAX replaces tables rather than filling them).
     function foldHelp() {
         Array.from(document.querySelectorAll('table.mt')).forEach(function (table) {
+            if (helpless.has(table) || table.closest('.univer-app-info')) return;
             var text = table.textContent;
-            if (!table.closest('form,#simplemodal-container,#attentionSt,#modal_agreement,#modal_auth_frm') && !table.querySelector('form,input') && text.includes('it@kaznu.kz') &&
+            if (!text.includes('it@kaznu.kz')) { helpless.add(table); return; }
+            if (!table.closest('form,#simplemodal-container,#attentionSt,#modal_agreement,#modal_auth_frm') && !table.querySelector('form,input') &&
                 text.includes('wifi-support@kaznu.kz') && text.includes('help@kaznu.kz')) foldInfo(table, 'contacts');
         });
         Array.from(document.querySelectorAll('.links')).forEach(function (links) {
@@ -1515,7 +1518,7 @@
     }
     // Original: every class, attribute, node and listener the adapter added goes, and moved site nodes return.
     function disable(language) {
-        enabled = false;
+        enabled = false; helpless = new WeakSet();
         if (observer) observer.disconnect();
         document.removeEventListener('click', dismissMenu); document.removeEventListener('keydown', dismissMenu);
         window.removeEventListener('resize', schedule);

@@ -69,3 +69,17 @@ test('wide tables are all measured before any of them is fitted: one layout per 
   assert.equal(w.document.querySelectorAll('.univer-app-table-fitted').length, 0);
   w.close();
 });
+
+test('the help box folds; other boxes are read for its addresses once, not on every pass', async () => {
+  const help = '<table class="mt"><tr><td>it@kaznu.kz wifi-support@kaznu.kz help@kaznu.kz</td></tr></table>';
+  const { w } = page('/student/attendance/full/', help + '<table class="mt"><tr><td class="plain">Синтетика</td></tr></table>');
+  await wait(250);
+  assert.equal(w.document.querySelector('.univer-app-info[data-univer-info=contacts] table.mt').textContent.includes('help@kaznu.kz'), true);
+  const plain = w.document.querySelector('td.plain').closest('table'), get = Object.getOwnPropertyDescriptor(w.Node.prototype, 'textContent').get;
+  let reads = 0;
+  Object.defineProperty(plain, 'textContent', { configurable: true, get() { reads++; return get.call(this); } });
+  w.document.querySelector('#l4 td.center').appendChild(w.document.createElement('p')).textContent = 'AJAX';
+  await wait(250);
+  assert.equal(reads, 0);
+  w.__univerMobileV1.setEnabled(false, 'ru'); w.close();
+});
