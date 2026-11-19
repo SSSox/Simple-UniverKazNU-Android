@@ -7,8 +7,8 @@
     var folds = new Map(), foldSources = new WeakMap(), expanded = new WeakMap(), foldObserver = null, foldTimer = null, foldSequence = 0;
     // Bounds of the read-only page fetches: one response and its wait, one search batch, the highest page ever probed.
     var MAX_HTML = 4 * 1024 * 1024, READ_TIMEOUT = 10000, BATCH = 30, MAX_PAGE = 4096;
-    // A search, or the count of pages, starts this long after the filter changes or the list is built.
-    var SEARCH_DELAY = 200, COUNT_DELAY = 400;
+    // A search starts this long after the filter changes or the list is built. The count of pages is kept for a day.
+    var SEARCH_DELAY = 200, COUNT_AGE = 86400000;
     // An article taller than LONG pixels folds to a preview of whole lines about FOLD high.
     var FOLD = 132, LONG = 176;
     // Content with no text of its own: a paragraph holding one of these is not blank (an audio player, a drawn image).
@@ -30,11 +30,11 @@
         } catch (_) { /* Storage may be unavailable; filtering still works in this document. */ }
         return {query:'', from:'', to:'', important:false, page:1};
     }
-    // A page count found earlier in this tab stays usable for ten minutes.
+    // A page count found earlier stays usable for a day, across app starts: counting reads up to 24 whole news pages.
     function savedCount(known) {
         try {
-            var cached = JSON.parse(sessionStorage.getItem(countKey)), age = cached ? Date.now() - cached.time : -1;
-            if (cached && Number.isInteger(cached.count) && cached.count >= known && cached.count <= MAX_PAGE && age >= 0 && age < 600000) return cached.count;
+            var cached = JSON.parse(localStorage.getItem(countKey)), age = cached ? Date.now() - cached.time : -1;
+            if (cached && Number.isInteger(cached.count) && cached.count >= known && cached.count <= MAX_PAGE && age >= 0 && age < COUNT_AGE) return cached.count;
         } catch (_) {}
         return 0;
     }
@@ -264,6 +264,9 @@
     function replacePagers(current, count, filtered, exact = true) {
         var signature = [current, count, filtered, exact, language].join(':');
         if (state.pagerSignature === signature) return;
+        // A count that arrives while the student is in the page navigation keeps it open, and the number being typed.
+        var wasOpen = !!document.querySelector('.univer-app-news-pages')?.open, focused = document.activeElement;
+        var typing = focused && focused.matches?.('.univer-app-news-jump input') ? {bottom:!focused.closest('.univer-app-news-pages'), value:focused.value} : null;
         removePagers();
         state.pagerSignature = signature;
         var top = pager(current, count, filtered, exact), bottom = pager(current, count, filtered, exact);
@@ -272,7 +275,9 @@
         // A result that fits on one page needs no page navigation at all.
         pages.hidden = top.hidden;
         pages.append(el('summary', '', text().page + ' ' + current + (exact ? ' / ' + count : '')), top);
+        pages.open = wasOpen && !pages.hidden;
         state.bar.after(pages); state.anchor.after(bottom);
+        if (typing) { var input = (typing.bottom ? bottom : top).querySelector('.univer-app-news-jump input'); input.value = typing.value; input.focus(); }
     }
 
     /* Rendering. */
@@ -347,7 +352,13 @@
         state.next = 1; state.complete = pageNumber() === 1 && !hasNext(document, 1); state.searched = false;
         save(); render();
         if (active() && valid()) timer = setTimeout(search, SEARCH_DELAY);
-        else if (!active() && !state.total) timer = setTimeout(discoverPages, COUNT_DELAY);
+    }
+    // The site's pager shows only a next arrow, so the last page is found by reading pages: only once the student
+    // turns to the page navigation (opens it, touches or focuses it), not on every visit to the news.
+    function wantCount(event) {
+        if (!state || state.total || state.counting || active() || !event.target.closest?.('.univer-app-news-pages,.univer-app-news-pager')) return;
+        state.counting = true;
+        discoverPages().finally(() => { if (state) state.counting = false; });
     }
     async function discoverPages() {
         if (!state || active() || state.total || typeof fetch !== 'function') return;
@@ -364,11 +375,11 @@
                 if (high && high <= low) break;
                 if (!high && probe >= MAX_PAGE) return;
                 probe = high ? Math.ceil((low + high) / 2) : Math.min(MAX_PAGE, probe * 2);
-                render();
             }
+            // Drawn once, with the final count: each redraw replaces the page navigation the student is using.
             if (high === low && isCurrent(record, generation)) {
                 record.total = low;
-                try { sessionStorage.setItem(countKey, JSON.stringify({count:low, time:Date.now()})); } catch (_) {}
+                try { localStorage.setItem(countKey, JSON.stringify({count:low, time:Date.now()})); } catch (_) {}
                 render();
             }
         } catch (_) { /* Keep confirmed links and an unrestricted direct jump when counting is unavailable. */ }
@@ -444,8 +455,8 @@
         c.period.addEventListener('toggle', () => { if (c.period.open) window.__univerMotionUI?.reveal(c.periodBox, 'popup'); });
         state.closePeriod = event => { if (c.period.open && !c.period.contains(event.target)) c.period.open = false; };
         document.addEventListener('pointerdown', state.closePeriod, true);
+        ['pointerdown', 'focusin', 'toggle'].forEach(type => document.addEventListener(type, wantCount, true));
         if (active()) timer = setTimeout(search, SEARCH_DELAY);
-        else if (!state.total) timer = setTimeout(discoverPages, COUNT_DELAY);
     }
     function localize() {
         var t = text(), captions = state.bar.querySelectorAll('.univer-app-news-date>span');
@@ -480,6 +491,7 @@
         cancel(); if (!state) return;
         clearTimeout(foldTimer); foldTimer = null; window.removeEventListener('resize', scheduleFolds);
         document.removeEventListener('pointerdown', state.closePeriod, true);
+        ['pointerdown', 'focusin', 'toggle'].forEach(type => document.removeEventListener(type, wantCount, true));
         foldObserver?.disconnect(); foldObserver = null;
         folds.forEach(unfold); folds.clear(); foldSources = new WeakMap(); expanded = new WeakMap();
         state.hidden.forEach((hidden, row) => { row.hidden = hidden; }); state.table.removeAttribute('data-univer-news-source');
