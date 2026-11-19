@@ -18,6 +18,19 @@ class SitePolicyTest {
         assertTrue(SitePolicy.external("mailto:help@example.org"))
         assertTrue(SitePolicy.external("tel:+77001234567"))
     }
+    @Test fun onlyTheJournalItselfGivesTheBackgroundCheckItsBase() {
+        assertTrue(SitePolicy.journalPage("https://univer.kaznu.kz/student/attendance/full/"))
+        assertTrue(SitePolicy.journalPage("https://univer.kaznu.kz/student/attendance/full/2026/1/"))
+        for (url in listOf("https://univer.kaznu.kz/student/attendance/", "http://univer.kaznu.kz/student/attendance/full/",
+            "https://univer.kaznu.kz.example.com/student/attendance/full/", "https://univer.kaznu.kz/student/myschedule/",
+            "https://univer.kaznu.kz/student/attendance/fullX/", null))
+            assertFalse(url, SitePolicy.journalPage(url))
+        assertTrue(SitePolicy.gradesPage("https://univer.kaznu.kz/student/bachelor/"))
+        assertTrue(SitePolicy.gradesPage("https://univer.kaznu.kz/student/attendance/full/"))
+        assertFalse(SitePolicy.gradesPage("https://univer.kaznu.kz/student/bachelor/umkd/"))
+        assertFalse(SitePolicy.gradesPage("https://univer.kaznu.kz/student/myschedule/"))
+    }
+
     @Test fun aNewSessionStartsThroughTheFlagOfTheAppLanguage() {
         // Without the server session the site answers in Kazakh: the first request sets the chosen language.
         assertEquals("https://univer.kaznu.kz/lang/change/ru/", SitePolicy.startUrl(null, AppLanguage.RUSSIAN))

@@ -331,6 +331,15 @@
     <string name="notifications_denied">Хабарламаларға рұқсат жоқ. Оларды телефон баптауларынан қосыңыз.</string>
     <string name="channel_classes">Сабақтар</string>
     <string name="channel_classes_description">Сабақ алдындағы еске салулар</string>
+    <string name="grades_section">Бағалар</string>
+    <string name="grade_alerts">Бағаларды фонда бақылау</string>
+    <string name="grade_alerts_hint">Қолданбадан шыққаннан кейін 20 минуттан соң, одан әрі бірнеше сағат сайын қолданба журналды қарап, жаңа бағалар туралы хабарлайды. Сайтқа кіріп тұрғанда ғана істейді: құпиясөз фонда енгізілмейді.</string>
+    <string name="grade_alerts_on">Жаңа не өзгерген баға туралы хабарлаймыз. Сайт қайта кіруді сұраса, тексеру қолданбаны ашқаныңызды күтеді.</string>
+    <string name="channel_grades">Бағалар</string>
+    <string name="channel_grades_description">Журналдағы жаңа бағалар</string>
+    <string name="grade_new">Жаңа баға</string>
+    <string name="grades_new">Жаңа бағалар</string>
+    <string name="grades_appeared">Жаңа бағалар қойылды</string>
     <string name="reminder_soon">Жақында сабақ</string>
     <string name="reminder_title">%1$d минуттан кейін: %2$s</string>
     <string name="reminder_starts">Басталуы: %s</string>

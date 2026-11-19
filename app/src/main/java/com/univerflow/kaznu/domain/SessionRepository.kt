@@ -49,6 +49,7 @@ data class StoredSession(
     val manualLogin: Boolean = false,
     val externalLinks: Boolean = false,
     val reminders: ReminderSettings = ReminderSettings(),
+    val gradeAlerts: Boolean = false,
 )
 
 /** Persistence owns dispatching and serialization; callers never access the Keystore directly. */
@@ -83,6 +84,7 @@ interface SessionRepository {
     suspend fun setAnimations(enabled: Boolean)
     suspend fun setExternalLinks(enabled: Boolean)
     suspend fun setReminders(settings: ReminderSettings) {}
+    suspend fun setGradeAlerts(enabled: Boolean) {}
     suspend fun setTheme(theme: AppTheme)
     suspend fun setShortcuts(shortcuts: HomeShortcuts)
     suspend fun setNotices(notices: List<SiteNotice>) {}

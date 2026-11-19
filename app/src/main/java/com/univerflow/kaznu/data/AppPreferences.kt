@@ -65,6 +65,10 @@ class AppPreferences(context: Context, name: String = "univer.preferences") {
     var reminders: ReminderSettings
         get() = ReminderSettings(preferences.getBoolean("class_reminders", false), ReminderSettings.lead(preferences.getInt("reminder_lead", ReminderSettings.DEFAULT_LEAD)))
         set(value) { check(preferences.edit().putBoolean("class_reminders", value.enabled).putInt("reminder_lead", ReminderSettings.lead(value.lead)).commit()) }
+    /** «Следить за оценками в фоне»: off until the student turns it on; read by the background job too. */
+    var gradeAlerts: Boolean
+        get() = preferences.getBoolean("grade_alerts", false)
+        set(value) { check(preferences.edit().putBoolean("grade_alerts", value).commit()) }
     /** The file viewer's "A4 page width": Word and web pages stop widening at an A4 sheet when zoomed out. */
     var previewPageA4: Boolean
         get() = preferences.getBoolean("preview_page_a4", true)

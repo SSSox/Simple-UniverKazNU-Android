@@ -226,6 +226,21 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
+        <!-- Background grade checks: off until turned on, only while the site's session lasts. -->
+        <TextView android:id="@+id/grades_label" style="@style/Univer.SectionTitle"
+            android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/grades_section" />
+        <com.google.android.material.card.MaterialCardView android:id="@+id/grades_card" android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical"
+                android:paddingHorizontal="16dp" android:paddingVertical="12dp">
+                <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/grade_alerts"
+                    android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="44dp"
+                    android:text="@string/grade_alerts" android:textAppearance="?attr/textAppearanceBodyLarge" />
+                <TextView android:id="@+id/grade_alerts_hint" style="@style/Univer.RowHint" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:accessibilityLiveRegion="polite" android:text="@string/grade_alerts_hint" />
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
         <com.google.android.material.button.MaterialButton android:id="@+id/downloads"
             style="@style/Widget.Material3.Button.TonalButton" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:layout_marginTop="16dp" android:minHeight="48dp"

@@ -1,8 +1,54 @@
+/* The journal's course totals from any document: the page itself, or a copy the app reads in the background on
+   about:blank. No origin check and no page state, so both read by the same rules the journal below uses. */
+(function () {
+    'use strict';
+    if (window.__univerGradeReadV1) return;
+    function clean(node) { return (typeof node === 'string' ? node : node?.textContent || '').replace(/\s+/g, ' ').trim(); }
+    // Server totals read as "РК1 (100): 51 РК2 (100): 0"; each control period becomes a score tile.
+    function scores(value) {
+        var found = [], pattern = /((?:РК|RK|МБ|АБ)\s*[12]|(?:Экз|Exam|Емтихан|Итог|Total)\p{L}*)\s*(?:\(\s*(\d+(?:[.,]\d+)?)\s*\))?\s*:\s*(-?\d+(?:[.,]\d+)?)?/giu, match;
+        while ((match = pattern.exec(value))) found.push({label:match[1].replace(/\s+/g, ''), max:match[2] || '', value:match[3] || ''});
+        return found;
+    }
+    // Observed course headings contain the teaching date range; summary cells contain bold RK totals.
+    function isCourse(cell) { return /\d{2}\.\d{2}\.\d{4}\s*[-–]\s*\d{2}\.\d{2}\.\d{4}/.test(clean(cell)); }
+    function isOverall(cell) { return !!cell.querySelector('b,strong') && /(?:РК|RK|МБ|АБ)\s*[12]/i.test(clean(cell)); }
+    // The heading's text before its group list or dates.
+    function courseName(source) { return source.match(/^(.*?)\s*(?:\(\[|\d{2}\.\d{2}\.\d{4})/)?.[1]?.trim() || source; }
+    // The academic year and term a journal shows: from its own address, or between the previous and next terms it
+    // links to (/full/2025/2 and /full/2026/2 surround 2026/1). Null when neither says.
+    function term(doc, path) {
+        var own = String(path || '').match(/\/full\/(\d{4})\/([123])\/?$/);
+        if (own) return {year:Number(own[1]), term:Number(own[2])};
+        var steps = Array.from(doc.querySelectorAll('#l4 a[href*="/student/attendance/full/"]'), link => {
+            var found = (link.getAttribute('href') || '').match(/\/full\/(\d{4})\/([12])\/?$/);
+            return found ? Number(found[1]) * 2 + Number(found[2]) - 1 : NaN;
+        }).filter(isFinite);
+        var low = Math.min.apply(null, steps), high = Math.max.apply(null, steps);
+        if (!steps.length || high - low !== 2) return null;
+        var middle = low + 1;
+        return {year:Math.floor(middle / 2), term:middle % 2 + 1};
+    }
+    // Each course's control-period totals, in the site's language; null without the journal's grade area.
+    function read(doc, path) {
+        var root = doc.querySelector('#l4'); if (!root) return null;
+        var courses = [], course = null;
+        root.querySelectorAll('.ct').forEach(cell => {
+            if (cell.closest('#tools,.univer-app-attendance-summary')) return;
+            if (isCourse(cell)) courses.push(course = {name:courseName(clean(cell.querySelector('.univer-app-course-source') || cell)).slice(0, 200), scores:[]});
+            else if (course && isOverall(cell)) course.scores = scores(clean(cell)).slice(0, 8).map(item => ({label:item.label, max:item.max, value:item.value}));
+        });
+        return {v:1, term:term(doc, path), lang:(doc.documentElement?.getAttribute('lang') || '').slice(0, 5), courses:courses.slice(0, 60)};
+    }
+    window.__univerGradeReadV1 = {read, scores, isCourse, isOverall, courseName, term};
+})();
+
 /* Attendance filters hide complete lesson sections; the site's matrices and overall grades stay intact. */
 (function () {
     'use strict';
     if (location.origin !== 'https://univer.kaznu.kz' || window.__univerAttendanceV1) return;
     var dom = window.__univerDomV1, clean = dom.clean, ownRows = dom.ownRows, el = dom.el, setText = dom.setText;
+    var reader = window.__univerGradeReadV1, scores = reader.scores;
     var selected = 'all', language = 'ru', state = null, selectedCourse = 'all';
     var hidden = new Map(), labels = new Map(), owned = [], identities = new WeakMap(), sequence = 0;
     // The user's own choice per course; without one, details open only when a single course is shown.
@@ -27,12 +73,6 @@
         if (course && course.length <= 1000) selectedCourse = course;
     } catch (_) {}
     function text() { return WORDS[language] || WORDS.ru; }
-    // Server totals read as "РК1 (100): 51 РК2 (100): 0"; each control period becomes a score tile.
-    function scores(value) {
-        var found = [], pattern = /((?:РК|RK|МБ|АБ)\s*[12]|(?:Экз|Exam|Емтихан|Итог|Total)\p{L}*)\s*(?:\(\s*(\d+(?:[.,]\d+)?)\s*\))?\s*:\s*(-?\d+(?:[.,]\d+)?)?/giu, match;
-        while ((match = pattern.exec(value))) found.push({label:match[1].replace(/\s+/g, ''), max:match[2] || '', value:match[3] || ''});
-        return found;
-    }
     // Absences are the journal's own «н» marks in a class's date cells; anything else in a cell is not counted.
     function absences(table) {
         var count = 0;
@@ -194,9 +234,8 @@
         var events = [];
         root.querySelectorAll('.ct').forEach(cell => {
             if (cell.closest('#tools,.univer-app-attendance-summary')) return;
-            // Observed course headings contain the teaching date range; summary cells contain bold RK totals.
-            if (/\d{2}\.\d{2}\.\d{4}\s*[-–]\s*\d{2}\.\d{2}\.\d{4}/.test(clean(cell))) events.push({tag:'course', cell, start:boundary(cell)});
-            else if (cell.querySelector('b,strong') && /(?:РК|RK|МБ|АБ)\s*[12]/i.test(clean(cell))) events.push({tag:'overall', cell, start:boundary(cell)});
+            if (reader.isCourse(cell)) events.push({tag:'course', cell, start:boundary(cell)});
+            else if (reader.isOverall(cell)) events.push({tag:'overall', cell, start:boundary(cell)});
         });
         root.querySelectorAll('a.lt[href*="/student/attendance/show/"],a[data-univer-lesson-label]').forEach(link => {
             var cell = link.closest('.ts') || link.parentElement;
@@ -208,7 +247,7 @@
             if (event.tag === 'course') {
                 if (group) group.end = event.start;
                 var source = clean(event.cell.querySelector('.univer-app-course-source') || event.cell);
-                var name = source.match(/^(.*?)\s*(?:\(\[|\d{2}\.\d{2}\.\d{4})/)?.[1]?.trim() || source;
+                var name = reader.courseName(source);
                 group = {heading:event.cell, start:event.start, end:null, token:source.normalize('NFC').toLocaleLowerCase(), name, lessons:[], overall:null};
                 groups.push(group);
             } else if (event.tag === 'overall') {
@@ -539,20 +578,7 @@
         var host = owned.pop();
         state = {bar, host, caption, note, share, goal, goalCaption, courses, courseCaption, courseList, allCourse, courseButtons:new Map(), overview:summaryList, signature:null};
     }
-    // The academic year and term this journal shows: from its own address, or between the previous and next terms it
-    // links to (/full/2025/2 and /full/2026/2 surround 2026/1). Null when neither says.
-    function termOf() {
-        var own = location.pathname.match(/\/full\/(\d{4})\/([123])\/?$/);
-        if (own) return {year:Number(own[1]), term:Number(own[2])};
-        var steps = Array.from(document.querySelectorAll('#l4 a[href*="/student/attendance/full/"]'), link => {
-            var found = (link.getAttribute('href') || '').match(/\/full\/(\d{4})\/([12])\/?$/);
-            return found ? Number(found[1]) * 2 + Number(found[2]) - 1 : NaN;
-        }).filter(isFinite);
-        var low = Math.min.apply(null, steps), high = Math.max.apply(null, steps);
-        if (!steps.length || high - low !== 2) return null;
-        var middle = low + 1;
-        return {year:Math.floor(middle / 2), term:middle % 2 + 1};
-    }
+    function termOf() { return reader.term(document, location.pathname); }
     // What the app's report needs and nothing more: the term, the name shown in the site header and each course's
     // control-period totals, whatever course or class type is chosen. Native code checks every field again.
     function reportData() {

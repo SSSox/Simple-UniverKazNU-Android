@@ -107,7 +107,7 @@ test('the report button sends every course\'s totals, the term and the student n
   const w = new JSDOM(html, {url: 'https://univer.kaznu.kz/student/attendance/full/', runScripts: 'outside-only'}).window;
   if (w.document.readyState === 'loading') await new Promise(done => w.document.addEventListener('DOMContentLoaded', done));
   const sent = [];
-  w.__univerNative = message => sent.push(message);
+  w.__univerNative = message => { if (message.startsWith('univer-report:')) sent.push(message); };
   w.eval(read('univer-dom.js')); w.eval(read('univer-attendance.js'));
   w.__univerAttendanceV1.apply('ru');
   const button = w.document.querySelector('.univer-app-attendance-report');
@@ -204,7 +204,7 @@ test('the report carries each course\'s absences and the chosen goal', async () 
   const w = new JSDOM('<!doctype html><html><body>' + MISSED + '</body></html>', {url: 'https://univer.kaznu.kz/student/attendance/full/', runScripts: 'outside-only'}).window;
   if (w.document.readyState === 'loading') await new Promise(done => w.document.addEventListener('DOMContentLoaded', done));
   const sent = [];
-  w.__univerNative = message => sent.push(message);
+  w.__univerNative = message => { if (message.startsWith('univer-report:')) sent.push(message); };
   w.localStorage.setItem('univer.app.grade-goal.v1', 'top');
   w.eval(read('univer-dom.js')); w.eval(read('univer-attendance.js'));
   w.__univerAttendanceV1.apply('ru');

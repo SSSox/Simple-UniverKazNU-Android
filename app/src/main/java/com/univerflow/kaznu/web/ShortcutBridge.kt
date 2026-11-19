@@ -5,6 +5,7 @@ import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import com.univerflow.kaznu.domain.CalendarEvent
 import com.univerflow.kaznu.domain.GradeReport
+import com.univerflow.kaznu.domain.GradeTotals
 import com.univerflow.kaznu.domain.HomeShortcuts
 import com.univerflow.kaznu.domain.ShortcutRequest
 import com.univerflow.kaznu.domain.Shortcuts
@@ -15,13 +16,14 @@ import org.json.JSONTokener
 
 /**
  * Receives home-tile pin and order taps, a UMKD section's «Скачать все», the journal's «Поделиться успеваемостью» and
- * «В календарь» and the schedule's week from the site's main frame. Only data crosses: a listener limited to the exact Univer origin, no callable host
+ * «В календарь», the schedule's week and the journal's totals from the site's main frame. Only data crosses: a listener limited to the exact Univer origin, no callable host
  * objects, and only messages carrying [channel]'s key: the site's own scripts cannot pin a tile, start downloads or
  * open the share sheet.
  */
 class ShortcutBridge(private val web: WebView, private val channel: ChannelGuard, private val onDownloadAll: (DownloadBatch) -> Unit = {},
     private val onReport: (GradeReport?) -> Unit = {}, private val onCalendar: (CalendarEvent?) -> Unit = {},
-    private val onTimetable: (Timetable) -> Unit = {}, private val onRequest: (ShortcutRequest) -> Unit) {
+    private val onTimetable: (Timetable) -> Unit = {}, private val onGrades: (GradeTotals) -> Unit = {},
+    private val onRequest: (ShortcutRequest) -> Unit) {
     private var closed = false
 
     init {
@@ -36,6 +38,8 @@ class ShortcutBridge(private val web: WebView, private val channel: ChannelGuard
                 data.startsWith(CalendarEvent.MESSAGE_PREFIX) -> onCalendar(CalendarMessage.parse(data))
                 // The schedule's week, sent without a tap: one out of shape, or not this week, is dropped.
                 data.startsWith(Timetable.MESSAGE_PREFIX) -> TimetableMessage.parse(data)?.let(onTimetable)
+                // The journal's totals, sent without a tap for the background check's base; one out of shape is dropped.
+                data.startsWith(GradeTotals.MESSAGE_PREFIX) -> GradesMessage.parse(data)?.let(onGrades)
                 else -> parse(data)?.let(onRequest)
             }
         }

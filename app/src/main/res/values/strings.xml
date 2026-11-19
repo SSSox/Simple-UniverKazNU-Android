@@ -338,6 +338,16 @@
     <string name="notifications_denied">Уведомления запрещены. Разрешите их в настройках телефона.</string>
     <string name="channel_classes">Пары</string>
     <string name="channel_classes_description">Напоминания перед парами</string>
+    <string name="grades_section">Оценки</string>
+    <string name="grade_alerts">Следить за оценками в фоне</string>
+    <string name="grade_alerts_hint">Через 20 минут после выхода из приложения и потом раз в несколько часов приложение заглядывает в журнал и сообщает о новых оценках. Работает, пока вы вошли на сайт: пароль в фоне не вводится.</string>
+    <string name="grade_alerts_on">Сообщим о новой или изменённой оценке. Если сайт попросит войти снова, проверка подождёт, пока вы откроете приложение.</string>
+    <string name="channel_grades">Оценки</string>
+    <string name="channel_grades_description">Новые оценки в журнале</string>
+    <string name="grade_new">Новая оценка</string>
+    <string name="grades_new">Новые оценки</string>
+    <string name="grades_appeared">Появились новые оценки</string>
+    <string name="grade_line" translatable="false">%1$s, %2$s — %3$s</string>
     <string name="reminder_soon">Скоро пара</string>
     <string name="reminder_title">Через %1$d мин: %2$s</string>
     <string name="reminder_starts">Начало в %s</string>

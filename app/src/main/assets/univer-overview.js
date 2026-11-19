@@ -206,6 +206,19 @@
         sentWeek = message; __univerNative(message);
     }
 
+    // The grades panel shows the journal's totals, so the app keeps them as seen: a background check does not announce
+    // them again. The journal page itself is read by the app; this is the one copy the app cannot read.
+    var sentGrades = '';
+    function saveGrades(doc) {
+        var reader = window.__univerGradeReadV1;
+        if (typeof __univerNative !== 'function' || !reader) return;
+        var totals = reader.read(doc, '/student/attendance/full/');
+        if (!totals || !totals.courses.some(function (course) { return course.scores.length; })) return;
+        var message = 'univer-grades:' + JSON.stringify(totals);
+        if (message === sentGrades) return;
+        sentGrades = message; __univerNative(message);
+    }
+
     /* Grades and requests. */
     function scores(value) {
         var found = [], pattern = /((?:РК|RK|МБ|АБ)\s*[12]|(?:Экз|Exam|Емтихан|Итог|Total)\p{L}*)\s*(?:\(\s*(\d+(?:[.,]\d+)?)\s*\))?\s*:\s*(-?\d+(?:[.,]\d+)?)?/giu, match;
@@ -445,7 +458,7 @@
             // A grid built again in the same generation (the site replaced the old one) keeps a single clock.
             if (epoch === generation) { clearInterval(scheduleTimer); scheduleTimer = setInterval(update, REFRESH); }
         }, function () { if (epoch === generation) fail(today.body); });
-        fill(grades.body, 'grades', '/student/attendance/full/', epoch, function (doc) { renderGrades(grades.body, courseScores(doc)); }, kept);
+        fill(grades.body, 'grades', '/student/attendance/full/', epoch, function (doc) { renderGrades(grades.body, courseScores(doc)); saveGrades(doc); }, kept);
     }
     function desk() {
         if (document.querySelector('.univer-app-overview-requests-panel')) return;

@@ -28,6 +28,8 @@ object SitePolicy {
     private val FILE_EXTENSION = Regex("\\.(?:pdf|docx?|xlsx?|pptx?|odt|ods|rtf|zip|rar)$", RegexOption.IGNORE_CASE)
     private val NEWS_ROUTE = Regex("^/(?:|my/news/?|my/news/(\\d{1,4})/?)$")
     private val LOGIN_FORM = Regex("^/user/login/?$", RegexOption.IGNORE_CASE)
+    private val JOURNAL = Regex("^/student/attendance/full(/.*)?$")
+    private val BACHELOR = Regex("^/student/bachelor/?$")
     private val NOT_RESUMABLE = Regex("^/(user|lang|student/attention|__univer)", RegexOption.IGNORE_CASE)
     private val READ_NOTICE = Regex("^/student/attentionStudents/[0-9]+/?$")
     private val TOP_LEVEL_LABEL = Regex("^[a-z][a-z0-9-]*$", RegexOption.IGNORE_CASE)
@@ -91,6 +93,14 @@ object SitePolicy {
     /** The site's full-page login form, where an ended session is redirected. */
     fun loginPage(url: String?): Boolean = trusted(url) && runCatching {
         LOGIN_FORM.matches(URI(url!!).rawPath)
+    }.getOrDefault(false)
+    /** The journal (/student/attendance/full/…), which the app reads for the background check's base. */
+    fun journalPage(url: String?): Boolean = trusted(url) && runCatching {
+        JOURNAL.matches(URI(url!!).rawPath.orEmpty())
+    }.getOrDefault(false)
+    /** The journal or Кабинет (/student/bachelor/), whose grades panel shows the same totals. */
+    fun gradesPage(url: String?): Boolean = journalPage(url) || trusted(url) && runCatching {
+        BACHELOR.matches(URI(url!!).rawPath.orEmpty())
     }.getOrDefault(false)
     /** The supplied read notice's own page (/student/attentionStudents/{id}), which the automation confirms. */
     fun readNotice(url: String?): Boolean = trusted(url) && runCatching {

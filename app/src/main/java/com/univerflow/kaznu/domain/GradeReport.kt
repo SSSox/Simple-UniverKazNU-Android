@@ -41,14 +41,14 @@ data class GradeReport(val term: Term?, val student: String, val courses: List<C
             return GradeReport(term, student, courses, goal)
         }
 
-        private fun term(value: Any): Term? {
+        internal fun term(value: Any): Term? {
             val map = value as? Map<*, *> ?: return null
             val year = whole(map["year"]) ?: return null
             val term = whole(map["term"]) ?: return null
             return if (year in 2000..2100 && term in 1..3) Term(year, term) else null
         }
 
-        private fun course(value: Any?): Course? {
+        internal fun course(value: Any?): Course? {
             val map = value as? Map<*, *> ?: return null
             val name = text(map["name"], 200) ?: return null
             val list = map["scores"] as? List<*> ?: return null

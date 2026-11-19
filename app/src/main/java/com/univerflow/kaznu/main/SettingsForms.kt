@@ -224,6 +224,7 @@ class SettingsForms(private val activity: AppCompatActivity, private val model: 
         form.externalLinks.setOnCheckedChangeListener { _, checked -> setExternalLinks(checked, form) }
         form.classReminders.setOnCheckedChangeListener { _, checked -> setReminders(checked, null, form) }
         form.reminderLead.addOnButtonCheckedListener { _, id, checked -> if (checked) leadOf(form, id)?.let { setReminders(null, it, form) } }
+        form.gradeAlerts.setOnCheckedChangeListener { _, checked -> setGradeAlerts(checked, form) }
         form.linkDataClear.setOnClickListener { clearLinkData(form) }
         form.textSize.setLabelFormatter { activity.getString(R.string.percent_value, it.toInt()) }
         form.textSize.addOnChangeListener { _, value, fromUser ->
@@ -282,6 +283,22 @@ class SettingsForms(private val activity: AppCompatActivity, private val model: 
         if (next.enabled && !current.enabled) host.requestNotifications { granted ->
             if (granted) save() else { feedback(form, R.string.notifications_denied); update(form, isFirst(form)) }
         } else save()
+    }
+
+    /** Like reminders: turning it on asks for notifications first, and a refusal leaves it off. */
+    private fun setGradeAlerts(enabled: Boolean, form: SettingsSheetBinding) {
+        if (enabled == model.state.value.gradeAlerts || host.sessionChanging) return
+        val save = { activity.launchCatching({ feedback(form, R.string.storage_error); update(form, isFirst(form)) }) { model.setGradeAlerts(enabled) } }
+        if (enabled) host.requestNotifications { granted ->
+            if (granted) save() else { feedback(form, R.string.notifications_denied); update(form, isFirst(form)) }
+        } else save()
+    }
+
+    private fun updateGradeAlerts(form: SettingsSheetBinding, state: AppState) {
+        form.gradesLabel.text = host.text(R.string.grades_section)
+        form.gradeAlerts.text = host.text(R.string.grade_alerts)
+        if (form.gradeAlerts.isChecked != state.gradeAlerts) form.gradeAlerts.isChecked = state.gradeAlerts
+        form.gradeAlertsHint.text = host.text(if (state.gradeAlerts) R.string.grade_alerts_on else R.string.grade_alerts_hint)
     }
 
     private fun updateReminders(form: SettingsSheetBinding, state: AppState) {
@@ -383,6 +400,7 @@ class SettingsForms(private val activity: AppCompatActivity, private val model: 
         if (form.animations.isChecked != state.animations) form.animations.isChecked = state.animations
         updateLinks(form, state)
         updateReminders(form, state)
+        updateGradeAlerts(form, state)
         (form.feedback.tag as? Int)?.let { form.feedback.text = text(it) }
         form.accountActions.isVisible = !first
         val selected = when (state.language) {

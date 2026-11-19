@@ -42,7 +42,9 @@ data class AppState(val ready: Boolean = false, val language: AppLanguage = AppL
     /** Links to other sites open in the system browser, not in the app's link window. */
     val externalLinks: Boolean = false,
     /** «Напоминать о парах» and how long before a class. */
-    val reminders: ReminderSettings = ReminderSettings()) {
+    val reminders: ReminderSettings = ReminderSettings(),
+    /** «Следить за оценками в фоне». */
+    val gradeAlerts: Boolean = false) {
     val canBrowse: Boolean get() = hasCredentials || manualLogin
 }
 
@@ -86,7 +88,7 @@ class UniverViewModel(private val repository: SessionRepository) : ViewModel() {
             mutableState.value = AppState(true, loaded.language, loaded.credentials != null || loaded.lock.enabled, loaded.paused,
                 loaded.storageError, loaded.mobileLayout, loaded.textZoom, loaded.animations, loaded.shortcuts,
                 loaded.lock, locked = loaded.lock.enabled, theme = loaded.theme, notices = loaded.notices, manualLogin = loaded.manualLogin,
-                externalLinks = loaded.externalLinks, reminders = loaded.reminders)
+                externalLinks = loaded.externalLinks, reminders = loaded.reminders, gradeAlerts = loaded.gradeAlerts)
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) {
             guard.stop()
@@ -219,6 +221,13 @@ class UniverViewModel(private val repository: SessionRepository) : ViewModel() {
         changes.withLock {
             repository.setReminders(settings)
             mutableState.update { it.copy(reminders = settings) }
+        }
+    }
+
+    suspend fun setGradeAlerts(enabled: Boolean) = retained {
+        changes.withLock {
+            repository.setGradeAlerts(enabled)
+            mutableState.update { it.copy(gradeAlerts = enabled) }
         }
     }
 

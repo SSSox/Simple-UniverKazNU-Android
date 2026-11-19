@@ -52,6 +52,7 @@ import com.univerflow.kaznu.data.DownloadRepository
 import com.univerflow.kaznu.data.LocalSessionRepository
 import com.univerflow.kaznu.data.LockPreferences
 import com.univerflow.kaznu.data.LockVault
+import com.univerflow.kaznu.data.GradeStore
 import com.univerflow.kaznu.data.TimetableStore
 import com.univerflow.kaznu.databinding.ActivityMainBinding
 import com.univerflow.kaznu.databinding.SettingsSheetBinding
@@ -63,6 +64,7 @@ import com.univerflow.kaznu.domain.ReminderSettings
 import com.univerflow.kaznu.domain.Shortcuts
 import com.univerflow.kaznu.domain.StudyFolders
 import com.univerflow.kaznu.domain.TextZoom
+import com.univerflow.kaznu.domain.GradeTotals
 import com.univerflow.kaznu.domain.Timetable
 import com.univerflow.kaznu.download.DownloadEvent
 import com.univerflow.kaznu.download.DownloadService
@@ -81,6 +83,7 @@ import com.univerflow.kaznu.main.StatusBanner
 import com.univerflow.kaznu.main.TextSizeDialog
 import com.univerflow.kaznu.main.UpdateFlow
 import com.univerflow.kaznu.report.GradeReportFiles
+import com.univerflow.kaznu.grades.GradeAlerts
 import com.univerflow.kaznu.today.TodaySync
 import com.univerflow.kaznu.ui.AppLockSession
 import com.univerflow.kaznu.ui.DocumentViewer
@@ -113,6 +116,7 @@ import com.univerflow.kaznu.web.PageScripts
 import com.univerflow.kaznu.web.RetiredWebViewClient
 import com.univerflow.kaznu.web.ShortcutBridge
 import com.univerflow.kaznu.web.SingleSignOnPolicy
+import com.univerflow.kaznu.web.GradesMessage
 import com.univerflow.kaznu.web.SitePolicy
 import com.univerflow.kaznu.web.Trackers
 import com.univerflow.kaznu.web.WebsiteLanguageSync
@@ -158,6 +162,7 @@ class MainActivity : AppCompatActivity() {
     }
     /** The reminder setting and language the widget and the alarm were last brought in step with. */
     private var todayKey: Pair<ReminderSettings, AppLanguage>? = null
+    private var gradesKey: Boolean? = null
     private val linkWindow = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()) { result ->
         result.data?.getStringExtra(LinkViewerActivity.RESULT_URL)?.let(::linkReturned)
     }
@@ -333,6 +338,8 @@ class MainActivity : AppCompatActivity() {
                 updatePageTitle()
                 notices.scan()
                 followLaunchTarget()
+                if (!SitePolicy.loginPage(binding.webView.url)) lifecycleScope.launch(Dispatchers.IO) { GradeAlerts.sessionBack(applicationContext) }
+                readJournal()
             }
         })
         // Home tile pins and order arrive from page taps; the validated, stored list is sent back to the page.
@@ -345,7 +352,7 @@ class MainActivity : AppCompatActivity() {
                     event == null -> message(R.string.calendar_error)
                     !CalendarHandoff.open(this, event) -> message(R.string.calendar_missing)
                 }
-            }, onTimetable = ::keepTimetable) { request ->
+            }, onTimetable = ::keepTimetable, onGrades = ::keepGrades) { request ->
             lifecycleScope.launch {
                 if (!attempt(false) { model.updateShortcuts(request) }) message(R.string.pin_failed)
                 shortcutBridge.configure(model.state.value.shortcuts)
@@ -381,6 +388,37 @@ class MainActivity : AppCompatActivity() {
         val since = TimetableStore.generation
         val context = applicationContext
         lifecycleScope.launch(Dispatchers.IO) { if (TimetableStore.write(context, timetable, since)) TodaySync.changed(context) }
+    }
+
+    /**
+     * The totals the student sees become the background check's base, so a grade already seen is not announced: the
+     * journal is read here on every display, in either layout; Кабинет's grades panel sends its copy. Only with
+     * tracking on and not while the session changes. The app's language names the base, as in the background check.
+     */
+    private fun keepGrades(totals: GradeTotals) {
+        val state = model.state.value
+        if (!state.gradeAlerts || state.paused || sessionChanging || model.sessionClearPending || !state.canBrowse ||
+            !SitePolicy.gradesPage(binding.webView.url)) return
+        val store = GradeStore.of(applicationContext)
+        val since = store.generation
+        val seen = totals.copy(language = state.language.siteCode)
+        lifecycleScope.launch(Dispatchers.IO) { store.keep(seen, since) }
+    }
+
+    private fun readJournal() {
+        if (!model.state.value.gradeAlerts || !SitePolicy.journalPage(binding.webView.url)) return
+        binding.webView.evaluateJavascript(GradesMessage.READ) { value ->
+            if (!isDestroyed && SitePolicy.journalPage(binding.webView.url)) GradesMessage.fromScript(value)?.let(::keepGrades)
+        }
+    }
+
+    /** Background grade checks follow the setting: on only while an account can browse and is not paused. */
+    private fun syncGrades(state: AppState) {
+        val enabled = state.gradeAlerts && state.canBrowse && !state.paused && !model.sessionClearPending
+        if (enabled == gradesKey) return
+        gradesKey = enabled
+        val context = applicationContext
+        lifecycleScope.launch(GradeAlerts.lane) { GradeAlerts.sync(context, enabled) }
     }
 
     /** «Расписание без сети» under a network error, once a week is saved. */
@@ -571,6 +609,7 @@ class MainActivity : AppCompatActivity() {
         if (!state.ready) return
         publishShortcuts(state)
         syncToday(state)
+        syncGrades(state)
         val justUnlocked = rendered.locked && !state.locked
         rendered = rendered.copy(locked = state.locked)
         AppLockSession.update(state.lock.enabled, state.locked, state.lock.autoLockMs, justUnlocked)
@@ -987,6 +1026,8 @@ class MainActivity : AppCompatActivity() {
         reports.cancel()
         GradeReportFiles.clear(this)
         withContext(Dispatchers.IO) { TodaySync.erase(applicationContext) }
+        withContext(GradeAlerts.lane) { GradeAlerts.erase(applicationContext) }
+        gradesKey = null
         DownloadService.cancelAll(this)
         documents.close(false)
         documentSourcePosition = null
@@ -1425,12 +1466,16 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
+        GradeAlerts.appVisible = true
+        GradeAlerts.returned(applicationContext)
         network.register()
         // A shared or printed report stays only as long as its share may still read it: an hour, not until the next one.
         lifecycleScope.launch(Dispatchers.IO) { GradeReportFiles.prune(applicationContext) }
     }
 
     override fun onStop() {
+        GradeAlerts.appVisible = false
+        model.state.value.let { if (it.gradeAlerts && it.canBrowse && !it.paused && !sessionChanging && !model.sessionClearPending) GradeAlerts.left(applicationContext) }
         network.unregister()
         super.onStop()
     }
