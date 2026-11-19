@@ -10,6 +10,7 @@ import com.univerflow.kaznu.domain.SiteNotice
 import com.univerflow.kaznu.domain.LockSettings
 import com.univerflow.kaznu.domain.PinLockout
 import com.univerflow.kaznu.domain.PinPolicy
+import com.univerflow.kaznu.domain.ReminderSettings
 import com.univerflow.kaznu.domain.SessionRepository
 import com.univerflow.kaznu.domain.StoredSession
 import com.univerflow.kaznu.domain.UnlockResult
@@ -49,7 +50,8 @@ class LocalSessionRepository(
             lockPreferences?.autoLockMs ?: LockSettings().autoLockMs, lockPreferences?.offerHandled ?: false)
         StoredSession(credentials, preferences.language, preferences.autoLoginPaused,
             storageError, preferences.mobileLayout, preferences.textZoom, preferences.animations, preferences.shortcuts, lock, preferences.theme, preferences.notices,
-            preferences.sessionClearPending, preferences.manualLogin, externalLinks = preferences.externalLinks)
+            preferences.sessionClearPending, preferences.manualLogin, externalLinks = preferences.externalLinks,
+            reminders = preferences.reminders)
     }
 
     override suspend fun saveCredentials(credentials: Credentials) = access {
@@ -143,6 +145,7 @@ class LocalSessionRepository(
     override suspend fun setTextZoom(percent: Int) = access { preferences.textZoom = percent }
     override suspend fun setAnimations(enabled: Boolean) = access { preferences.animations = enabled }
     override suspend fun setExternalLinks(enabled: Boolean) = access { preferences.externalLinks = enabled }
+    override suspend fun setReminders(settings: ReminderSettings) = access { preferences.reminders = settings }
     override suspend fun setTheme(theme: AppTheme) = access { preferences.theme = theme }
     override suspend fun setShortcuts(shortcuts: HomeShortcuts) = access { preferences.shortcuts = shortcuts }
     override suspend fun setNotices(notices: List<SiteNotice>) = access { preferences.notices = notices }

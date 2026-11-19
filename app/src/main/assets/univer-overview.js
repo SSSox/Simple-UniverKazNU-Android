@@ -156,6 +156,56 @@
         return firstClassDay(following, 1, next.range[0], 1);
     }
 
+    /* The week's timetable for the phone: the widget, class reminders and the offline schedule read it. */
+    function isoDay(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+    // A course date as the site writes it: "15.12.2026", "15.12.26", "2026-12-15", or "01.09" without a year. The site
+    // shows a class only within its course dates, so a yearless first day is the last such day by the week's end and a
+    // yearless last day the first such day from its Monday ("01.09"–"20.01" seen in January spans the new year).
+    function courseDay(value, monday, last) {
+        var iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value || ''), dmy = /^(\d{1,2})\.(\d{1,2})(?:\.(\d{2}|\d{4}))?$/.exec(value || ''), day;
+        if (iso) day = new Date(+iso[1], +iso[2] - 1, +iso[3]);
+        else if (dmy) {
+            day = new Date(dmy[3] ? (dmy[3].length === 2 ? 2000 + +dmy[3] : +dmy[3]) : monday.getFullYear(), +dmy[2] - 1, +dmy[1]);
+            var sunday = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 6);
+            if (!dmy[3] && last && day < monday) day.setFullYear(day.getFullYear() + 1);
+            if (!dmy[3] && !last && day > sunday) day.setFullYear(day.getFullYear() - 1);
+        }
+        return day && !isNaN(day) ? day : null;
+    }
+    // Both course dates, or neither: a pair the phone cannot read as a span is not guessed at.
+    function courseDates(dates, monday) {
+        var from = dates.length === 2 ? courseDay(dates[0], monday, false) : null, until = dates.length === 2 ? courseDay(dates[1], monday, true) : null;
+        return from && until && from <= until ? {from:isoDay(from), until:isoDay(until)} : {from:null, until:null};
+    }
+    // Only a week that holds [now]: its Monday, every class with its weekday (Monday = 0), clock times, names and course
+    // dates, and the account the page belongs to. Another week, an undated page or a page without the table gives null.
+    function timetable(doc, now) {
+        var select = doc.getElementById('weekSelect'); if (!select || !doc.querySelector('table.schedule')) return null;
+        var options = Array.from(select.options), current = options.find(function (o) { return o.selected || o.hasAttribute('selected'); }) || options[0];
+        var range = current && weekRange(current.value + ' ' + current.textContent); if (!range) return null;
+        var monday = new Date(range[0].getFullYear(), range[0].getMonth(), range[0].getDate() - (range[0].getDay() + 6) % 7);
+        var today = new Date(now.getFullYear(), now.getMonth(), now.getDate()), next = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 7);
+        if (today < monday || today >= next) return null;
+        var lessons = [];
+        for (var column = 1; column < Math.min(columns(doc), 8); column++) (lessonsOn(doc, column) || []).forEach(function (lesson) {
+            var info = lesson.info || {}, dates = courseDates(info.dates || [], monday);
+            if (lesson.end <= lesson.start) return;
+            lessons.push({day:column - 1, start:clock(lesson.start), end:clock(lesson.end), subject:(info.subject || lesson.subject).slice(0, 200),
+                type:(info.type || '').slice(0, 60), room:(info.room || '').slice(0, 100), faculty:(info.faculty || '').slice(0, 100), teacher:(info.teacher || '').slice(0, 200),
+                from:dates.from, until:dates.until});
+        });
+        return {v:1, week:isoDay(monday), owner:account().slice(0, 128), lessons:lessons.slice(0, 80)};
+    }
+    // Hands the week to the app once per page; the same week read again (another pass, the kept copy) is not sent twice.
+    var sentWeek = '';
+    function saveWeek(doc) {
+        if (typeof __univerNative !== 'function') return;
+        var week = timetable(doc, new Date()); if (!week) return;
+        var message = 'univer-schedule:' + JSON.stringify(week);
+        if (message === sentWeek) return;
+        sentWeek = message; __univerNative(message);
+    }
+
     /* Grades and requests. */
     function scores(value) {
         var found = [], pattern = /((?:РК|RK|МБ|АБ)\s*[12]|(?:Экз|Exam|Емтихан|Итог|Total)\p{L}*)\s*(?:\(\s*(\d+(?:[.,]\d+)?)\s*\))?\s*:\s*(-?\d+(?:[.,]\d+)?)?/giu, match;
@@ -314,7 +364,7 @@
             try {
                 var now = new Date();
                 if (loadedDay !== now.toDateString()) {
-                    try { scheduleDoc = await once('schedule-day:' + now.toDateString(), '/student/myschedule/'); loadedDay = now.toDateString(); }
+                    try { scheduleDoc = await once('schedule-day:' + now.toDateString(), '/student/myschedule/'); loadedDay = now.toDateString(); saveWeek(scheduleDoc); }
                     catch (_) { if (epoch === generation && signature !== 'unavailable') { signature = 'unavailable'; fail(body); } return; }
                 }
                 var lessons = lessonsToday(scheduleDoc, now), upcoming = null, at = minuteOf(now);
@@ -389,6 +439,7 @@
         if (!anchor) return; if (anchor.classList.contains('univer-app-gpa')) anchor.after(grid); else anchor.before(grid);
         var epoch = generation;
         kept('schedule', '/student/myschedule/').then(async function (doc) {
+            saveWeek(doc);
             var update = todayUpdater(today.body, doc, epoch);
             await update();
             // A grid built again in the same generation (the site replaced the old one) keeps a single clock.
@@ -410,11 +461,12 @@
             active = true;
             if (/^\/student\/bachelor\/?$/i.test(location.pathname)) bachelor();
             else if (/^\/ssc\/?$/i.test(location.pathname)) desk();
+            else if (/^\/student\/myschedule\//i.test(location.pathname)) saveWeek(document);
         },
         release: release,
         // Test hooks: the same readers on a supplied document.
         // A site page read once per visit (GET, same origin), shared with the tab-page helpers.
         page: function (url) { return once(url, url); },
-        lessonsToday: lessonsToday, courseScores: courseScores, requests: requests, nextClasses: nextClasses, dayCaption: dayCaption
+        lessonsToday: lessonsToday, timetable: timetable, courseScores: courseScores, requests: requests, nextClasses: nextClasses, dayCaption: dayCaption
     };
 })();

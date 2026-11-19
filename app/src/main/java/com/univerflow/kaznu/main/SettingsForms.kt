@@ -53,6 +53,8 @@ class SettingsForms(private val activity: AppCompatActivity, private val model: 
         val updateStatus: String
         fun checkUpdates()
         fun installUpdate()
+        /** Asks for the notification permission where Android needs it (API 33+); [granted] hears the answer. */
+        fun requestNotifications(granted: (Boolean) -> Unit)
     }
 
     /** Read once: [update] runs with every state change and every tick of an update's download while the sheet is open. */
@@ -220,6 +222,8 @@ class SettingsForms(private val activity: AppCompatActivity, private val model: 
         form.mobileLayout.setOnCheckedChangeListener { _, checked -> host.setMobileLayout(checked, form) }
         form.animations.setOnCheckedChangeListener { _, checked -> setAnimations(checked, form) }
         form.externalLinks.setOnCheckedChangeListener { _, checked -> setExternalLinks(checked, form) }
+        form.classReminders.setOnCheckedChangeListener { _, checked -> setReminders(checked, null, form) }
+        form.reminderLead.addOnButtonCheckedListener { _, id, checked -> if (checked) leadOf(form, id)?.let { setReminders(null, it, form) } }
         form.linkDataClear.setOnClickListener { clearLinkData(form) }
         form.textSize.setLabelFormatter { activity.getString(R.string.percent_value, it.toInt()) }
         form.textSize.addOnChangeListener { _, value, fromUser ->
@@ -260,6 +264,38 @@ class SettingsForms(private val activity: AppCompatActivity, private val model: 
 
     private fun themeChoices(form: SettingsSheetBinding) =
         listOf(form.themeSystem to AppTheme.SYSTEM, form.themeLight to AppTheme.LIGHT, form.themeDark to AppTheme.DARK)
+
+    private fun leads(form: SettingsSheetBinding) =
+        listOf(form.reminderLead5 to 5, form.reminderLead10 to 10, form.reminderLead15 to 15, form.reminderLead30 to 30)
+
+    private fun leadOf(form: SettingsSheetBinding, id: Int) = leads(form).firstOrNull { it.first.id == id }?.second
+
+    /**
+     * Turning reminders on asks Android for notifications first; a refusal leaves them off and says where to allow them.
+     * Only a real change is saved: the form being brought in step with the state calls here too.
+     */
+    private fun setReminders(enabled: Boolean?, lead: Int?, form: SettingsSheetBinding) {
+        val current = model.state.value.reminders
+        val next = current.copy(enabled = enabled ?: current.enabled, lead = lead ?: current.lead)
+        if (next == current || host.sessionChanging) return
+        val save = { activity.launchCatching({ feedback(form, R.string.storage_error); update(form, isFirst(form)) }) { model.setReminders(next) } }
+        if (next.enabled && !current.enabled) host.requestNotifications { granted ->
+            if (granted) save() else { feedback(form, R.string.notifications_denied); update(form, isFirst(form)) }
+        } else save()
+    }
+
+    private fun updateReminders(form: SettingsSheetBinding, state: AppState) {
+        form.remindersLabel.text = host.text(R.string.reminders_section)
+        form.classReminders.text = host.text(R.string.class_reminders)
+        if (form.classReminders.isChecked != state.reminders.enabled) form.classReminders.isChecked = state.reminders.enabled
+        form.classRemindersHint.text = host.text(if (state.reminders.enabled) R.string.class_reminders_on else R.string.class_reminders_hint)
+        form.reminderLead.isVisible = state.reminders.enabled
+        leads(form).forEach { (button, minutes) ->
+            button.text = host.text(R.string.reminder_lead).format(minutes)
+            button.contentDescription = host.text(R.string.reminder_lead_description).format(minutes)
+        }
+        leads(form).firstOrNull { it.second == state.reminders.lead }?.first?.id?.let { if (form.reminderLead.checkedButtonId != it) form.reminderLead.check(it) }
+    }
 
     private fun setExternalLinks(enabled: Boolean, form: SettingsSheetBinding) {
         if (enabled == model.state.value.externalLinks || !LinkProfile.available()) return
@@ -346,6 +382,7 @@ class SettingsForms(private val activity: AppCompatActivity, private val model: 
         form.animationsHint.text = text(R.string.animations_hint)
         if (form.animations.isChecked != state.animations) form.animations.isChecked = state.animations
         updateLinks(form, state)
+        updateReminders(form, state)
         (form.feedback.tag as? Int)?.let { form.feedback.text = text(it) }
         form.accountActions.isVisible = !first
         val selected = when (state.language) {

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The widget's card: the app's surface with the launcher's usual rounding (Android 12 clips it to its own radius). -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/md_surface" />
+    <corners android:radius="20dp" />
+</shape>

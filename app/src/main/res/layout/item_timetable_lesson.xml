@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One class: the start in bold over its end (as on the site's schedule cards), then the name, what and where, who. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent"
+    android:layout_height="wrap_content" android:orientation="horizontal" android:baselineAligned="false" android:paddingHorizontal="16dp" android:paddingVertical="12dp">
+    <LinearLayout android:layout_width="56dp" android:layout_height="wrap_content" android:orientation="vertical">
+        <TextView android:id="@+id/lesson_start" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:fontFeatureSettings="tnum" android:textAppearance="?attr/textAppearanceTitleMedium" android:textColor="?attr/colorOnSurface"
+            android:textStyle="bold" />
+        <TextView android:id="@+id/lesson_end" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:fontFeatureSettings="tnum" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant" />
+    </LinearLayout>
+    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="8dp"
+        android:layout_weight="1" android:orientation="vertical">
+        <TextView android:id="@+id/lesson_now" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_marginBottom="4dp" android:background="@drawable/widget_row_now" android:paddingHorizontal="8dp"
+            android:paddingVertical="2dp" android:text="@string/timetable_now" android:textAppearance="?attr/textAppearanceLabelMedium"
+            android:textColor="?attr/colorOnPrimaryContainer" android:visibility="gone" />
+        <TextView android:id="@+id/lesson_subject" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:textAppearance="?attr/textAppearanceTitleMedium" android:textColor="?attr/colorOnSurface" />
+        <TextView android:id="@+id/lesson_facts" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="2dp" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant" />
+        <TextView android:id="@+id/lesson_teacher" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="2dp" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant" />
+    </LinearLayout>
+</LinearLayout>

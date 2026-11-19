@@ -1,14 +1,17 @@
 package com.univerflow.kaznu
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Dialog
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.net.Uri
 import android.net.http.SslError
+import android.os.Build
 import android.os.Bundle
 import android.os.Message
 import android.os.SystemClock
@@ -27,6 +30,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import androidx.core.view.GravityCompat
 import androidx.core.view.OneShotPreDrawListener
@@ -40,23 +44,31 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import com.univerflow.kaznu.domain.AppLanguage
+import com.google.android.material.color.MaterialColors
+import com.google.android.material.snackbar.Snackbar
 import com.univerflow.kaznu.data.AppPreferences
 import com.univerflow.kaznu.data.CredentialVault
 import com.univerflow.kaznu.data.DownloadRepository
 import com.univerflow.kaznu.data.LocalSessionRepository
 import com.univerflow.kaznu.data.LockPreferences
 import com.univerflow.kaznu.data.LockVault
+import com.univerflow.kaznu.data.TimetableStore
 import com.univerflow.kaznu.databinding.ActivityMainBinding
 import com.univerflow.kaznu.databinding.SettingsSheetBinding
+import com.univerflow.kaznu.domain.AppLanguage
 import com.univerflow.kaznu.domain.DownloadState
 import com.univerflow.kaznu.domain.HomeShortcuts
-import com.univerflow.kaznu.domain.Shortcuts
 import com.univerflow.kaznu.domain.Notices
-import com.univerflow.kaznu.domain.TextZoom
+import com.univerflow.kaznu.domain.ReminderSettings
+import com.univerflow.kaznu.domain.Shortcuts
 import com.univerflow.kaznu.domain.StudyFolders
+import com.univerflow.kaznu.domain.TextZoom
+import com.univerflow.kaznu.domain.Timetable
 import com.univerflow.kaznu.download.DownloadEvent
 import com.univerflow.kaznu.download.DownloadService
+import com.univerflow.kaznu.launch.AppShortcuts
+import com.univerflow.kaznu.launch.CalendarHandoff
+import com.univerflow.kaznu.launch.LaunchTarget
 import com.univerflow.kaznu.main.DownloadLauncher
 import com.univerflow.kaznu.main.LockFlow
 import com.univerflow.kaznu.main.MainChrome
@@ -69,9 +81,7 @@ import com.univerflow.kaznu.main.StatusBanner
 import com.univerflow.kaznu.main.TextSizeDialog
 import com.univerflow.kaznu.main.UpdateFlow
 import com.univerflow.kaznu.report.GradeReportFiles
-import com.univerflow.kaznu.launch.AppShortcuts
-import com.univerflow.kaznu.launch.CalendarHandoff
-import com.univerflow.kaznu.launch.LaunchTarget
+import com.univerflow.kaznu.today.TodaySync
 import com.univerflow.kaznu.ui.AppLockSession
 import com.univerflow.kaznu.ui.DocumentViewer
 import com.univerflow.kaznu.ui.DownloadsActivity
@@ -81,11 +91,12 @@ import com.univerflow.kaznu.ui.LanguageResources
 import com.univerflow.kaznu.ui.LinkViewerActivity
 import com.univerflow.kaznu.ui.LockUi
 import com.univerflow.kaznu.ui.Motion
-import com.univerflow.kaznu.ui.paintSystemBands
 import com.univerflow.kaznu.ui.NoticeLoadingOverlay
 import com.univerflow.kaznu.ui.ThemeMode
+import com.univerflow.kaznu.ui.TimetableActivity
 import com.univerflow.kaznu.ui.attempt
 import com.univerflow.kaznu.ui.launchCatching
+import com.univerflow.kaznu.ui.paintSystemBands
 import com.univerflow.kaznu.update.UpdateManager
 import com.univerflow.kaznu.web.AppSection
 import com.univerflow.kaznu.web.AutomationController
@@ -97,31 +108,30 @@ import com.univerflow.kaznu.web.LinkProfile
 import com.univerflow.kaznu.web.LogoutNavigation
 import com.univerflow.kaznu.web.MobilePageAdapter
 import com.univerflow.kaznu.web.NoticePresentation
+import com.univerflow.kaznu.web.PageCover
 import com.univerflow.kaznu.web.PageScripts
 import com.univerflow.kaznu.web.RetiredWebViewClient
 import com.univerflow.kaznu.web.ShortcutBridge
 import com.univerflow.kaznu.web.SingleSignOnPolicy
 import com.univerflow.kaznu.web.SitePolicy
+import com.univerflow.kaznu.web.Trackers
 import com.univerflow.kaznu.web.WebsiteLanguageSync
-import com.univerflow.kaznu.web.PageCover
 import com.univerflow.kaznu.web.captureNewWindow
 import com.univerflow.kaznu.web.configureSecureSettings
 import com.univerflow.kaznu.web.enableBackForwardCache
-import com.univerflow.kaznu.web.flushCookiesSoon
-import com.univerflow.kaznu.web.Trackers
 import com.univerflow.kaznu.web.evaluate
+import com.univerflow.kaznu.web.flushCookiesSoon
 import com.univerflow.kaznu.web.httpErrorMessage
 import com.univerflow.kaznu.web.webErrorText
-import com.google.android.material.color.MaterialColors
-import com.google.android.material.snackbar.Snackbar
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONTokener
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * The website in a WebView with its automation, session and recovery. Chrome, settings, the app lock, downloads and
@@ -140,6 +150,14 @@ class MainActivity : AppCompatActivity() {
     private lateinit var websiteLanguage: WebsiteLanguageSync
     private lateinit var documents: DocumentViewer
     /** The link window answers with a Univer or Moodle page the user tapped there. */
+    /** The answer to the notification permission asked for class reminders. */
+    private var notificationsAnswer: ((Boolean) -> Unit)? = null
+    private val notificationsPermission = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { granted ->
+        notificationsAnswer?.invoke(granted)
+        notificationsAnswer = null
+    }
+    /** The reminder setting and language the widget and the alarm were last brought in step with. */
+    private var todayKey: Pair<ReminderSettings, AppLanguage>? = null
     private val linkWindow = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()) { result ->
         result.data?.getStringExtra(LinkViewerActivity.RESULT_URL)?.let(::linkReturned)
     }
@@ -327,7 +345,7 @@ class MainActivity : AppCompatActivity() {
                     event == null -> message(R.string.calendar_error)
                     !CalendarHandoff.open(this, event) -> message(R.string.calendar_missing)
                 }
-            }) { request ->
+            }, onTimetable = ::keepTimetable) { request ->
             lifecycleScope.launch {
                 if (!attempt(false) { model.updateShortcuts(request) }) message(R.string.pin_failed)
                 shortcutBridge.configure(model.state.value.shortcuts)
@@ -354,9 +372,41 @@ class MainActivity : AppCompatActivity() {
         }, serviceRetry = { model.singleSignOnGuard.renewal() }, chooseFiles = fileChooser::show,
         serviceSignedIn = downloads::signedIn, serviceSignedOut = { message(R.string.service_logged_out) })
 
+    /**
+     * The week the schedule page or Бакалавр read, kept for the widget, reminders and the offline schedule. Not while the
+     * session changes: a page still open during a sign-out must not leave its week behind.
+     */
+    private fun keepTimetable(timetable: Timetable) {
+        if (sessionChanging || model.sessionClearPending || !model.state.value.canBrowse) return
+        val since = TimetableStore.generation
+        val context = applicationContext
+        lifecycleScope.launch(Dispatchers.IO) { if (TimetableStore.write(context, timetable, since)) TodaySync.changed(context) }
+    }
+
+    /** «Расписание без сети» under a network error, once a week is saved. */
+    private fun offerOfflineSchedule() {
+        binding.errorOffline.isVisible = false
+        if (errorMessageId != R.string.network_error && errorMessageId != R.string.tls_error) return
+        val context = applicationContext
+        lifecycleScope.launch {
+            val saved = withContext(Dispatchers.IO) { TimetableStore.read(context) != null }
+            binding.errorOffline.isVisible = saved && pageFailed && (errorMessageId == R.string.network_error || errorMessageId == R.string.tls_error)
+        }
+    }
+
+    /** The widget and the class alarm follow the reminder setting and the app's language. */
+    private fun syncToday(state: AppState) {
+        val key = state.reminders to state.language
+        if (key == todayKey) return
+        todayKey = key
+        val context = applicationContext
+        lifecycleScope.launch(Dispatchers.IO) { TodaySync.changed(context) }
+    }
+
     private fun bindControls() {
         chrome.configure(canOpenDrawer = { !documents.isOpen }, onToolbar = ::toolbarAction, onNavigation = ::navigationAction)
         binding.errorRetry.setOnClickListener { retryFailedPage() }
+        binding.errorOffline.setOnClickListener { startActivity(TimetableActivity.intent(this, model.state.value.language)) }
         binding.errorBack.setOnClickListener {
             if (sessionChanging) return@setOnClickListener
             if (model.sessionClearPending) finishInterruptedSessionClear()
@@ -520,6 +570,7 @@ class MainActivity : AppCompatActivity() {
     private fun render(state: AppState) {
         if (!state.ready) return
         publishShortcuts(state)
+        syncToday(state)
         val justUnlocked = rendered.locked && !state.locked
         rendered = rendered.copy(locked = state.locked)
         AppLockSession.update(state.lock.enabled, state.locked, state.lock.autoLockMs, justUnlocked)
@@ -532,6 +583,7 @@ class MainActivity : AppCompatActivity() {
         renderPageSettings(state)
         binding.errorMessage.text = languages.of(state.language).webErrorText(errorMessageId, errorHttpStatus)
         binding.errorRetry.text = text(R.string.retry)
+        binding.errorOffline.text = text(R.string.offline_schedule)
         binding.errorBack.text = text(R.string.return_to_site)
         val changedLanguage = rendered.language != null && rendered.language != state.language
         rendered = rendered.copy(language = state.language)
@@ -934,6 +986,7 @@ class MainActivity : AppCompatActivity() {
         fileChooser.clear()
         reports.cancel()
         GradeReportFiles.clear(this)
+        withContext(Dispatchers.IO) { TodaySync.erase(applicationContext) }
         DownloadService.cancelAll(this)
         documents.close(false)
         documentSourcePosition = null
@@ -1053,6 +1106,7 @@ class MainActivity : AppCompatActivity() {
         binding.errorMessage.text = labels().webErrorText(id, httpStatus)
         binding.errorIcon.setImageResource(if (id == R.string.network_error || id == R.string.tls_error) R.drawable.ic_cloud_off else R.drawable.ic_warning)
         Motion.show(binding.errorOverlay, model.state.value.canBrowse)
+        offerOfflineSchedule()
         Motion.progress(binding.loading, false)
         pageLoading = false
         renderHeading()
@@ -1447,6 +1501,15 @@ class MainActivity : AppCompatActivity() {
         override fun track(dialog: Dialog) = this@MainActivity.track(dialog)
         override val sessionChanging get() = this@MainActivity.sessionChanging
         override val sessionEpoch get() = this@MainActivity.sessionEpoch
+        override fun requestNotifications(granted: (Boolean) -> Unit) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
+                granted(androidx.core.app.NotificationManagerCompat.from(this@MainActivity).areNotificationsEnabled())
+                return
+            }
+            notificationsAnswer = granted
+            notificationsPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
         override val channel get() = this@MainActivity.channel
         override val rendererUnavailable get() = this@MainActivity.rendererUnavailable
         override val automationStatus get() = this@MainActivity.automationStatus

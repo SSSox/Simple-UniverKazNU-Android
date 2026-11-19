@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A hairline above every class but the first, inset like the card's text. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:gravity="top" android:height="1dp" android:left="16dp" android:right="16dp">
+        <shape android:shape="rectangle"><solid android:color="?attr/colorOutlineVariant" /></shape>
+    </item>
+</layer-list>

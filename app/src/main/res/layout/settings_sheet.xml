@@ -195,6 +195,37 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
+        <!-- Class reminders from the saved week: off until turned on, then how long before a class. -->
+        <TextView android:id="@+id/reminders_label" style="@style/Univer.SectionTitle"
+            android:layout_width="match_parent" android:layout_height="wrap_content" android:text="@string/reminders_section" />
+        <com.google.android.material.card.MaterialCardView android:id="@+id/reminders_card" android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical"
+                android:paddingHorizontal="16dp" android:paddingVertical="12dp">
+                <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/class_reminders"
+                    android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="44dp"
+                    android:text="@string/class_reminders" android:textAppearance="?attr/textAppearanceBodyLarge" />
+                <TextView android:id="@+id/class_reminders_hint" style="@style/Univer.RowHint" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:accessibilityLiveRegion="polite" android:text="@string/class_reminders_hint" />
+                <com.google.android.material.button.MaterialButtonToggleGroup android:id="@+id/reminder_lead"
+                    android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp"
+                    app:selectionRequired="true" app:singleSelection="true">
+                    <com.google.android.material.button.MaterialButton android:id="@+id/reminder_lead_5"
+                        style="@style/Widget.Material3.Button.OutlinedButton" android:layout_width="0dp" android:layout_height="wrap_content"
+                        android:layout_weight="1" android:minHeight="48dp" android:paddingHorizontal="4dp" />
+                    <com.google.android.material.button.MaterialButton android:id="@+id/reminder_lead_10"
+                        style="@style/Widget.Material3.Button.OutlinedButton" android:layout_width="0dp" android:layout_height="wrap_content"
+                        android:layout_weight="1" android:minHeight="48dp" android:paddingHorizontal="4dp" />
+                    <com.google.android.material.button.MaterialButton android:id="@+id/reminder_lead_15"
+                        style="@style/Widget.Material3.Button.OutlinedButton" android:layout_width="0dp" android:layout_height="wrap_content"
+                        android:layout_weight="1" android:minHeight="48dp" android:paddingHorizontal="4dp" />
+                    <com.google.android.material.button.MaterialButton android:id="@+id/reminder_lead_30"
+                        style="@style/Widget.Material3.Button.OutlinedButton" android:layout_width="0dp" android:layout_height="wrap_content"
+                        android:layout_weight="1" android:minHeight="48dp" android:paddingHorizontal="4dp" />
+                </com.google.android.material.button.MaterialButtonToggleGroup>
+            </LinearLayout>
+        </com.google.android.material.card.MaterialCardView>
+
         <com.google.android.material.button.MaterialButton android:id="@+id/downloads"
             style="@style/Widget.Material3.Button.TonalButton" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:layout_marginTop="16dp" android:minHeight="48dp"

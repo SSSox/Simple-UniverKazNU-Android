@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The widget picker's preview (Android 12+): widget_today.xml with three sample classes, the second under way. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent" android:background="@drawable/widget_background" android:orientation="vertical"
+    android:padding="12dp" tools:ignore="HardcodedText">
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:paddingHorizontal="4dp"
+        android:maxLines="1" android:text="@string/widget_today" android:textColor="@color/md_primary" android:textSize="15sp"
+        android:textStyle="bold" />
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp"
+        android:background="@drawable/widget_row" android:gravity="center_vertical" android:minHeight="40dp"
+        android:orientation="horizontal" android:baselineAligned="false" android:paddingHorizontal="8dp" android:paddingVertical="4dp">
+        <LinearLayout android:layout_width="48dp" android:layout_height="wrap_content" android:orientation="vertical">
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:fontFeatureSettings="tnum"
+                android:text="09:00" android:textColor="@color/md_on_surface" android:textSize="14sp" android:textStyle="bold" />
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:fontFeatureSettings="tnum"
+                android:text="09:50" android:textColor="@color/md_on_surface_variant" android:textSize="12sp" />
+        </LinearLayout>
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+            android:orientation="vertical">
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:ellipsize="end"
+                android:maxLines="1" android:text="@string/widget_preview_first" android:textColor="@color/md_on_surface"
+                android:textSize="14sp" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:ellipsize="end"
+                android:maxLines="1" android:text="@string/widget_preview_seminar" android:textColor="@color/md_on_surface_variant"
+                android:textSize="12sp" />
+        </LinearLayout>
+    </LinearLayout>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp"
+        android:background="@drawable/widget_row_now" android:gravity="center_vertical" android:minHeight="40dp"
+        android:orientation="horizontal" android:baselineAligned="false" android:paddingHorizontal="8dp" android:paddingVertical="4dp">
+        <LinearLayout android:layout_width="48dp" android:layout_height="wrap_content" android:orientation="vertical">
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:fontFeatureSettings="tnum"
+                android:text="10:00" android:textColor="@color/md_on_surface" android:textSize="14sp" android:textStyle="bold" />
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:fontFeatureSettings="tnum"
+                android:text="10:50" android:textColor="@color/md_on_surface_variant" android:textSize="12sp" />
+        </LinearLayout>
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+            android:orientation="vertical">
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:ellipsize="end"
+                android:maxLines="1" android:text="@string/widget_preview_second" android:textColor="@color/md_on_surface"
+                android:textSize="14sp" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:ellipsize="end"
+                android:maxLines="1" android:text="@string/widget_preview_lecture" android:textColor="@color/md_on_surface_variant"
+                android:textSize="12sp" />
+        </LinearLayout>
+    </LinearLayout>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="4dp"
+        android:background="@drawable/widget_row" android:gravity="center_vertical" android:minHeight="40dp"
+        android:orientation="horizontal" android:baselineAligned="false" android:paddingHorizontal="8dp" android:paddingVertical="4dp">
+        <LinearLayout android:layout_width="48dp" android:layout_height="wrap_content" android:orientation="vertical">
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:fontFeatureSettings="tnum"
+                android:text="11:00" android:textColor="@color/md_on_surface" android:textSize="14sp" android:textStyle="bold" />
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:fontFeatureSettings="tnum"
+                android:text="11:50" android:textColor="@color/md_on_surface_variant" android:textSize="12sp" />
+        </LinearLayout>
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+            android:orientation="vertical">
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:ellipsize="end"
+                android:maxLines="1" android:text="@string/widget_preview_third" android:textColor="@color/md_on_surface"
+                android:textSize="14sp" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:ellipsize="end"
+                android:maxLines="1" android:text="@string/widget_preview_lecture" android:textColor="@color/md_on_surface_variant"
+                android:textSize="12sp" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

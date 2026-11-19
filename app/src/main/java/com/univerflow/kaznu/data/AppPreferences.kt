@@ -9,6 +9,7 @@ import com.univerflow.kaznu.domain.NoticeDetail
 import com.univerflow.kaznu.domain.NoticeKind
 import com.univerflow.kaznu.domain.Notices
 import com.univerflow.kaznu.domain.PinnedLink
+import com.univerflow.kaznu.domain.ReminderSettings
 import com.univerflow.kaznu.domain.SiteNotice
 import com.univerflow.kaznu.domain.Shortcuts
 import com.univerflow.kaznu.domain.TextZoom
@@ -60,6 +61,10 @@ class AppPreferences(context: Context, name: String = "univer.preferences") {
     var externalLinks: Boolean
         get() = preferences.getBoolean("external_links", false)
         set(value) { check(preferences.edit().putBoolean("external_links", value).commit()) }
+    /** Read by the alarm and boot receivers too, so it needs no account and no PIN. */
+    var reminders: ReminderSettings
+        get() = ReminderSettings(preferences.getBoolean("class_reminders", false), ReminderSettings.lead(preferences.getInt("reminder_lead", ReminderSettings.DEFAULT_LEAD)))
+        set(value) { check(preferences.edit().putBoolean("class_reminders", value.enabled).putInt("reminder_lead", ReminderSettings.lead(value.lead)).commit()) }
     /** The file viewer's "A4 page width": Word and web pages stop widening at an A4 sheet when zoomed out. */
     var previewPageA4: Boolean
         get() = preferences.getBoolean("preview_page_a4", true)

@@ -8,6 +8,7 @@ import com.univerflow.kaznu.domain.Credentials
 import com.univerflow.kaznu.domain.HomeShortcuts
 import com.univerflow.kaznu.domain.LockSettings
 import com.univerflow.kaznu.domain.NoticeScan
+import com.univerflow.kaznu.domain.ReminderSettings
 import com.univerflow.kaznu.domain.Notices
 import com.univerflow.kaznu.domain.SiteNotice
 import com.univerflow.kaznu.domain.ShortcutRequest
@@ -39,7 +40,9 @@ data class AppState(val ready: Boolean = false, val language: AppLanguage = AppL
     val notices: List<SiteNotice> = emptyList(),
     val manualLogin: Boolean = false,
     /** Links to other sites open in the system browser, not in the app's link window. */
-    val externalLinks: Boolean = false) {
+    val externalLinks: Boolean = false,
+    /** «Напоминать о парах» and how long before a class. */
+    val reminders: ReminderSettings = ReminderSettings()) {
     val canBrowse: Boolean get() = hasCredentials || manualLogin
 }
 
@@ -83,7 +86,7 @@ class UniverViewModel(private val repository: SessionRepository) : ViewModel() {
             mutableState.value = AppState(true, loaded.language, loaded.credentials != null || loaded.lock.enabled, loaded.paused,
                 loaded.storageError, loaded.mobileLayout, loaded.textZoom, loaded.animations, loaded.shortcuts,
                 loaded.lock, locked = loaded.lock.enabled, theme = loaded.theme, notices = loaded.notices, manualLogin = loaded.manualLogin,
-                externalLinks = loaded.externalLinks)
+                externalLinks = loaded.externalLinks, reminders = loaded.reminders)
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) {
             guard.stop()
@@ -209,6 +212,13 @@ class UniverViewModel(private val repository: SessionRepository) : ViewModel() {
         changes.withLock {
             repository.setExternalLinks(enabled)
             mutableState.update { it.copy(externalLinks = enabled) }
+        }
+    }
+
+    suspend fun setReminders(settings: ReminderSettings) = retained {
+        changes.withLock {
+            repository.setReminders(settings)
+            mutableState.update { it.copy(reminders = settings) }
         }
     }
 

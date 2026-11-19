@@ -1,4 +1,4 @@
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
     <string name="return_to_site">Вернуться к сайту</string>
     <string name="server_error">Univer временно не отвечает. Попробуйте открыть раздел позже.</string>
     <string name="http_error_with_status">%1$s (HTTP %2$d)</string>
@@ -329,4 +329,38 @@
     <string name="report_no_grades">Оценки пока не выставлены</string>
     <string name="report_continued">%1$s (продолжение)</string>
     <string name="report_file">Успеваемость %1$s</string>
+    <string name="reminders_section">Пары</string>
+    <string name="class_reminders">Напоминать о парах</string>
+    <string name="class_reminders_hint">Уведомление перед парой по сохранённому расписанию. Расписание сохраняется, когда вы открываете его в приложении.</string>
+    <string name="class_reminders_on">Напомним до начала пары за выбранное время.</string>
+    <string name="reminder_lead">%d мин</string>
+    <string name="reminder_lead_description" tools:ignore="PluralsCandidate">За %d минут до пары</string>
+    <string name="notifications_denied">Уведомления запрещены. Разрешите их в настройках телефона.</string>
+    <string name="channel_classes">Пары</string>
+    <string name="channel_classes_description">Напоминания перед парами</string>
+    <string name="reminder_soon">Скоро пара</string>
+    <string name="reminder_title">Через %1$d мин: %2$s</string>
+    <string name="reminder_starts">Начало в %s</string>
+    <string name="offline_schedule">Расписание без сети</string>
+    <string name="timetable_saved">Сохранено %s</string>
+    <string name="timetable_free_day">В этот день пар нет</string>
+    <string name="timetable_none">Расписание ещё не сохранено. Откройте его в приложении, когда будет сеть.</string>
+    <string name="timetable_now">Идёт</string>
+    <string name="timetable_note">Расписание без сети показывает неделю, которую вы открывали последней.</string>
+    <string name="widget_name">Пары на сегодня</string>
+    <string name="widget_description">Сегодняшние пары из сохранённого расписания</string>
+    <string name="widget_today">Сегодня</string>
+    <string name="widget_tomorrow">Завтра</string>
+    <string name="widget_finished">Пары на сегодня закончились</string>
+    <string name="widget_free">Сегодня пар нет</string>
+    <string name="widget_empty">Откройте расписание в приложении, и пары появятся здесь</string>
+    <string name="widget_none_week">На неделю вперёд пар нет</string>
+    <string name="widget_from">По расписанию от %s</string>
+    <string name="widget_class">Пара</string>
+    <string name="widget_room">Ауд. %s</string>
+    <string name="widget_preview_first">Культурология</string>
+    <string name="widget_preview_second">История Казахстана</string>
+    <string name="widget_preview_third">Английский язык</string>
+    <string name="widget_preview_seminar">Ауд. 233 · семинар</string>
+    <string name="widget_preview_lecture">Ауд. 309 · лекция</string>
 </resources>

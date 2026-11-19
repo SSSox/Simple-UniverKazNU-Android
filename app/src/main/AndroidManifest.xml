@@ -7,6 +7,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Class reminders are set again after a restart. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
@@ -34,6 +36,24 @@
         android:theme="@style/Theme.UniverKazNUSimple">
         <service android:name=".download.DownloadService" android:exported="false" android:foregroundServiceType="dataSync" />
         <receiver android:name=".update.UpdateInstallReceiver" android:exported="false" />
+        <!-- «Пары на сегодня»: drawn from the saved week only; the system delivers its updates to a non-exported receiver. -->
+        <receiver android:name=".today.TodayWidget" android:exported="false" android:label="@string/widget_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_today_info" />
+        </receiver>
+        <receiver android:name=".today.ClassReminders$ReminderReceiver" android:exported="false" />
+        <receiver android:name=".today.TodaySync$TimeEvents" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.LOCALE_CHANGED" />
+            </intent-filter>
+        </receiver>
+        <activity android:name=".ui.TimetableActivity" android:exported="false" android:parentActivityName=".MainActivity" />
         <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.downloads"
             android:exported="false" android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/download_paths" />
