@@ -3,6 +3,7 @@ package com.univerflow.kaznu.web
 import android.webkit.WebView
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
+import com.univerflow.kaznu.domain.CalendarEvent
 import com.univerflow.kaznu.domain.GradeReport
 import com.univerflow.kaznu.domain.HomeShortcuts
 import com.univerflow.kaznu.domain.ShortcutRequest
@@ -12,13 +13,14 @@ import org.json.JSONObject
 import org.json.JSONTokener
 
 /**
- * Receives home-tile pin and order taps, a UMKD section's «Скачать все» and the journal's «Поделиться успеваемостью»
- * from the site's main frame. Only data crosses: a listener limited to the exact Univer origin, no callable host
+ * Receives home-tile pin and order taps, a UMKD section's «Скачать все», the journal's «Поделиться успеваемостью» and
+ * «В календарь» from the site's main frame. Only data crosses: a listener limited to the exact Univer origin, no callable host
  * objects, and only messages carrying [channel]'s key: the site's own scripts cannot pin a tile, start downloads or
  * open the share sheet.
  */
 class ShortcutBridge(private val web: WebView, private val channel: ChannelGuard, private val onDownloadAll: (DownloadBatch) -> Unit = {},
-    private val onReport: (GradeReport?) -> Unit = {}, private val onRequest: (ShortcutRequest) -> Unit) {
+    private val onReport: (GradeReport?) -> Unit = {}, private val onCalendar: (CalendarEvent?) -> Unit = {},
+    private val onRequest: (ShortcutRequest) -> Unit) {
     private var closed = false
 
     init {
@@ -29,6 +31,8 @@ class ShortcutBridge(private val web: WebView, private val channel: ChannelGuard
                 data.startsWith(DownloadBatch.MESSAGE_PREFIX) -> DownloadBatch.parse(data)?.let(onDownloadAll)
                 // Our own journal sent it, so a report out of shape is said, not dropped in silence.
                 data.startsWith(GradeReport.MESSAGE_PREFIX) -> onReport(ReportMessage.parse(data))
+                // «В календарь» on an exam or a class; one out of shape is said as well.
+                data.startsWith(CalendarEvent.MESSAGE_PREFIX) -> onCalendar(CalendarMessage.parse(data))
                 else -> parse(data)?.let(onRequest)
             }
         }

@@ -12,6 +12,12 @@ private val SPACES = Regex("\\s+")
 
 /** How a check of a saved file is read; the storage queries themselves are in FileActions. */
 object FilePresenceRules {
+    /**
+     * Before Android 10 a file is found by its name only: it is still the one the app saved while it has the size the
+     * download wrote. A file saved again under that name in another app differs, and stays.
+     */
+    fun sameFile(received: Long, size: Long): Boolean = received >= 0 && size == received
+
     /** A MediaStore row (Android 10+): gone without a row, or when its folder or name now differs from where it was saved. */
     fun ofRow(found: Boolean, saved: String?, current: String?): FilePresence = when {
         !found -> FilePresence.GONE

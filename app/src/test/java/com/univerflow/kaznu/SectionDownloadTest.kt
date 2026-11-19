@@ -4,7 +4,9 @@ import com.univerflow.kaznu.domain.FilePresence
 import com.univerflow.kaznu.domain.FilePresenceRules
 import com.univerflow.kaznu.web.DownloadBatch
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.FileNotFoundException
 
@@ -60,6 +62,13 @@ class SectionDownloadTest {
         assertEquals(FilePresence.GONE, FilePresenceRules.ofRow(true, saved, "Download/Univer УМКД/Социология/Лекции/Лекция.pdf"), "renamed")
         // Saved before places were kept: the row alone answers, and its current place becomes the saved one.
         assertEquals(FilePresence.PRESENT, FilePresenceRules.ofRow(true, null, saved))
+    }
+
+    @Test fun beforeAndroid10OnlyAFileOfTheDownloadedSizeIsDeletedUnderItsName() {
+        assertTrue(FilePresenceRules.sameFile(5_120, 5_120))
+        assertTrue("an empty download is still its own file", FilePresenceRules.sameFile(0, 0))
+        assertFalse("saved again under that name in another app", FilePresenceRules.sameFile(5_120, 7_000))
+        assertFalse(FilePresenceRules.sameFile(-1, 0))
     }
 
     // Storage that does not answer must never empty the list. Android turns every failed open into FileNotFoundException

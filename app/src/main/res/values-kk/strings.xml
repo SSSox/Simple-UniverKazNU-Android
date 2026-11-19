@@ -60,6 +60,11 @@
     <string name="nav_schedule">Сабақ кестесі</string>
     <string name="nav_journal">Үлгерім</string>
     <string name="nav_materials">ОӘК материалдары</string>
+    <string name="shortcut_materials">ОӘК</string>
+    <string name="refresh_kept_input">Бетте енгізілген деректер бар. Олар жоғалмас үшін бет жаңартылмады</string>
+    <string name="refresh_kept_dialog">Алдымен беттегі терезені жабыңыз, содан кейін жаңартыңыз</string>
+    <string name="calendar_error">Күнтізбеге оқиғаны дайындау мүмкін болмады</string>
+    <string name="calendar_missing">Телефонда күнтізбе қолданбасы жоқ</string>
     <string name="nav_attestation">Ағымдағы аттестация</string>
     <string name="nav_distance">Қашықтан оқыту курстары</string>
     <string name="nav_all_sections">Сайттың барлық бөлімдері</string>
@@ -99,6 +104,14 @@
     <string name="open_inside">Қолданбада ашу</string>
     <string name="remove_from_list">Тізімнен алып тастау (файл қалады)</string>
     <string name="removed_from_list">Файл тізімнен алынды және «Жүктеулер» қалтасында қалды.</string>
+    <string name="delete_file">Файлды телефоннан жою</string>
+    <string name="delete_file_title">Файлды жою керек пе?</string>
+    <string name="delete_file_message">«%1$s» телефондағы «Жүктеулер» қалтасынан жойылады. Оны қайтару мүмкін болмайды.</string>
+    <string name="delete_file_action">Жою</string>
+    <string name="file_deleted">Файл жойылды</string>
+    <string name="file_already_gone">Файл «Жүктеулерде» енді жоқ, жазба тізімнен алынды</string>
+    <string name="file_delete_changed">Бұл атаумен енді басқа файл тұр, ол жойылмады</string>
+    <string name="file_delete_failed">Файлды жою мүмкін болмады</string>
     <string name="cancel_download">Жүктеуді тоқтату</string>
     <string name="file_actions">Файлмен әрекеттер</string>
     <string name="preview_preparing">Құжат дайындалуда…</string>

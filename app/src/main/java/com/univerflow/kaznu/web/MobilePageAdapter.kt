@@ -224,14 +224,16 @@ class MobilePageAdapter(
         private val PAGE_TOKEN = Regex("[a-z0-9]+-[a-z0-9]+")
         /**
          * The modules' only way to native code, visible to them and not to the site: pin requests, a UMKD section's
-         * «Скачать все» and the journal's grade report go through the keyed app sender, nothing else. Strict, so a
+         * «Скачать все», the journal's grade report, «В календарь», the saved timetable and the grades snapshot go through
+         * the keyed app sender, each within its own length, nothing else. Strict, so a
          * function the page swapped in for a built-in cannot reach the sender through .caller; the prefix checks use no
          * prototype method.
          */
         private const val NATIVE = "var __univerNative=__univerSend&&typeof __univerSend.app==='function'?function(v){'use strict';" +
-            "if(typeof v!=='string'||v.length<11)return;var p='univer-pin:',d='univer-download-all:',r='univer-report:',i,a=true,b=true,c=true;" +
-            "for(i=0;i<d.length;i++){if(i<p.length&&v[i]!==p[i])a=false;if(v[i]!==d[i])b=false;if(i<r.length&&v[i]!==r[i])c=false;}" +
-            "if(window===window.top&&((a&&v.length<=8192)||((b||c)&&v.length<=65536)))__univerSend.app(v);}:null;"
+            "if(typeof v!=='string'||v.length<11)return;" +
+            "var k=['univer-pin:',8192,'univer-download-all:',65536,'univer-report:',65536,'univer-calendar:',4096,'univer-schedule:',65536,'univer-grades:',65536],i,j,p,m=false;" +
+            "for(j=0;j<k.length&&!m;j+=2){p=k[j];m=v.length<=k[j+1];for(i=0;m&&i<p.length;i++)if(v[i]!==p[i])m=false;}" +
+            "if(window===window.top&&m)__univerSend.app(v);}:null;"
 
         /**
          * [body] (the modules) run with [senders] (a JS expression, see [ChannelGuard.senders]) as their only sender.

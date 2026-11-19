@@ -11,7 +11,10 @@ import android.text.style.ForegroundColorSpan
 import android.view.LayoutInflater
 import android.view.MenuItem
 import android.widget.PopupMenu
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.net.toUri
 import androidx.core.view.isVisible
 import androidx.core.widget.doAfterTextChanged
 import androidx.lifecycle.Lifecycle
@@ -33,6 +36,7 @@ import com.univerflow.kaznu.domain.FilePresence
 import com.univerflow.kaznu.domain.TextSearch
 import com.google.android.material.chip.Chip
 import com.google.android.material.color.MaterialColors
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.snackbar.Snackbar
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -67,6 +71,13 @@ class DownloadsActivity : AppCompatActivity() {
     private var indexJob: Job? = null
     private var indexProgress: Pair<Int, Int>? = null
     private var shownCounts: Map<FileKind, Int>? = null
+    /** The record whose file Android is asking the student about (a file saved by an earlier install). */
+    private var consentFor: String? = null
+    private val consent = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+        val record = records.firstOrNull { it.id == consentFor }
+        consentFor = null
+        if (result.resultCode == RESULT_OK && record != null) deleteFile(record, approved = true)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -111,6 +122,7 @@ class DownloadsActivity : AppCompatActivity() {
         subject = savedInstanceState?.getString("subject")
         textSearch = savedInstanceState?.getBoolean("text_search") ?: false
         sort = savedInstanceState?.getInt("sort", R.id.downloads_sort_date) ?: R.id.downloads_sort_date
+        consentFor = savedInstanceState?.getString("consent_for")
     }
 
     private fun menuAction(item: MenuItem): Boolean {
@@ -164,6 +176,7 @@ class DownloadsActivity : AppCompatActivity() {
         outState.putString("subject", subject)
         outState.putBoolean("text_search", textSearch)
         outState.putInt("sort", sort)
+        outState.putString("consent_for", consentFor)
         super.onSaveInstanceState(outState)
     }
 
@@ -351,7 +364,7 @@ class DownloadsActivity : AppCompatActivity() {
             // Files saved before places were kept start from the place they have now.
             val places = withContext(Dispatchers.IO) {
                 found.filter { (record, presence) -> presence == FilePresence.PRESENT && record.place == null }.keys
-                    .mapNotNull { record -> record.uri?.let { FileActions.place(this@DownloadsActivity, android.net.Uri.parse(it)) }?.let { record.id to it } }.toMap()
+                    .mapNotNull { record -> record.uri?.let { FileActions.place(this@DownloadsActivity, it.toUri()) }?.let { record.id to it } }.toMap()
             }
             repository.keepPlaces(places)
             val unknown = found.filterValues { it == FilePresence.UNKNOWN }.keys.map { it.id }.toSet()
@@ -386,19 +399,52 @@ class DownloadsActivity : AppCompatActivity() {
                 menu.add(0, 3, 2, localized.getString(R.string.share))
             }
             menu.add(0, 4, 3, localized.getString(R.string.remove_from_list))
+            if (available(record)) menu.add(0, 5, 4, localized.getString(R.string.delete_file))
             setOnMenuItemClickListener { item ->
                 when (item.itemId) {
                     1 -> open(record)
                     2 -> if (!FileActions.openExternal(this@DownloadsActivity, record)) message(R.string.open_failed)
                     3 -> if (!FileActions.share(this@DownloadsActivity, record, language)) message(R.string.open_failed)
-                    4 -> {
-                        repository.remove(record.id); textIndex.forget(record.id); texts.remove(record.id); textScan.forget(record.id)
-                        message(R.string.removed_from_list)
-                    }
+                    4 -> { forget(record); message(R.string.removed_from_list) }
+                    5 -> confirmDelete(record)
                 }
                 true
             }
         }.show()
+    }
+
+    private fun forget(record: DownloadRecord) {
+        repository.remove(record.id); textIndex.forget(record.id); texts.remove(record.id); textScan.forget(record.id)
+    }
+
+    /** Deleting is final, so it is asked first, with the file's name. */
+    private fun confirmDelete(record: DownloadRecord) {
+        if (isFinishing || AppLockSession.locked) return
+        MaterialAlertDialogBuilder(this)
+            .setTitle(text(R.string.delete_file_title))
+            .setMessage(localized.getString(R.string.delete_file_message, record.fileName))
+            .setNegativeButton(text(R.string.cancel), null)
+            .setPositiveButton(text(R.string.delete_file_action)) { _, _ -> deleteFile(record) }
+            .show()
+    }
+
+    /** [approved]: Android's own question was answered yes; on Android 11+ it has deleted the file itself. */
+    private fun deleteFile(record: DownloadRecord, approved: Boolean = false) {
+        lifecycleScope.launch {
+            val result = withContext(Dispatchers.IO) { FileActions.delete(this@DownloadsActivity, record) }
+            if (isFinishing) return@launch
+            when (result) {
+                FileActions.Deletion.Deleted -> { forget(record); message(R.string.file_deleted) }
+                FileActions.Deletion.Gone -> { forget(record); message(if (approved) R.string.file_deleted else R.string.file_already_gone) }
+                is FileActions.Deletion.Consent -> if (approved) message(R.string.file_delete_failed) else {
+                    consentFor = record.id
+                    try { consent.launch(IntentSenderRequest.Builder(result.request).build()) }
+                    catch (_: Exception) { consentFor = null; message(R.string.file_delete_failed) }
+                }
+                FileActions.Deletion.Changed -> message(R.string.file_delete_changed)
+                FileActions.Deletion.Failed -> message(R.string.file_delete_failed)
+            }
+        }
     }
 
     private fun message(id: Int) = Snackbar.make(binding.root, text(id), Snackbar.LENGTH_LONG).show()

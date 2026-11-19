@@ -2,12 +2,13 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const { JSDOM, VirtualConsole } = require('jsdom');
+const jsdomUtils = require('jsdom/lib/jsdom/living/generated/utils');
 
 // Phone screens (assets/univer-screens.js) on synthetic pages shaped like the observed Univer markup. Names and dates are made up.
 const dom = fs.readFileSync('app/src/main/assets/univer-dom.js', 'utf8');
 const source = fs.readFileSync('app/src/main/assets/univer-screens.js', 'utf8');
 
-function page(path, body, { capable = true, language = 'ru', size } = {}) {
+function page(path, body, { capable = true, language = 'ru', size, native } = {}) {
   const html = '<table class="wrappertable"><tr id="l4"><td>' + body + '</td></tr></table>';
   const jsdom = new JSDOM(html, { url: 'https://univer.kaznu.kz' + path, runScripts: 'outside-only', virtualConsole: new VirtualConsole() });
   const w = jsdom.window, d = w.document;
@@ -21,6 +22,8 @@ function page(path, body, { capable = true, language = 'ru', size } = {}) {
     Object.defineProperty(w.HTMLElement.prototype, 'scrollHeight', { configurable: true, get() { return this.classList.contains('univer-scr-clamp') ? size : 0; } });
     Object.defineProperty(w.HTMLElement.prototype, 'clientHeight', { configurable: true, get() { return this.classList.contains('univer-scr-clamp') ? 160 : 0; } });
   }
+  // The app's keyed sender, as MobilePageAdapter gives it to the modules.
+  if (native) w.__univerNative = native;
   w.eval(dom);
   w.eval(source);
   const screens = w.__univerScreensV1;
@@ -367,4 +370,40 @@ test('a form\'s main action is filled, Back stays quiet, and nothing happens wit
   assert.equal(other.q('#univer-screens-style'), null);
   assert.ok(!other.q('#send').classList.contains('univer-scr-primary'));
   other.close();
+});
+
+// A tap the student made (isTrusted), which a page script cannot dispatch.
+function tap(w, node) {
+  const event = new w.MouseEvent('click', { bubbles: true, cancelable: true });
+  jsdomUtils.implForWrapper(event).isTrusted = true;
+  jsdomUtils.implForWrapper(node)._dispatch(jsdomUtils.implForWrapper(event));
+}
+
+test("«В календарь» sends a coming exam to the calendar only on the student's own tap", () => {
+  const sent = [];
+  const rows = slot(stamp(-2, 10), 'Прошедшая дисциплина', 'Экзамен') + slot(stamp(3, 11), 'Первая дисциплина', 'Экзамен <i>(Письменный)</i>');
+  const p = page('/student/myexam/schedule/', schedule(rows), { native: message => sent.push(message) });
+  p.apply();
+  const buttons = p.all('.univer-scr-calendar');
+  // The next exam's card and its own slot; a past exam has none.
+  assert.equal(buttons.length, 2);
+  assert.ok(p.q('.univer-scr-next>.univer-scr-calendar'));
+  assert.equal(p.all('.univer-scr-slot').filter(slot => slot.querySelector('.univer-scr-calendar')).length, 1);
+  buttons[0].click();
+  assert.equal(sent.length, 0, "a script's click sends nothing");
+  tap(p.w, buttons[0]);
+  assert.equal(sent.length, 1);
+  assert.ok(sent[0].startsWith('univer-calendar:'));
+  const event = JSON.parse(sent[0].slice('univer-calendar:'.length)), at = new Date(); at.setDate(at.getDate() + 3);
+  const day = at.getFullYear() + '-' + String(at.getMonth() + 1).padStart(2, '0') + '-' + String(at.getDate()).padStart(2, '0');
+  assert.deepEqual(event, { v: 1, title: 'Экзамен: Первая дисциплина', start: day + 'T11:00', end: day + 'T13:00', place: 'ФИТ · Онлайн',
+    notes: 'Тестов А. А. · сем · Письменный', until: null });
+  p.close();
+});
+
+test("without the app's sender (Original, a frame) the exam days have no calendar button", () => {
+  const p = page('/student/myexam/schedule/', schedule(slot(stamp(3, 11), 'Первая дисциплина', 'Экзамен')));
+  p.apply();
+  assert.equal(p.all('.univer-scr-calendar').length, 0);
+  p.close();
 });

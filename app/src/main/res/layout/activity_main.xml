@@ -37,7 +37,12 @@
             </LinearLayout>
             <FrameLayout android:id="@+id/web_container" android:layout_width="match_parent"
                 android:layout_height="0dp" android:layout_weight="1" android:background="@color/md_background">
-                <WebView android:id="@+id/web_view" android:layout_width="match_parent" android:layout_height="match_parent" />
+                <!-- Pull down on the page's own top to load it again (MainActivity.pullToRefresh). -->
+                <com.univerflow.kaznu.ui.PullRefreshLayout android:id="@+id/pull_refresh"
+                    android:layout_width="match_parent" android:layout_height="match_parent">
+                    <com.univerflow.kaznu.ui.SiteWebView android:id="@+id/web_view" android:layout_width="match_parent"
+                        android:layout_height="match_parent" />
+                </com.univerflow.kaznu.ui.PullRefreshLayout>
                 <com.univerflow.kaznu.ui.PageSkeleton android:id="@+id/page_skeleton" android:layout_width="match_parent"
                     android:layout_height="match_parent" android:clickable="true" android:focusable="false"
                     android:importantForAccessibility="no" android:visibility="gone"

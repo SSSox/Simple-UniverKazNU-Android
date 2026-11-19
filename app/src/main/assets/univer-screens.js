@@ -16,7 +16,7 @@
     function words() {
         return language === 'en' ? {
             nextExam:'Next exam', nextConsult:'Next consultation', nextMidterm:'Next midterm', exam:'Exam', consult:'Consultation',
-            schedule:'Exam days', start:'Start the exam', noExams:'The exam timetable is not published yet', noMidterm:'The midterm timetable is not published yet',
+            schedule:'Exam days', start:'Start the exam', calendar:'Add to calendar', noExams:'The exam timetable is not published yet', noMidterm:'The midterm timetable is not published yet',
             scheduleNote:'Dates, times and rooms will appear here once it is out.', today:'Today', tomorrow:'Tomorrow', past:'Past', show:'Show', hide:'Hide', more:'Show in full', less:'Collapse',
             noFail:'No courses to retake', noFx:'No courses for an FX retake', noGpa:'No courses for raising GPA',
             orderNote:'Courses you can apply for will be listed here.', noRequests:'No applications yet',
@@ -32,7 +32,7 @@
             weekdays:['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
         } : language === 'kz' ? {
             nextExam:'Жақын емтихан', nextConsult:'Жақын кеңес', nextMidterm:'Жақын Midterm', exam:'Емтихан', consult:'Кеңес',
-            schedule:'Емтихан күндері', start:'Емтиханды бастау', noExams:'Емтихан кестесі әлі жарияланбаған', noMidterm:'Midterm кестесі әлі жарияланбаған',
+            schedule:'Емтихан күндері', start:'Емтиханды бастау', calendar:'Күнтізбеге қосу', noExams:'Емтихан кестесі әлі жарияланбаған', noMidterm:'Midterm кестесі әлі жарияланбаған',
             scheduleNote:'Жарияланған соң күні, уақыты мен аудиториясы осында шығады.', today:'Бүгін', tomorrow:'Ертең', past:'Өтті', show:'Көрсету', hide:'Жасыру', more:'Толығымен көрсету', less:'Жию',
             noFail:'Қайта оқитын пән жоқ', noFx:'FX қайта тапсыратын пән жоқ', noGpa:'GPA көтеретін пән жоқ',
             orderNote:'Өтінім беруге болатын пәндер осында шығады.', noRequests:'Әзірге өтінім жоқ',
@@ -48,7 +48,7 @@
             weekdays:['жексенбі','дүйсенбі','сейсенбі','сәрсенбі','бейсенбі','жұма','сенбі']
         } : {
             nextExam:'Ближайший экзамен', nextConsult:'Ближайшая консультация', nextMidterm:'Ближайший Midterm', exam:'Экзамен', consult:'Консультация',
-            schedule:'Дни экзаменов', start:'Начать экзамен', noExams:'Расписание экзаменов пока не опубликовано', noMidterm:'Расписание Midterm пока не опубликовано',
+            schedule:'Дни экзаменов', start:'Начать экзамен', calendar:'В календарь', noExams:'Расписание экзаменов пока не опубликовано', noMidterm:'Расписание Midterm пока не опубликовано',
             scheduleNote:'Когда оно появится, здесь будут даты, время и аудитории.', today:'Сегодня', tomorrow:'Завтра', past:'Прошло', show:'Показать', hide:'Скрыть', more:'Показать полностью', less:'Свернуть',
             noFail:'Дисциплин для повторного изучения нет', noFx:'Дисциплин для пересдачи FX нет', noGpa:'Дисциплин для повышения GPA нет',
             orderNote:'Здесь появятся дисциплины, по которым можно подать заявку.', noRequests:'Заявок пока нет',
@@ -245,6 +245,18 @@
         var hours = Math.floor(ms / 3600000);
         return hours >= 1 ? [String(hours), w.hours] : [String(Math.max(1, Math.ceil(ms / 60000))), w.minutes];
     }
+    // «В календарь»: the student's own tap hands this exam to the phone's calendar app (two hours; one for a consultation).
+    function calendarButton(item, w) {
+        var button = el('button', 'univer-scr-calendar', w.calendar); button.type = 'button';
+        button.addEventListener('click', function (event) {
+            if (!event.isTrusted || typeof __univerNative !== 'function') return;
+            var kind = item.kind === 'exam' ? w.exam : item.kind === 'consult' ? w.consult : item.kindText;
+            __univerNative(dom.calendarMessage({title:(kind ? kind + ': ' : '') + item.name, start:item.at,
+                end:new Date(item.at.getTime() + (item.kind === 'consult' ? 1 : 2) * 3600000), place:item.place,
+                notes:[item.teacher, item.group, item.note].filter(Boolean).join(' · ')}));
+        });
+        return button;
+    }
     function exams() {
         instructions();
         var list = document.getElementById('scheduleList'), host = list && list.closest('td');
@@ -265,7 +277,9 @@
             card.appendChild(el('h3', 'univer-scr-next-name', next.name));
             card.appendChild(el('p', 'univer-scr-next-when', w.weekdays[next.at.getDay()] + ', ' + next.at.getDate() + ' ' + w.months[next.at.getMonth()] + ' · ' + hhmm(next.at)));
             var count = el('div', 'univer-scr-count'), value = el('span', 'univer-scr-count-value'), unit = el('span', 'univer-scr-count-unit');
-            count.append(value, unit); card.appendChild(count); node.appendChild(card); parts.push(card);
+            count.append(value, unit); card.appendChild(count);
+            if (typeof __univerNative === 'function') card.appendChild(calendarButton(next, w));
+            node.appendChild(card); parts.push(card);
         }
         var days = el('ol', 'univer-scr-days'); days.setAttribute('aria-label', w.schedule);
         var groups = [];
@@ -298,7 +312,8 @@
                 if (item.place) meta.appendChild(el('span', 'univer-scr-where', item.place));
                 if (item.group) meta.appendChild(el('span', 'univer-scr-group', item.group));
                 if (meta.childNodes.length) body.appendChild(meta);
-                if (item.links.length || item.take) {
+                var later = typeof __univerNative === 'function' && item.at.getTime() > Date.now();
+                if (item.links.length || item.take || later) {
                     var links = el('p', 'univer-scr-slot-links');
                     if (item.take) {
                         var start = el('button', 'univer-scr-start', clean(item.take) || w.start); start.type = 'button';
@@ -310,6 +325,7 @@
                         if (source.target) a.target = source.target; a.rel = 'noopener';
                         links.appendChild(a);
                     });
+                    if (later) links.appendChild(calendarButton(item, w));
                     body.appendChild(links);
                 }
                 slot.appendChild(body); slots.appendChild(slot);
@@ -785,7 +801,8 @@
         var check = icon("<circle cx='12' cy='12' r='9'/><path d='m8.5 12.5 2.5 2.5 4.5-5'/>"), inbox = icon("<path d='M22 12h-6l-2 3h-4l-2-3H2'/><path d='M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.1z'/>");
         var chevron = icon("<path d='m6 9 6 6 6-6'/>"), mail = icon("<rect x='3' y='5' width='18' height='14' rx='2'/><path d='m3 7 9 6 9-6'/>");
         var phone = icon("<path d='M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z'/>");
-        var plus = icon("<path d='M12 5v14'/><path d='M5 12h14'/>"), link = icon("<path d='M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7'/><path d='M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7'/>");
+        var plus = icon("<path d='M12 5v14'/><path d='M5 12h14'/>"), link = icon("<path d='M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7'/><path d='M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7'/>"),
+        calendar = icon("<rect x='3' y='5' width='18' height='16' rx='2'/><path d='M16 3v4M8 3v4M3 10h18M12 13v5M9.5 15.5h5'/>");
         var plusWhite = 'url("data:image/svg+xml,' + encodeURIComponent("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2.2' stroke-linecap='round'><path d='M12 5v14'/><path d='M5 12h14'/></svg>") + '")';
         var mask = function (image, size) { return '-webkit-mask:' + image + ' center/' + (size || '18px') + ' no-repeat;mask:' + image + ' center/' + (size || '18px') + ' no-repeat'; };
         return important(`
@@ -840,6 +857,11 @@ ${P} #l4 .univer-scr-slot-links { display:flex; flex-wrap:wrap; gap:8px; margin-
 ${P} #l4 a.univer-scr-link { display:inline-flex; align-items:center; gap:6px; min-height:40px; padding:0 14px; border:1px solid var(--u-brand-line); border-radius:10px; background:var(--u-surface); color:var(--u-brand); font-size:var(--u-fs-meta); font-weight:500; text-decoration:none; }
 ${P} #l4 button.univer-scr-start { min-height:44px; margin:0; padding:0 18px; border:0; border-radius:10px; background:var(--u-brand-fill,var(--u-brand)); color:#fff; font:500 var(--u-fs-meta)/1.2 var(--u-font); cursor:pointer; }
 ${P} #l4 a.univer-scr-link::before { content:''; width:16px; height:16px; background:currentColor; ${mask(link, '16px')}; }
+${P} #l4 button.univer-scr-calendar { display:inline-flex; align-items:center; gap:6px; min-height:44px; margin:0; padding:0 14px; border:1px solid var(--u-brand-line); border-radius:10px; background:var(--u-surface); color:var(--u-brand); font:500 var(--u-fs-meta)/1.2 var(--u-font); cursor:pointer; }
+${P} #l4 button.univer-scr-calendar::before { content:''; flex:none; width:16px; height:16px; background:currentColor; ${mask(calendar, '16px')}; }
+${P} #l4 .univer-scr-next>button.univer-scr-calendar { justify-self:start; margin-top:12px; }
+${P} #l4 .univer-scr-slot-links>button.univer-scr-calendar { padding:0 8px; border-color:transparent; background:transparent; }
+${P} #l4 .univer-scr-slot-links>button.univer-scr-calendar:first-child { margin-left:-8px; }
 
 /* A folded site panel: its heading row stays, with a quiet Show/Hide button on the right. */
 ${P} #l4 table.mt.univer-scr-folded>tbody>tr:not(:first-child) { display:none; }
@@ -1005,8 +1027,8 @@ ${P} #l4 .igpa-section-heading { display:flex; flex-wrap:wrap; align-items:cente
    !important outranks the app's own "still" switch, so every transition here sits behind these conditions. */
 @media (prefers-reduced-motion:no-preference) {
 ${M} #l4 :is(button.univer-scr-fold,button.univer-scr-more,button.univer-scr-grades-toggle)::after { transition:transform 220ms var(--u-ease-out); }
-${M} #l4 :is(a.univer-scr-action,a.univer-scr-link,button.univer-scr-start,button.univer-scr-fold,button.univer-scr-more,button.univer-scr-zeros-toggle,.univer-scr-primary,nav.igpa-nav>a,.igpa-period>a,a.igpa-button-primary) { transition:transform var(--u-release) var(--u-ease-out),background-color 160ms var(--u-ease-out),color 160ms var(--u-ease-out),box-shadow 160ms var(--u-ease-out); }
-${M} #l4 :is(a.univer-scr-action,a.univer-scr-link,button.univer-scr-start,button.univer-scr-fold,button.univer-scr-more,button.univer-scr-zeros-toggle,.univer-scr-primary,nav.igpa-nav>a,.igpa-period>a,a.igpa-button-primary):active:not(:disabled) { transform:scale(.97); transition-duration:var(--u-press); }
+${M} #l4 :is(a.univer-scr-action,a.univer-scr-link,button.univer-scr-start,button.univer-scr-calendar,button.univer-scr-fold,button.univer-scr-more,button.univer-scr-zeros-toggle,.univer-scr-primary,nav.igpa-nav>a,.igpa-period>a,a.igpa-button-primary) { transition:transform var(--u-release) var(--u-ease-out),background-color 160ms var(--u-ease-out),color 160ms var(--u-ease-out),box-shadow 160ms var(--u-ease-out); }
+${M} #l4 :is(a.univer-scr-action,a.univer-scr-link,button.univer-scr-start,button.univer-scr-calendar,button.univer-scr-fold,button.univer-scr-more,button.univer-scr-zeros-toggle,.univer-scr-primary,nav.igpa-nav>a,.igpa-period>a,a.igpa-button-primary):active:not(:disabled) { transform:scale(.97); transition-duration:var(--u-press); }
 }
 }
 `);

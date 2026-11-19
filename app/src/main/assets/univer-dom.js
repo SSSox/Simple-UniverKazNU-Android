@@ -62,6 +62,18 @@
         setText: function (node, value) { if (node.textContent !== value) node.textContent = value; },
         setHidden: function (node, value) { if (node.hidden !== value) node.hidden = value; },
         /**
+         * «В календарь»: the event as Android reads it (web/CalendarMessage.kt). Wall-clock times without a zone, as the
+         * site shows them; [until] (a Date) makes a class repeat weekly through that day.
+         */
+        calendarMessage: function (item) {
+            function two(n) { return String(n).padStart(2, '0'); }
+            function day(d) { return d.getFullYear() + '-' + two(d.getMonth() + 1) + '-' + two(d.getDate()); }
+            function text(value, max) { return String(value || '').replace(/\s+/g, ' ').trim().slice(0, max); }
+            return 'univer-calendar:' + JSON.stringify({v:1, title:text(item.title, 200), start:day(item.start) + 'T' + two(item.start.getHours()) + ':' + two(item.start.getMinutes()),
+                end:day(item.end) + 'T' + two(item.end.getHours()) + ':' + two(item.end.getMinutes()), place:text(item.place, 200), notes:text(item.notes, 500),
+                until:item.until ? day(item.until) : null});
+        },
+        /**
          * Where a score ("63" of "100", "12,5" of "25") stands against the marks students go by, as a share of its
          * maximum: below 50 % is short ('low'), 50–69 % admits ('pass'), 70–89 % is good, 90 % and up excellent ('top').
          * `next` is the next mark in this score's own points and `left` how many points it still needs (never 0 while

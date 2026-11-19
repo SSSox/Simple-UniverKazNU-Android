@@ -17,9 +17,9 @@
     var headerMoves = [], schedules = new Map(), weekViews = new Map(), upcomingTimer = 0, finishedWeek = null;
     var punctuation = new Map(), usabilityMoves = [], catalogHidden = new WeakMap(), pageMarkers = new Map();
     function labels() {
-        return selectedLanguage === 'en' ? {account:'Account', university:'About KazNU', open:'Open', all:'All days', empty:'No classes', files:'Download', sections:'All sections', close:'Close', today:'Today', now:'In progress', next:'Next', done:'Done', byDay:'By day', weekGrid:'Week grid', scheduleView:'Schedule view', weekDay:'Day of week', details:'Class details', days:['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']} :
-            selectedLanguage === 'kz' ? {account:'Аккаунт', university:'ҚазҰУ туралы', open:'Ашу', all:'Барлық күндер', empty:'Сабақ жоқ', files:'Жүктеу', sections:'Барлық бөлімдер', close:'Жабу', today:'Бүгін', now:'Жүріп жатыр', next:'Келесі', done:'Өтті', byDay:'Күн бойынша', weekGrid:'Апта кестесі', scheduleView:'Кесте көрінісі', weekDay:'Апта күні', details:'Сабақ мәліметтері', days:['Дүйсенбі','Сейсенбі','Сәрсенбі','Бейсенбі','Жұма','Сенбі','Жексенбі']} :
-            {account:'Аккаунт', university:'О КазНУ', open:'Открыть', all:'Все дни', empty:'Нет занятий', files:'Скачать', sections:'Все разделы', close:'Закрыть', today:'Сегодня', now:'Идёт', next:'Следующая', done:'Прошла', byDay:'По дням', weekGrid:'Сетка недели', scheduleView:'Вид расписания', weekDay:'День недели', details:'Подробно о занятиях', days:['Понедельник','Вторник','Среда','Четверг','Пятница','Суббота','Воскресенье']};
+        return selectedLanguage === 'en' ? {account:'Account', university:'About KazNU', open:'Open', all:'All days', empty:'No classes', files:'Download', sections:'All sections', close:'Close', today:'Today', now:'In progress', next:'Next', done:'Done', byDay:'By day', weekGrid:'Week grid', scheduleView:'Schedule view', weekDay:'Day of week', details:'Class details', calendar:'Add to calendar', days:['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']} :
+            selectedLanguage === 'kz' ? {account:'Аккаунт', university:'ҚазҰУ туралы', open:'Ашу', all:'Барлық күндер', empty:'Сабақ жоқ', files:'Жүктеу', sections:'Барлық бөлімдер', close:'Жабу', today:'Бүгін', now:'Жүріп жатыр', next:'Келесі', done:'Өтті', byDay:'Күн бойынша', weekGrid:'Апта кестесі', scheduleView:'Кесте көрінісі', weekDay:'Апта күні', details:'Сабақ мәліметтері', calendar:'Күнтізбеге қосу', days:['Дүйсенбі','Сейсенбі','Сәрсенбі','Бейсенбі','Жұма','Сенбі','Жексенбі']} :
+            {account:'Аккаунт', university:'О КазНУ', open:'Открыть', all:'Все дни', empty:'Нет занятий', files:'Скачать', sections:'Все разделы', close:'Закрыть', today:'Сегодня', now:'Идёт', next:'Следующая', done:'Прошла', byDay:'По дням', weekGrid:'Сетка недели', scheduleView:'Вид расписания', weekDay:'День недели', details:'Подробно о занятиях', calendar:'В календарь', days:['Понедельник','Вторник','Среда','Четверг','Пятница','Суббота','Воскресенье']};
     }
     function shortDays() {
         return selectedLanguage === 'en' ? ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] : selectedLanguage === 'kz' ? ['Дс','Сс','Ср','Бс','Жм','Сн','Жс'] : ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
@@ -511,6 +511,35 @@
             card.querySelector('.univer-app-lesson-main').appendChild(link);
         });
     }
+    // The last day of a class's course dates ("15.12.2026", "2026-12-15", or "15.12" in the shown week's year).
+    function periodEnd(value, monday) {
+        var iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value || ''), dmy = /^(\d{1,2})\.(\d{1,2})(?:\.(\d{2,4}))?$/.exec(value || '');
+        if (iso) return new Date(+iso[1], +iso[2] - 1, +iso[3]);
+        if (!dmy) return null;
+        var year = dmy[3] ? (dmy[3].length === 2 ? 2000 + +dmy[3] : +dmy[3]) : monday.getFullYear();
+        var end = new Date(year, +dmy[2] - 1, +dmy[1]);
+        if (!dmy[3] && end < monday) end.setFullYear(year + 1);
+        return end;
+    }
+    // «В календарь» on a class card: the student's own tap hands the next time this class meets to the phone's calendar
+    // app, repeating weekly through its course dates when the site gives them.
+    function calendarButton(info, dayIndex, from, to) {
+        var button = document.createElement('button'); button.type = 'button'; button.className = 'univer-app-calendar';
+        button.textContent = labels().calendar;
+        button.addEventListener('click', function (event) {
+            if (!event.isTrusted || typeof __univerNative !== 'function' || !window.__univerDomV1) return;
+            var monday = shownWeek(new Date()).monday, start = dayStart(monday, dayIndex), until = info.dates.length === 2 ? periodEnd(info.dates[1], monday) : null;
+            start.setHours(+from[0], +from[1], 0, 0);
+            var end = new Date(start); end.setHours(+to[0], +to[1], 0, 0);
+            // A class already over this week starts the series from next week's.
+            while (start.getTime() < Date.now()) { start.setDate(start.getDate() + 7); end.setDate(end.getDate() + 7); }
+            if (until && (until < dayStart(start) || until - start > 366 * 86400000)) until = null;
+            var room = info.room ? window.__univerLesson.words(selectedLanguage).roomShort + ' ' + info.room : '';
+            __univerNative(window.__univerDomV1.calendarMessage({title:info.subject + (info.type ? ' (' + info.type + ')' : ''), start:start, end:end,
+                place:[room, info.faculty].filter(Boolean).join(', '), notes:info.teacher, until:until}));
+        });
+        return button;
+    }
     // The class cards of one weekday; classes with clock times also feed the "Now / Next" summary.
     function dayLessons(grid, dayIndex, section, record) {
         var count = 0;
@@ -525,6 +554,8 @@
                 if (!cleanText(group) || group.hidden || getComputedStyle(group).display === 'none') return;
                 var info = lessonInfo(group), card = window.__univerLesson.card(info, timeText, selectedLanguage);
                 copyLessonLinks(group, card);
+                if (typeof __univerNative === 'function' && info.subject && from.length === 2 && to.length === 2)
+                    card.querySelector('.univer-app-lesson-main').appendChild(calendarButton(info, dayIndex, from, to));
                 section.appendChild(card); count++;
                 record.cards.push({card:card, main:card.querySelector('.univer-app-lesson-main'), subject:info.subject, type:info.type,
                     teacher:info.teacher, day:dayIndex, order:record.cards.length, time:start[0] || timeText});

@@ -53,6 +53,32 @@ object PageScripts {
         return false;
     })()"""
 
+    /**
+     * Whether a pull may load the page again: "dialog" while a window of the site is open, "edited" once the student
+     * typed or chose something in its forms (the app's own controls aside), "ok" otherwise. Only that word returns.
+     */
+    val REFRESH_GUARD = """(function(){
+        if(location.origin!=='${SitePolicy.ORIGIN}')return 'ok';
+        function shown(e){if(!e.getClientRects().length)return false;var s=getComputedStyle(e);return s.visibility!=='hidden'&&s.display!=='none';}
+        var windows=document.querySelectorAll('#simplemodal-container,.modal.in,.modal.show,dialog[open],[role="dialog"],[aria-modal="true"]');
+        for(var i=0;i<windows.length;i++)if(shown(windows[i]))return 'dialog';
+        // The app marks its own fields (searches, switches) on the field or its label; the page and the boxes the
+        // layout wraps around the site's forms carry univer-app classes too, so a wider match would skip every field.
+        function own(f){var p=f.parentElement;return f.matches('[class*="univer-app"]')||!!p&&p.tagName==='LABEL'&&p.matches('[class*="univer-app"]');}
+        var fields=document.querySelectorAll('input,textarea,select');
+        for(var j=0;j<fields.length;j++){
+            var f=fields[j];
+            if(f.disabled||f.readOnly||own(f))continue;
+            if(f.tagName==='SELECT'){for(var k=0;k<f.options.length;k++)if(f.options[k].selected!==f.options[k].defaultSelected)return 'edited';continue;}
+            var type=(f.type||'').toLowerCase();
+            if(type==='hidden'||type==='submit'||type==='button'||type==='reset'||type==='image')continue;
+            if(type==='checkbox'||type==='radio'){if(f.checked!==f.defaultChecked)return 'edited';continue;}
+            if(type==='file'){if(f.files&&f.files.length)return 'edited';continue;}
+            if(f.value!==f.defaultValue)return 'edited';
+        }
+        return 'ok';
+    })()"""
+
     /** The document's HTTP status from Navigation Timing; some providers miss the error callback on redirected error pages. */
     const val STATUS = "(function(){var n=performance.getEntriesByType('navigation')[0];return n&&n.responseStatus||0;})()"
 

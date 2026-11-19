@@ -70,6 +70,52 @@ object FileActions {
         } catch (failure: Exception) { FilePresenceRules.ofFailure(failure, true) }
     }
 
+    /** What deleting a file from the phone's Downloads came to; the list entry is the caller's to remove. */
+    sealed interface Deletion {
+        /** The file is deleted. */
+        data object Deleted : Deletion
+        /** Nothing was there to delete: the file had already gone, or was moved or renamed in another app. */
+        data object Gone : Deletion
+        /** A file saved by an earlier install of the app: Android asks the student itself before deleting it. */
+        class Consent(val request: android.content.IntentSender) : Deletion
+        /** Another file has this name now (its size differs): it stays. */
+        data object Changed : Deletion
+        /** The storage refused or did not answer. */
+        data object Failed : Deletion
+    }
+
+    /**
+     * Call off the main thread. Deletes only [record]'s own file: on Android 10+ its MediaStore row, which another
+     * file cannot take; before that the FileProvider path, which stays inside Downloads, and only while the file still
+     * has the size the download wrote. A moved or renamed file is left alone.
+     */
+    fun delete(context: Context, record: DownloadRecord): Deletion {
+        val uri = record.uri?.toUri() ?: return Deletion.Gone
+        when (locate(context, record)) {
+            FilePresence.GONE -> return Deletion.Gone
+            FilePresence.UNKNOWN -> return Deletion.Failed
+            FilePresence.PRESENT -> Unit
+        }
+        val resolver = context.contentResolver
+        return try {
+            when {
+                uri.authority == MediaStore.AUTHORITY && Build.VERSION.SDK_INT >= 29 -> try {
+                    if (resolver.delete(uri, null, null) == 1) Deletion.Deleted else Deletion.Gone
+                } catch (denied: SecurityException) {
+                    if (Build.VERSION.SDK_INT >= 30) Deletion.Consent(MediaStore.createDeleteRequest(resolver, listOf(uri)).intentSender)
+                    else (denied as? android.app.RecoverableSecurityException)?.let { Deletion.Consent(it.userAction.actionIntent.intentSender) }
+                        ?: Deletion.Failed
+                }
+                uri.authority == context.packageName + ".downloads" -> {
+                    val size = resolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: return Deletion.Failed
+                    if (!FilePresenceRules.sameFile(record.received, size)) Deletion.Changed
+                    else if (resolver.delete(uri, null, null) == 1) Deletion.Deleted else Deletion.Failed
+                }
+                else -> Deletion.Failed
+            }
+        } catch (_: Exception) { Deletion.Failed }
+    }
+
     /** Call off the main thread. Where a MediaStore file is now ("Download/…/name.pdf"); null for other files or when unread. */
     fun place(context: Context, uri: Uri): String? {
         if (uri.authority != MediaStore.AUTHORITY || Build.VERSION.SDK_INT < 29) return null

@@ -60,6 +60,12 @@
     <string name="nav_schedule">Расписание</string>
     <string name="nav_journal">Успеваемость</string>
     <string name="nav_materials">Материалы УМКД</string>
+    <!-- The launcher shortcut: about ten characters fit under its icon. -->
+    <string name="shortcut_materials">УМКД</string>
+    <string name="refresh_kept_input">На странице есть введённые данные. Страница не обновлена, чтобы их не потерять</string>
+    <string name="refresh_kept_dialog">Сначала закройте окно на странице, затем обновите её</string>
+    <string name="calendar_error">Не удалось подготовить событие для календаря</string>
+    <string name="calendar_missing">На телефоне нет приложения календаря</string>
     <string name="nav_attestation">Текущая аттестация</string>
     <string name="nav_distance">Дистанционные курсы</string>
     <string name="nav_all_sections">Все разделы сайта</string>
@@ -99,6 +105,14 @@
     <string name="open_inside">Открыть в приложении</string>
     <string name="remove_from_list">Убрать из списка (файл останется)</string>
     <string name="removed_from_list">Файл убран из списка и остался в папке «Загрузки».</string>
+    <string name="delete_file">Удалить файл с телефона</string>
+    <string name="delete_file_title">Удалить файл?</string>
+    <string name="delete_file_message">«%1$s» исчезнет из папки «Загрузки» на телефоне. Вернуть его будет нельзя.</string>
+    <string name="delete_file_action">Удалить</string>
+    <string name="file_deleted">Файл удалён</string>
+    <string name="file_already_gone">Файла уже нет в «Загрузках», запись убрана из списка</string>
+    <string name="file_delete_changed">Под этим именем теперь другой файл, он не удалён</string>
+    <string name="file_delete_failed">Не удалось удалить файл</string>
     <string name="cancel_download">Отменить загрузку</string>
     <string name="file_actions">Действия с файлом</string>
     <string name="preview_preparing">Подготовка документа…</string>

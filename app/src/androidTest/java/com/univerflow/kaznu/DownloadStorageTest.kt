@@ -137,4 +137,24 @@ class DownloadStorageTest {
             unrelated.delete()
         }
     }
+
+    /** «Удалить файл»: only the record's own file goes; a file renamed in another app since stays where it is. */
+    @Test fun deletingAFileRemovesOnlyTheRecordsOwnFile() {
+        org.junit.Assume.assumeTrue(Build.VERSION.SDK_INT >= 29)
+        fun saved(): android.net.Uri = PublicDownloadStore(context).create("Univer-QA-${UUID.randomUUID()}.txt", "text/plain")
+            .use { target -> target.output.write("delete me".toByteArray()); target.publish() }
+        fun record(uri: android.net.Uri, place: String?) = com.univerflow.kaznu.domain.DownloadRecord(id = UUID.randomUUID().toString(),
+            fileName = "qa.txt", uri = uri.toString(), state = com.univerflow.kaznu.domain.DownloadState.COMPLETED, received = 9, started = 0, place = place)
+        val actions = com.univerflow.kaznu.ui.FileActions
+        val own = saved()
+        val record = record(own, actions.place(context, own))
+        assertEquals(com.univerflow.kaznu.ui.FileActions.Deletion.Deleted, actions.delete(context, record))
+        assertEquals(com.univerflow.kaznu.domain.FilePresence.GONE, actions.locate(context, record))
+        assertEquals("nothing is left to delete the second time", com.univerflow.kaznu.ui.FileActions.Deletion.Gone, actions.delete(context, record))
+        val renamed = saved()
+        try {
+            assertEquals(com.univerflow.kaznu.ui.FileActions.Deletion.Gone, actions.delete(context, record(renamed, "Download/Univer-QA-renamed.txt")))
+            context.contentResolver.query(renamed, arrayOf(MediaStore.Downloads.DISPLAY_NAME), null, null, null)!!.use { assertTrue("the renamed file stays", it.moveToFirst()) }
+        } finally { context.contentResolver.delete(renamed, null, null) }
+    }
 }

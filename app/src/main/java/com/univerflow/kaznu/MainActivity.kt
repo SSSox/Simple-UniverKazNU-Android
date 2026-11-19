@@ -69,6 +69,9 @@ import com.univerflow.kaznu.main.StatusBanner
 import com.univerflow.kaznu.main.TextSizeDialog
 import com.univerflow.kaznu.main.UpdateFlow
 import com.univerflow.kaznu.report.GradeReportFiles
+import com.univerflow.kaznu.launch.AppShortcuts
+import com.univerflow.kaznu.launch.CalendarHandoff
+import com.univerflow.kaznu.launch.LaunchTarget
 import com.univerflow.kaznu.ui.AppLockSession
 import com.univerflow.kaznu.ui.DocumentViewer
 import com.univerflow.kaznu.ui.DownloadsActivity
@@ -109,6 +112,7 @@ import com.univerflow.kaznu.web.Trackers
 import com.univerflow.kaznu.web.evaluate
 import com.univerflow.kaznu.web.httpErrorMessage
 import com.univerflow.kaznu.web.webErrorText
+import com.google.android.material.color.MaterialColors
 import com.google.android.material.snackbar.Snackbar
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.isActive
@@ -173,6 +177,10 @@ class MainActivity : AppCompatActivity() {
     private var handledDownloadEvent: String? = null
     private var webOpened = false
     private var reportedDrawn = false
+    /** A shortcut's (or the widget's) section still to open: it waits for the account, the PIN and a running login. */
+    private var launchTarget: LaunchTarget? = null
+    /** The language the launcher shortcuts were last named in; null once removed, unset before the first render. */
+    private var shortcutsLanguage: Any? = Unit
     private var sessionChanging = false
     private var sessionEpoch = 0
     private var automationStatus = AutomationStatus.IDLE
@@ -244,6 +252,8 @@ class MainActivity : AppCompatActivity() {
         val light = !ThemeMode.isDark(this)
         WindowCompat.getInsetsController(window, binding.root).apply { isAppearanceLightStatusBars = light; isAppearanceLightNavigationBars = light }
         restoreState(savedInstanceState)
+        // A recreated screen still holds the Intent it was started with: that request was already followed.
+        if (savedInstanceState == null) launchTarget = requested(intent)
         applyContentInsets()
         binding.pageSkeleton.isVisible = true
         createPageParts()
@@ -259,6 +269,7 @@ class MainActivity : AppCompatActivity() {
         forms.tab = savedInstanceState?.getInt("settings_tab") ?: 0
         handledDownloadEvent = savedInstanceState?.getString("download_event")
         sessionEpoch = savedInstanceState?.getInt("session_epoch", 0) ?: 0
+        launchTarget = LaunchTarget.parse(LaunchTarget.ACTION, savedInstanceState?.getString("launch_target"))
         restoredDocument = savedInstanceState?.getBundle("document_state")
         if (restoredDocument != null && savedInstanceState != null) documentSourcePosition = Pair(
             savedInstanceState.getInt("document_source_x"), savedInstanceState.getInt("document_source_y"))
@@ -282,6 +293,7 @@ class MainActivity : AppCompatActivity() {
             configureNoticePresentation()
             noticeLoading.status(it)
             renderBanner()
+            followLaunchTarget()
         }
         websiteLanguage = WebsiteLanguageSync(model, lifecycleScope, { selected ->
             // The flag itself performs the website switch. Render native labels without a second request.
@@ -295,19 +307,27 @@ class MainActivity : AppCompatActivity() {
             if (!rendererUnavailable && !sessionChanging && !pageFailed && SitePolicy.trusted(binding.webView.url)) {
                 // A page Back restores from memory gets no onPageFinished: its readiness also ends a failed load beneath it.
                 cover.loaded()
+                endPull()
                 firstPageShown()
                 Motion.progress(binding.loading, false)
                 noticePresentation.apply()
                 automation.pageFinished()
                 updatePageTitle()
                 notices.scan()
+                followLaunchTarget()
             }
         })
         // Home tile pins and order arrive from page taps; the validated, stored list is sent back to the page.
         // «Скачать все» and the grade report only from the page in view: never from a viewer over it or a changing or locked session.
         shortcutBridge = ShortcutBridge(binding.webView, channel, onDownloadAll = { batch ->
             if (pageInView()) downloads.downloadAll(batch.section, batch.urls)
-        }, onReport = { report -> if (pageInView()) report?.let(reports::offer) ?: message(R.string.report_error) }) { request ->
+        }, onReport = { report -> if (pageInView()) report?.let(reports::offer) ?: message(R.string.report_error) },
+            onCalendar = { event ->
+                if (pageInView()) when {
+                    event == null -> message(R.string.calendar_error)
+                    !CalendarHandoff.open(this, event) -> message(R.string.calendar_missing)
+                }
+            }) { request ->
             lifecycleScope.launch {
                 if (!attempt(false) { model.updateShortcuts(request) }) message(R.string.pin_failed)
                 shortcutBridge.configure(model.state.value.shortcuts)
@@ -345,6 +365,7 @@ class MainActivity : AppCompatActivity() {
             else binding.webView.loadUrl(SitePolicy.HOME)
         }
         binding.statusAction.setOnClickListener { retry(signIn = true) }
+        configurePull()
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() = back()
         })
@@ -498,6 +519,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun render(state: AppState) {
         if (!state.ready) return
+        publishShortcuts(state)
         val justUnlocked = rendered.locked && !state.locked
         rendered = rendered.copy(locked = state.locked)
         AppLockSession.update(state.lock.enabled, state.locked, state.lock.autoLockMs, justUnlocked)
@@ -521,6 +543,7 @@ class MainActivity : AppCompatActivity() {
         // onResume skipped the checks while the lock was up; unlocking in place must start them.
         if (justUnlocked) { notices.scan(); notices.startChecks(); updates.entered() }
         updates.refresh()
+        followLaunchTarget()
     }
 
     /** Page adaptation, animations, home tiles and text size follow the settings; the page is re-adapted only on a change. */
@@ -585,7 +608,11 @@ class MainActivity : AppCompatActivity() {
         when {
             restored != null && SitePolicy.trusted(binding.webView.url) -> automation.pageFinished()
             lost != null -> loadPage(lost)
-            else -> automation.open()
+            // A shortcut's section opens first instead of the news while the site session is there; without one the
+            // language page and login come first and the section follows (followLaunchTarget).
+            else -> launchTarget?.section?.takeIf {
+                SitePolicy.startUrl(CookieManager.getInstance().getCookie(SitePolicy.ORIGIN), model.state.value.language) == SitePolicy.HOME
+            }?.let { loadPage(it.url) } ?: automation.open()
         }
         restoredDocument?.let { saved ->
             val service = saved.getBoolean("service")
@@ -692,6 +719,7 @@ class MainActivity : AppCompatActivity() {
     /** Back to the page that is on screen: nothing replaced it. */
     private fun settlePage() {
         binding.root.removeCallbacks(pageAbandoned)
+        endPull()
         if (cover.abandoned()) { showError(errorMessageId, errorHttpStatus); return }
         Motion.progress(binding.loading, false)
         renderHeading()
@@ -701,6 +729,57 @@ class MainActivity : AppCompatActivity() {
     private fun showSiteSections() {
         if (documents.isOpen || rendererUnavailable || !SitePolicy.trusted(binding.webView.url)) return
         binding.webView.evaluateJavascript(PageScripts.SECTIONS) { opened -> if (opened != "true" && !isDestroyed) openSection(AppSection.HOME) }
+    }
+
+    /**
+     * Pull to refresh: the gesture starts only when the page itself is pulled past its top and the screen is the
+     * student's (no login, notice, PIN, document window or session change). The circle stays until the page shows or
+     * fails, at most [PULL_TIMEOUT_MS].
+     */
+    private fun configurePull() {
+        val pull = binding.pullRefresh
+        pull.setColorSchemeColors(MaterialColors.getColor(pull, androidx.appcompat.R.attr.colorPrimary))
+        pull.setProgressBackgroundColorSchemeColor(MaterialColors.getColor(pull, com.google.android.material.R.attr.colorSurfaceContainerHigh))
+        pull.allowed = ::pullAllowed
+        pull.setOnRefreshListener(::pullToRefresh)
+    }
+
+    private fun pullAllowed(): Boolean {
+        val state = model.state.value
+        return state.ready && state.canBrowse && !state.locked && !AppLockSession.locked && webOpened && !sessionChanging &&
+            !model.sessionClearPending && !documents.isOpen && !rendererUnavailable && !pageFailed &&
+            automationStatus == AutomationStatus.IDLE && !binding.noticeLoadingOverlay.isVisible
+    }
+
+    /** Typed text and an open window of the site stay: the page is not loaded again under them. */
+    private fun pullToRefresh() {
+        val url = binding.webView.url
+        if (!pullAllowed() || !SitePolicy.trusted(url) || SitePolicy.loginPage(url)) { endPull(); return }
+        binding.root.postDelayed(endPullLater, PULL_TIMEOUT_MS)
+        val epoch = pageEpoch
+        var answered = false
+        val refresh = Runnable {
+            if (answered || isDestroyed) return@Runnable
+            answered = true
+            if (epoch == pageEpoch && pullAllowed()) refreshPage() else endPull()
+        }
+        // A page too busy to answer is the one most worth loading again.
+        binding.root.postDelayed(refresh, PULL_GUARD_MS)
+        binding.webView.evaluateJavascript(PageScripts.REFRESH_GUARD) { answer ->
+            if (answered || isDestroyed) return@evaluateJavascript
+            when (answer?.trim('"')) {
+                "edited" -> { answered = true; binding.root.removeCallbacks(refresh); endPull(); message(R.string.refresh_kept_input) }
+                "dialog" -> { answered = true; binding.root.removeCallbacks(refresh); endPull(); message(R.string.refresh_kept_dialog) }
+                else -> { binding.root.removeCallbacks(refresh); refresh.run() }
+            }
+        }
+    }
+
+    private val endPullLater = Runnable { if (!isDestroyed) endPull() }
+
+    private fun endPull() {
+        binding.root.removeCallbacks(endPullLater)
+        if (binding.pullRefresh.isRefreshing) binding.pullRefresh.isRefreshing = false
     }
 
     /** A GET of the current address: a form result is never posted again. */
@@ -964,6 +1043,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun showError(id: Int, httpStatus: Int? = null) {
         binding.root.removeCallbacks(pageAbandoned)
+        endPull()
         cover.failed()
         noticeLoading.dismiss()
         noticePresentation.setEnabled(false)
@@ -1223,7 +1303,47 @@ class MainActivity : AppCompatActivity() {
 
     // Lifecycle.
 
+    /** A shortcut, the widget or a notification while the screen runs: the same request as at a cold start. */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        requested(intent)?.let { launchTarget = it; followLaunchTarget() }
+    }
+
+    /** The section an Intent asks for; the launcher hears that it was used, to rank the shortcuts. */
+    private fun requested(intent: Intent?): LaunchTarget? = LaunchTarget.of(intent)?.also { target ->
+        val context = applicationContext
+        lifecycleScope.launch(Dispatchers.IO) { AppShortcuts.used(context, target) }
+    }
+
+    /**
+     * Opens the requested section once nothing else owns the page: the account open and unlocked, no session change,
+     * no login, notice or agreement in flight (the page they wait on would be replaced, and the login form read as a
+     * rejection). Without an account the first-run form is the answer and the request is dropped.
+     */
+    private fun followLaunchTarget() {
+        val target = launchTarget ?: return
+        val state = model.state.value
+        if (!state.ready || isDestroyed) return
+        if (!state.canBrowse) { launchTarget = null; return }
+        if (state.locked || AppLockSession.locked || sessionChanging || model.sessionClearPending || !webOpened) return
+        if (target.section == null) { launchTarget = null; openDownloads(); return }
+        if (rendererUnavailable || automationStatus != AutomationStatus.IDLE) return
+        launchTarget = null
+        if (SitePolicy.section(currentUrl()) != target.section || documents.isOpen || pageFailed) openSection(target.section)
+    }
+
+    /** The launcher's long-press list, named in the app's language while an account is open, removed without one. */
+    private fun publishShortcuts(state: AppState) {
+        val language = state.language.takeIf { state.canBrowse }
+        if (language == shortcutsLanguage) return
+        shortcutsLanguage = language
+        val context = applicationContext
+        lifecycleScope.launch(Dispatchers.IO) { AppShortcuts.update(context, language) }
+    }
+
     override fun onSaveInstanceState(outState: Bundle) {
+        launchTarget?.let { outState.putString("launch_target", it.name) }
         outState.putString("download_event", handledDownloadEvent)
         lock.save(outState)
         outState.putInt("session_epoch", sessionEpoch)
@@ -1429,5 +1549,9 @@ class MainActivity : AppCompatActivity() {
         /** How long a tapped link may take to start a page before the screen goes back to the page it left. */
         const val LEAVE_TIMEOUT_MS = 15_000L
         const val ONLINE_TEST_WINDOW_MS = 30_000L
+        /** How long a pull waits for the page to say it has typed text or an open window. */
+        const val PULL_GUARD_MS = 1_500L
+        /** The pull's circle goes away by then even if the page neither shows nor fails. */
+        const val PULL_TIMEOUT_MS = 20_000L
     }
 }
