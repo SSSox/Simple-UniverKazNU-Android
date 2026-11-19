@@ -44,3 +44,28 @@ for (const dark of [false, true]) {
     w.close();
   });
 }
+
+test('wide tables are all measured before any of them is fitted: one layout per pass, not one per table', async () => {
+  const table = n => '<table class="inner"><tr><th>Дисциплина ' + n + '</th><th>Оценка</th></tr><tr><td>Синтетика</td><td>90</td></tr></table>';
+  const html = '<html><head></head><body><table class="wrappertable"><tr id="l4"><td class="center">' + table(1) + table(2) + table(3) + '</td></tr></table></body></html>';
+  const w = new JSDOM(html, { url: 'https://univer.kaznu.kz/student/attendance/full/', runScripts: 'outside-only', virtualConsole: new VirtualConsole(), pretendToBeVisual: true }).window;
+  w.CSS = { supports: () => true };
+  w.CSSLayerBlockRule = function () {};
+  w.matchMedia = () => ({ matches: false, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} });
+  w.HTMLElement.prototype.getClientRects = function () { return [{ width: 100, height: 30 }]; };
+  // Each box is 90 % as wide as its table; a read made after a table was fitted would force another layout.
+  let fitting = false;
+  const reads = [], fittedNow = () => w.document.querySelectorAll('.univer-app-table-fitted').length;
+  Object.defineProperty(w.HTMLElement.prototype, 'clientWidth', { configurable: true, get() { if (fitting && this.classList.contains('univer-app-table-scroll')) reads.push(fittedNow()); return 360; } });
+  Object.defineProperty(w.HTMLElement.prototype, 'scrollWidth', { configurable: true, get() { return 400; } });
+  scripts.forEach(name => w.eval(fs.readFileSync('app/src/main/assets/' + name, 'utf8')));
+  const fit = w.__univerTablesV1.fit;
+  w.__univerTablesV1.fit = function () { fitting = true; try { return fit.apply(this, arguments); } finally { fitting = false; } };
+  w.__univerMobileV1.setEnabled(true, 'ru'); w.__univerStyleV1.apply(true);
+  assert.equal(fittedNow(), 3);
+  assert.equal(w.document.querySelector('.univer-app-table-fitted').style.zoom, '0.9');
+  assert.ok(reads.length >= 3 && reads.every(count => count === 0), 'tables fitted at each read: ' + reads);
+  w.__univerMobileV1.setEnabled(false, 'ru');
+  assert.equal(w.document.querySelectorAll('.univer-app-table-fitted').length, 0);
+  w.close();
+});

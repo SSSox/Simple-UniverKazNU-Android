@@ -20,18 +20,23 @@
         return table && table.tagName === 'TABLE' && !table.matches(SKIP) ? table : null;
     }
     // Called inside the adapter's pass (observer paused): each box is measured at the table's own size, then fitted.
+    // All fits are undone first, then every box is measured, then the new fits are written: one layout for the page
+    // instead of one per table.
     function fit() {
+        var boxes = [];
         document.querySelectorAll('.univer-app-table-scroll').forEach(function (box) {
             if (box.closest('.univer-app-table-viewer')) return;
             var table = boxTable(box);
             if (!table) return;
             if (fitted.has(table)) { table.style.zoom = fitted.get(table); fitted.delete(table); table.classList.remove('univer-app-table-fitted'); }
-            if (!box.getClientRects().length || table.querySelector('input:not([type=hidden]),select,textarea,button')) return;
-            var ratio = box.clientWidth / box.scrollWidth;
-            if (ratio >= 1 || ratio < MIN_FIT) return;
-            fitted.set(table, table.style.zoom);
-            table.style.zoom = String(Math.floor(ratio * 1000) / 1000);
-            table.classList.add('univer-app-table-fitted');
+            if (!table.querySelector('input:not([type=hidden]),select,textarea,button')) boxes.push({box:box, table:table});
+        });
+        boxes.forEach(function (item) { item.ratio = item.box.getClientRects().length ? item.box.clientWidth / item.box.scrollWidth : 1; });
+        boxes.forEach(function (item) {
+            if (!(item.ratio < 1 && item.ratio >= MIN_FIT)) return;
+            fitted.set(item.table, item.table.style.zoom);
+            item.table.style.zoom = String(Math.floor(item.ratio * 1000) / 1000);
+            item.table.classList.add('univer-app-table-fitted');
         });
         fitted.forEach(function (zoom, table) {
             if (!table.isConnected) fitted.delete(table);
