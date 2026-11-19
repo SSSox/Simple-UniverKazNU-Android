@@ -34,7 +34,8 @@ object GradeAlerts {
     /** One look a while after the app goes to the background, while its session is still likely to last. */
     const val AFTER_LEAVING = 7403
     private const val NOTIFICATION = 7402
-    private const val LEAVING_DELAY = 20 * 60_000L
+    // Measured on 19 Nov 2026: a session idle since the student left was over within 24 minutes.
+    private const val LEAVING_DELAY = 10 * 60_000L
     private const val CHANNEL = "grades"
     private const val PERIOD = 3 * 60 * 60_000L
     private const val FLEX = 60 * 60_000L

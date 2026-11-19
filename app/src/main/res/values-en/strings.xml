@@ -334,7 +334,7 @@
     <string name="channel_classes_description">Reminders before classes</string>
     <string name="grades_section">Grades</string>
     <string name="grade_alerts">Watch grades in the background</string>
-    <string name="grade_alerts_hint">20 minutes after you leave the app and then every few hours, the app looks at the journal and tells you about new grades. It works while you are signed in to the site: no password is entered in the background.</string>
+    <string name="grade_alerts_hint">10 minutes after you leave the app, it looks at the journal and tells you about new grades. The site ends a sign-in by itself after a while without use; checks then wait until you open the app again, since no password is entered in the background.</string>
     <string name="grade_alerts_on">You will hear about a new or changed grade. If the site asks you to sign in again, checks wait until you open the app.</string>
     <string name="channel_grades">Grades</string>
     <string name="channel_grades_description">New grades in the journal</string>
