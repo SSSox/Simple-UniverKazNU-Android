@@ -73,14 +73,23 @@ class SettingsForms(private val activity: AppCompatActivity, private val model: 
     fun showFirstRun(container: FrameLayout, storageError: Boolean) {
         val form = firstForm ?: make(first = true).also { form ->
             firstForm = form
-            val wide = activity.resources.configuration.screenWidthDp >= 600
-            container.addView(form.root, FrameLayout.LayoutParams(
-                if (wide) (560 * activity.resources.displayMetrics.density).toInt() else FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT, Gravity.CENTER_HORIZONTAL))
+            container.addView(form.root, FrameLayout.LayoutParams(firstRunWidth(), FrameLayout.LayoutParams.MATCH_PARENT, Gravity.CENTER_HORIZONTAL))
         }
         update(form, first = true)
         if (storageError) feedback(form, R.string.storage_error)
     }
+
+    /** The screen turned without being recreated (MainActivity handles rotation): the form takes the new width. */
+    fun resizeFirstRun() {
+        val root = firstForm?.root ?: return
+        val params = root.layoutParams ?: return
+        val width = firstRunWidth()
+        if (params.width != width) { params.width = width; root.layoutParams = params }
+    }
+
+    // A centred 560 dp column on a wide screen, the whole width on a phone.
+    private fun firstRunWidth() = if (activity.resources.configuration.screenWidthDp >= 600)
+        (560 * activity.resources.displayMetrics.density).toInt() else FrameLayout.LayoutParams.MATCH_PARENT
 
     fun closeFirstRun(container: FrameLayout) {
         firstForm?.password?.text?.clear()

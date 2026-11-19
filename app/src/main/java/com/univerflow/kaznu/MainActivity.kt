@@ -1285,6 +1285,12 @@ class MainActivity : AppCompatActivity() {
         super.onPause()
     }
 
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // Rotation keeps the Activity (manifest configChanges): views sized once from the configuration follow it here.
+        if (::forms.isInitialized) forms.resizeFirstRun()
+    }
+
     override fun onDestroy() {
         // A view's pending runnables still run after it leaves the window: none may reach a destroyed screen.
         binding.root.removeCallbacks(pageRecoveryTask)
