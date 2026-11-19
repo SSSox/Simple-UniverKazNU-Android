@@ -84,6 +84,35 @@
         });
     }
     function dark() { return window.__univerDark === true; }
+    // The adapter's stylesheets are the same on every page, so their dark text (several milliseconds of regular
+    // expressions per page) is kept for the app session in sessionStorage, by a hash of the light source: an updated
+    // stylesheet misses. At most DARK_LIMIT characters are kept, the oldest entry goes first.
+    var DARK_PREFIX = 'univer.app.dark.v1:', DARK_INDEX = 'univer.app.dark-index.v1', DARK_LIMIT = 1000000, darkMemo = new Map();
+    function hash(text) {
+        var a = 0x811c9dc5, b = 0x01000193 ^ text.length;
+        for (var i = 0; i < text.length; i++) { var c = text.charCodeAt(i); a = Math.imul(a ^ c, 16777619); b = Math.imul(b + c, 2654435761); }
+        return text.length.toString(36) + '.' + (a >>> 0).toString(36) + '.' + (b >>> 0).toString(36);
+    }
+    function darkened(css) {
+        var known = darkMemo.get(css);
+        if (known !== undefined) return known;
+        var key = DARK_PREFIX + hash(css), out = null;
+        try { out = sessionStorage.getItem(key); } catch (_) { }
+        if (out === null) {
+            out = darken(css);
+            try {
+                var index = JSON.parse(sessionStorage.getItem(DARK_INDEX) || '[]');
+                if (!Array.isArray(index)) index = [];
+                index = index.filter(function (entry) { return Array.isArray(entry) && entry[0] !== key; });
+                index.push([key, out.length]);
+                var total = index.reduce(function (sum, entry) { return sum + (+entry[1] || 0); }, 0);
+                while (index.length > 1 && total > DARK_LIMIT) { var gone = index.shift(); total -= +gone[1] || 0; sessionStorage.removeItem(gone[0]); }
+                if (out.length <= DARK_LIMIT) { sessionStorage.setItem(key, out); sessionStorage.setItem(DARK_INDEX, JSON.stringify(index)); }
+            } catch (_) { /* Storage full or unavailable: the text is only not kept. */ }
+        }
+        darkMemo.set(css, out);
+        return out;
+    }
 
     // The site's own stylesheets (mtable.css paints "table.mt table.inner td" white) are read once per document and
     // answered under :root.univer-app-dark by dark counterparts of the same hue.
@@ -184,7 +213,7 @@
         fill: function (style, css) {
             style.__univerPaletteSource = css;
             style.__univerPaletteDark = dark();
-            style.textContent = style.__univerPaletteDark ? darken(css) : css;
+            style.textContent = style.__univerPaletteDark ? darkened(css) : css;
         },
         /** Redraws the adapter stylesheets of [doc] for the current theme and marks the document while the layout is adapted. */
         sync: function (doc, enabled) {
