@@ -538,7 +538,7 @@
         setText(state.share, t.report);
         var graded = groups.some(group => group.heading && group.overall && scores(clean(group.overall)).length);
         dom.setHidden(state.share, typeof __univerNative !== 'function' || !/^\/student\/attendance\/full(\/|$)/.test(location.pathname) || !graded);
-        dom.setHidden(state.goal, !graded || selected !== 'all');
+        dom.setHidden(state.goal, !graded || selected !== 'all' || selectedCourse !== 'all');
         setText(state.goalCaption, t.goal); state.goal.setAttribute('aria-label', t.goal);
         state.goal.querySelectorAll('button[data-goal]').forEach(button => {
             var name = button.dataset.goal;
@@ -564,7 +564,8 @@
         // The report for printing or sending (a parent, a curator) is drawn by the app from every course's totals.
         var share = el('button', 'univer-app-attendance-report'); share.type = 'button'; share.hidden = true;
         share.addEventListener('click', event => { if (event.isTrusted && typeof __univerNative === 'function') __univerNative('univer-report:' + JSON.stringify(reportData())); });
-        // The level to aim at (a parent's question: how far is «Отлично»?). The hints and the report count to it.
+        // The level to aim at (a parent's question: how far is «Отлично»?). The hints and the report count to it; it is
+        // chosen with all courses in view and kept for each course.
         var goal = el('div', 'univer-app-goal'), goalCaption = el('p', 'univer-app-goal-caption'), goalList = el('div', 'univer-app-goal-list');
         goal.setAttribute('role', 'group'); goal.hidden = true; goalCaption.setAttribute('aria-hidden', 'true');
         ['none', 'pass', 'good', 'top'].forEach(name => {
@@ -572,7 +573,8 @@
             button.addEventListener('click', () => dom.setGoal(name === 'none' ? null : name)); goalList.appendChild(button);
         });
         goal.append(goalCaption, goalList);
-        var tools = el('div', 'univer-app-attendance-tools'); tools.append(courses, caption, bar, note, goal, share, summaryList);
+        // The goal sits under the course overview, next to the score colours: the summary stays on the first screen.
+        var tools = el('div', 'univer-app-attendance-tools'); tools.append(courses, caption, bar, note, share, summaryList, goal);
         insertAfterCell(groups[0].heading || groups[0].lessons[0].cell, tools, true);
         // The filter bar has its own lifetime; summary rebuilds must not remove it.
         var host = owned.pop();
