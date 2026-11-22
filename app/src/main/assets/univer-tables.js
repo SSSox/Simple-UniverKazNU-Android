@@ -21,8 +21,8 @@
     }
     // Called inside the adapter's pass (observer paused): each box is measured at the table's own size, then fitted.
     // All fits are undone first, then every box is measured, then the new fits are written: one layout for the page
-    // instead of one per table.
-    function fit() {
+    // instead of one per table. The adapter passes its [afterLayout], so the measuring joins the pass's single read.
+    function fit(afterLayout) {
         var boxes = [];
         document.querySelectorAll('.univer-app-table-scroll').forEach(function (box) {
             if (box.closest('.univer-app-table-viewer')) return;
@@ -31,15 +31,18 @@
             if (fitted.has(table)) { table.style.zoom = fitted.get(table); fitted.delete(table); table.classList.remove('univer-app-table-fitted'); }
             if (!table.querySelector('input:not([type=hidden]),select,textarea,button')) boxes.push({box:box, table:table});
         });
-        boxes.forEach(function (item) { item.ratio = item.box.getClientRects().length ? item.box.clientWidth / item.box.scrollWidth : 1; });
-        boxes.forEach(function (item) {
-            if (!(item.ratio < 1 && item.ratio >= MIN_FIT)) return;
-            fitted.set(item.table, item.table.style.zoom);
-            item.table.style.zoom = String(Math.floor(item.ratio * 1000) / 1000);
-            item.table.classList.add('univer-app-table-fitted');
-        });
         fitted.forEach(function (zoom, table) {
             if (!table.isConnected) fitted.delete(table);
+        });
+        (afterLayout || function (read, write) { write(read()); })(function () {
+            return boxes.map(function (item) { return item.box.getClientRects().length ? item.box.clientWidth / item.box.scrollWidth : 1; });
+        }, function (ratios) {
+            boxes.forEach(function (item, i) {
+                if (!(ratios[i] < 1 && ratios[i] >= MIN_FIT) || !item.table.isConnected) return;
+                fitted.set(item.table, item.table.style.zoom);
+                item.table.style.zoom = String(Math.floor(ratios[i] * 1000) / 1000);
+                item.table.classList.add('univer-app-table-fitted');
+            });
         });
     }
     // The nearest short text before the table (a section row of a document, a heading), else "Table".
@@ -214,6 +217,8 @@
         fit:fit, open:open, close:close, release:release,
         setLanguage:function (value) { language = value === 'en' || value === 'kz' ? value : 'ru'; },
         label:function () { return labels().expand; },
-        isOpen:function () { return !!viewer; }
+        isOpen:function () { return !!viewer; },
+        /** Whether the table in this scroll box is zoomed to the box's width. */
+        fitted:function (box) { var table = box && boxTable(box); return !!table && fitted.has(table); }
     };
 })();

@@ -60,12 +60,21 @@ test('wide tables are all measured before any of them is fitted: one layout per 
   Object.defineProperty(w.HTMLElement.prototype, 'clientWidth', { configurable: true, get() { if (fitting && this.classList.contains('univer-app-table-scroll')) reads.push(fittedNow()); return 360; } });
   Object.defineProperty(w.HTMLElement.prototype, 'scrollWidth', { configurable: true, get() { return 400; } });
   scripts.forEach(name => w.eval(fs.readFileSync('app/src/main/assets/' + name, 'utf8')));
-  const fit = w.__univerTablesV1.fit;
-  w.__univerTablesV1.fit = function () { fitting = true; try { return fit.apply(this, arguments); } finally { fitting = false; } };
-  w.__univerMobileV1.setEnabled(true, 'ru'); w.__univerStyleV1.apply(true);
+  // The whole pass is watched: the boxes are measured in its single read at the end (the scroll hints too), and no
+  // box may be read after a table was fitted.
+  // «Наверх» reads where the page stands with the next frame, not inside the pass.
+  let scrollReads = 0;
+  Object.defineProperty(w, 'scrollY', { configurable: true, get() { if (fitting) scrollReads++; return 0; } });
+  fitting = true;
+  try { w.__univerMobileV1.setEnabled(true, 'ru'); } finally { fitting = false; }
+  assert.equal(scrollReads, 0, 'the top button measured inside the pass');
+  assert.ok(w.document.getElementById('univer-app-top'), 'the top button is in place for the pass');
+  w.__univerStyleV1.apply(true);
   assert.equal(fittedNow(), 3);
   assert.equal(w.document.querySelector('.univer-app-table-fitted').style.zoom, '0.9');
-  assert.ok(reads.length >= 3 && reads.every(count => count === 0), 'tables fitted at each read: ' + reads);
+  assert.ok(reads.length >= 6 && reads.every(count => count === 0), 'tables fitted at each read: ' + reads);
+  // Fitted tables fit their boxes: no swipe hint for them.
+  assert.equal(w.document.querySelectorAll('.univer-app-scroll-hint:not([hidden])').length, 0);
   w.__univerMobileV1.setEnabled(false, 'ru');
   assert.equal(w.document.querySelectorAll('.univer-app-table-fitted').length, 0);
   w.close();

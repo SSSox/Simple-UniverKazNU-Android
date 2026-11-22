@@ -156,6 +156,11 @@
         clearTimeout(idle); idle = setTimeout(refresh, 160);
     }
     function later() { if (enabled) { clearTimeout(idle); idle = setTimeout(refresh, 300); } }
+    function measureSoon() {
+        clearTimeout(idle);
+        idle = setTimeout(refresh, 100); // Hidden views throttle animation frames.
+        if (typeof requestAnimationFrame === 'function') requestAnimationFrame(function () { if (idle) refresh(); });
+    }
     function toTop() {
         hide();
         window.scrollTo({ top: 0, left: window.scrollX || 0, behavior: reduced() ? 'auto' : 'smooth' });
@@ -172,7 +177,9 @@
             enabled = !!on; language = WORDS[lang] ? lang : 'ru';
             edge = options && options.edge > 0 ? options.edge : EDGE; tall = options && options.height > 0 ? options.height : HEIGHT;
             anchored = !!(options && options.anchored); raised = options && options.lift > 0 ? options.lift : edge;
-            if (enabled) { refresh(); return; }
+            // The host goes in now (the adapter's pass that follows must not take it for a site change); where the page
+            // stands is read with the next frame, after the pass: a read here laid the page out once more before display.
+            if (enabled) { ensure(); measureSoon(); return; }
             clearTimeout(idle); idle = 0; visible = false;
             if (host) { host.remove(); host = null; button = label = null; }
         },

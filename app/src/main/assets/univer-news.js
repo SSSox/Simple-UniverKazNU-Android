@@ -137,7 +137,9 @@
             if (!record) { record = createFold(row, cell); folds.set(row, record); }
             records.push(record);
         }));
-        records.map(measureFold).forEach((fold, index) => writeFold(records[index], fold));
+        // In the adapter's pass the folds are measured with the pass's single read (afterLayout), not mid-pass.
+        var later = window.__univerMobileV1?.afterLayout || ((read, write) => write(read()));
+        later(() => records.map(measureFold), measured => measured.forEach((fold, index) => { if (records[index].body.isConnected) writeFold(records[index], fold); }));
     }
     function scheduleFolds() {
         if (!state || foldTimer !== null) return;

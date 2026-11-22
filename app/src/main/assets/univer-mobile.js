@@ -707,22 +707,48 @@
             if (!upcomingTimer) tickUpcoming();
         });
     }
+    // Reading the viewport lays the page out (innerHeight and visualViewport do on Android), so inside a pass the read
+    // waits for the pass's single layout read (afterLayout).
     function dialogViewport() {
         if (!enabled) return;
-        var view = window.visualViewport, height = view ? view.height : window.innerHeight;
-        var root = document.documentElement;
-        var values = {'--univer-dialog-top': ((view ? view.offsetTop : 0) + 12) + 'px',
-            '--univer-dialog-height': Math.max(120, height - 24) + 'px',
-            '--univer-frame-height': Math.max(100, height - 100) + 'px'};
-        Object.keys(values).forEach(function (key) { if (root.style.getPropertyValue(key) !== values[key]) root.style.setProperty(key, values[key]); });
+        afterLayout(function () {
+            var view = window.visualViewport;
+            return {top: view ? view.offsetTop : 0, height: view ? view.height : window.innerHeight};
+        }, function (size) {
+            var root = document.documentElement;
+            var values = {'--univer-dialog-top': (size.top + 12) + 'px',
+                '--univer-dialog-height': Math.max(120, size.height - 24) + 'px',
+                '--univer-frame-height': Math.max(100, size.height - 100) + 'px'};
+            Object.keys(values).forEach(function (key) { if (root.style.getPropertyValue(key) !== values[key]) root.style.setProperty(key, values[key]); });
+        });
     }
     // The dialog sizes are CSS only: a pinch-zoom pan or the keyboard moving the visible viewport starts no adapter pass.
     // A real resize still does, through the window's own event.
     function viewportChanged() { quiet(dialogViewport); }
     // Only a new width changes the layout a pass makes (tables fitted to it, the menu). The resize that follows the
     // viewport meta of enable() reports the width the first pass already laid out; the keyboard changes only the height.
-    var passWidth = -1;
-    function resized() { if (innerWidth !== passWidth) schedule(); }
+    // The width is compared with the next frame, which lays the page out anyway: read in the event it forced a layout of
+    // its own while the first pass's writes were still pending.
+    var passWidth = -1, resizeFrame = 0;
+    function resized() {
+        if (resizeFrame) return;
+        var check = function () { if (!resizeFrame) return; resizeFrame = 0; if (innerWidth !== passWidth) schedule(); };
+        resizeFrame = typeof requestAnimationFrame === 'function' ? requestAnimationFrame(check) : 1;
+        setTimeout(check, 100);
+    }
+    // [read] measures the page, [write] uses the result. Inside a pass every read waits for the end of the pass and the
+    // reads run together, before any of the writes: one layout for the pass instead of one per module. Outside a pass
+    // both run at once.
+    var layoutJobs = null;
+    function afterLayout(read, write) {
+        if (layoutJobs) layoutJobs.push([read, write]); else write(read());
+    }
+    function runLayoutJobs() {
+        var jobs = layoutJobs || [];
+        layoutJobs = null;
+        var values = jobs.map(function (job) { var out = {}; guarded(function () { out.value = job[0](); out.ok = true; }); return out; });
+        jobs.forEach(function (job, i) { if (values[i].ok) guarded(function () { job[1](values[i].value); }); });
+    }
     // Replaces the text of a site text node; Original restores the recorded value.
     function rewriteText(node, value) {
         if (!punctuation.has(node)) punctuation.set(node, node.data);
@@ -906,40 +932,49 @@
         var name = caption.replace(/^↔\s*/, '');
         var tables = window.__univerTablesV1;
         tables?.setLanguage(selectedLanguage);
-        document.querySelectorAll('.univer-app-table-scroll').forEach(function (box) {
-            if (box.closest('.univer-app-table-viewer')) return;
-            var hint = box.__univerHint;
-            // A table with nothing in it has nothing to swipe to or to open.
-            var empty = box.querySelector('table.univer-app-empty-note') || box.querySelector('tr.univer-app-empty-row') && !box.querySelector('tr:not(.univer-app-empty-row)>td');
-            var wide = !empty && box.getClientRects().length && box.scrollWidth > box.clientWidth + 2;
-            if (!hint && wide) {
-                hint = document.createElement('div'); hint.className = 'univer-app-scroll-hint';
-                var text = document.createElement('span'); text.className = 'univer-app-scroll-caption'; hint.appendChild(text);
-                if (tables && box.firstElementChild?.tagName === 'TABLE') {
-                    var open = document.createElement('button'); open.type = 'button'; open.className = 'univer-app-table-open';
-                    open.addEventListener('click', function () { tables.open(box.firstElementChild); });
-                    // With the button the swipe caption is for screen readers only.
-                    hint.appendChild(open); hint.classList.add('univer-app-scroll-hint-expand');
-                }
-                box.before(hint); box.__univerHint = hint;
-            }
-            if (hint) {
-                var label = hint.querySelector('.univer-app-scroll-caption'), expand = hint.querySelector('.univer-app-table-open');
-                if (label && label.textContent !== caption) label.textContent = caption;
-                if (expand && tables && expand.textContent !== tables.label()) expand.textContent = tables.label();
-                hint.hidden = !wide;
-            }
-            // Only a table wider than its box is a keyboard and screen-reader stop of its own; card lists, fitted and
-            // narrow tables are read in place.
-            if (wide) {
-                if (box.tabIndex !== 0) box.tabIndex = 0;
-                if (box.getAttribute('role') !== 'region') box.setAttribute('role', 'region');
-                if (box.getAttribute('aria-label') !== name) box.setAttribute('aria-label', name);
-            } else ['tabindex', 'role', 'aria-label'].forEach(function (attribute) { if (box.hasAttribute(attribute)) box.removeAttribute(attribute); });
+        var boxes = Array.from(document.querySelectorAll('.univer-app-table-scroll')).filter(function (box) {
+            return !box.closest('.univer-app-table-viewer');
         });
-        document.querySelectorAll('.univer-app-scroll-hint').forEach(function (hint) {
-            if (!hint.nextElementSibling?.classList.contains('univer-app-table-scroll')) hint.remove();
+        // All boxes are measured before any hint is written. The read runs before the tables' fits are written (one
+        // read for the pass), so a table that fit() zooms to the box width counts as narrow.
+        afterLayout(function () {
+            return boxes.map(function (box) { return box.getClientRects().length > 0 && box.scrollWidth > box.clientWidth + 2; });
+        }, function (overflow) {
+            boxes.forEach(function (box, i) { if (box.isConnected) scrollHint(box, overflow[i] && !tables?.fitted(box), caption, name, tables); });
+            document.querySelectorAll('.univer-app-scroll-hint').forEach(function (hint) {
+                if (!hint.nextElementSibling?.classList.contains('univer-app-table-scroll')) hint.remove();
+            });
         });
+    }
+    function scrollHint(box, overflow, caption, name, tables) {
+        var hint = box.__univerHint;
+        // A table with nothing in it has nothing to swipe to or to open.
+        var empty = box.querySelector('table.univer-app-empty-note') || box.querySelector('tr.univer-app-empty-row') && !box.querySelector('tr:not(.univer-app-empty-row)>td');
+        var wide = !empty && overflow;
+        if (!hint && wide) {
+            hint = document.createElement('div'); hint.className = 'univer-app-scroll-hint';
+            var text = document.createElement('span'); text.className = 'univer-app-scroll-caption'; hint.appendChild(text);
+            if (tables && box.firstElementChild?.tagName === 'TABLE') {
+                var open = document.createElement('button'); open.type = 'button'; open.className = 'univer-app-table-open';
+                open.addEventListener('click', function () { tables.open(box.firstElementChild); });
+                // With the button the swipe caption is for screen readers only.
+                hint.appendChild(open); hint.classList.add('univer-app-scroll-hint-expand');
+            }
+            box.before(hint); box.__univerHint = hint;
+        }
+        if (hint) {
+            var label = hint.querySelector('.univer-app-scroll-caption'), expand = hint.querySelector('.univer-app-table-open');
+            if (label && label.textContent !== caption) label.textContent = caption;
+            if (expand && tables && expand.textContent !== tables.label()) expand.textContent = tables.label();
+            if (hint.hidden !== !wide) hint.hidden = !wide;
+        }
+        // Only a table wider than its box is a keyboard and screen-reader stop of its own; card lists, fitted and
+        // narrow tables are read in place.
+        if (wide) {
+            if (box.tabIndex !== 0) box.tabIndex = 0;
+            if (box.getAttribute('role') !== 'region') box.setAttribute('role', 'region');
+            if (box.getAttribute('aria-label') !== name) box.setAttribute('aria-label', name);
+        } else ['tabindex', 'role', 'aria-label'].forEach(function (attribute) { if (box.hasAttribute(attribute)) box.removeAttribute(attribute); });
     }
     function adaptFrames() {
         document.querySelectorAll('iframe,frame').forEach(function (frame) {
@@ -1371,6 +1406,7 @@
         if (!enabled || !document.body) return;
         // Observe website updates, not the adapter's own class/DOM changes.
         observer?.disconnect();
+        layoutJobs = [];
         try {
             document.documentElement.classList.toggle('univer-native-chrome', nativeChrome);
             markNativeHeading();
@@ -1400,10 +1436,12 @@
             guarded(function () { window.__univerPolishV1?.apply(selectedLanguage); });
             guarded(function () { window.__univerScreensV1?.apply(selectedLanguage); });
             adaptFrames();
-            guarded(function () { window.__univerTablesV1?.fit(); });
+            guarded(function () { window.__univerTablesV1?.fit(afterLayout); });
             scrollHints();
-            passWidth = innerWidth;
+            afterLayout(function () { return innerWidth; }, function (width) { passWidth = width; });
+            runLayoutJobs();
         } finally {
+            layoutJobs = null;
             window.__univerPresentationV1?.release();
             if (enabled) observer?.observe(document.documentElement, OBSERVED);
         }
@@ -1624,7 +1662,7 @@
     window.__univerMobileV1 = {setEnabled:setEnabled, mutate:function (action) {
         observer?.disconnect();
         try { action(); } finally { schedule(); }
-    }, quiet:quiet, setNativeChrome:function (value) {
+    }, quiet:quiet, afterLayout:afterLayout, setNativeChrome:function (value) {
         nativeChrome = !!value;
         document.documentElement.classList.toggle('univer-native-chrome', enabled && nativeChrome);
     }};
