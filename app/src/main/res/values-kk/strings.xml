@@ -49,6 +49,9 @@
     <string name="download_preparing">Файл дайындалуда…</string>
     <string name="download_login">Жүктеу үшін Univer жүйесіне кіріңіз. Кіргеннен кейін файл сілтемесін қайта басыңыз.</string>
     <string name="download_permission">Құжатты «Жүктеулерге» сақтау үшін файлдарды сақтауға рұқсат беріңіз.</string>
+    <string name="diagnostics">Қате туралы хабарлама файлы</string>
+    <string name="diagnostics_saved">«%1$s» файлы «Жүктеулер» қалтасына сақталды. Онда логин, құпиясөз және жеке деректер жоқ; оны хабарламаға тіркеңіз.</string>
+    <string name="diagnostics_failed">Файлды сақтау мүмкін болмады.</string>
     <string name="downloads">Жүктеулер</string>
     <string name="download_complete">Файл «Жүктеулерге» сақталды.</string>
     <string name="open_file">Ашу</string>

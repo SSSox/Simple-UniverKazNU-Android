@@ -75,9 +75,20 @@ class DownloadLauncher(private val activity: AppCompatActivity, private val mode
     private val loginAttempts = mutableMapOf<String, Long>()
     private val notificationPermission = activity.registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
     private val storagePermission = activity.registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val action = storageAction
+        storageAction = null
+        if (action != null) { if (granted) action() else host.message(R.string.download_permission); return@registerForActivityResult }
         val pending = legacyRequest
         legacyRequest = null
         if (granted) pending?.let { if (it.containsKey(URLS)) startAll(it) else start(it) } else host.message(R.string.download_permission)
+    }
+
+    /** A file the app itself writes to Downloads (not a site download): [action] runs now, or once Android 9 and older allow storage. */
+    private var storageAction: (() -> Unit)? = null
+    fun withStorage(action: () -> Unit) {
+        if (Build.VERSION.SDK_INT <= 28 && ContextCompat.checkSelfPermission(activity, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+            if (storageAction == null && legacyRequest == null) { storageAction = action; storagePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE) }
+        } else action()
     }
 
     fun restore(saved: Bundle?) { legacyRequest = saved?.getBundle(LEGACY) }

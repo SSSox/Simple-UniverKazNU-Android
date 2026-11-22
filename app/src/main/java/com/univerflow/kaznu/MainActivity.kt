@@ -76,6 +76,7 @@ import com.univerflow.kaznu.download.DownloadService
 import com.univerflow.kaznu.launch.AppShortcuts
 import com.univerflow.kaznu.launch.CalendarHandoff
 import com.univerflow.kaznu.launch.LaunchTarget
+import com.univerflow.kaznu.main.DiagnosticsExport
 import com.univerflow.kaznu.main.DownloadLauncher
 import com.univerflow.kaznu.main.LockFlow
 import com.univerflow.kaznu.main.MainChrome
@@ -1547,6 +1548,18 @@ class MainActivity : AppCompatActivity() {
         }
         override fun openExternal(url: String) = this@MainActivity.openExternal(url)
         override fun openDownloads() = this@MainActivity.openDownloads()
+        override fun saveDiagnostics() {
+            if (model.state.value.locked || AppLockSession.locked) return
+            downloads.withStorage {
+                lifecycleScope.launch {
+                    val state = model.state.value
+                    val name = try { withContext(Dispatchers.IO) { DiagnosticsExport.save(applicationContext, state, model.credentials) } }
+                    catch (cancelled: CancellationException) { throw cancelled }
+                    catch (_: Exception) { null }
+                    Snackbar.make(binding.content, name?.let { labels().getString(R.string.diagnostics_saved, it) } ?: text(R.string.diagnostics_failed), Snackbar.LENGTH_LONG).show()
+                }
+            }
+        }
         override fun downloadStarted() {
             downloadStartedBar = Snackbar.make(binding.content, text(R.string.download_started), Snackbar.LENGTH_LONG)
                 .setAction(text(R.string.downloads)) { openDownloads() }.also { it.show() }
