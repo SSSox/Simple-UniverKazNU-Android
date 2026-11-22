@@ -21,6 +21,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import com.univerflow.kaznu.domain.AppLanguage
 import com.univerflow.kaznu.domain.AppTheme
+import com.univerflow.kaznu.domain.StartPage
 import com.univerflow.kaznu.ui.LanguageResources
 import com.univerflow.kaznu.ui.ThemeMode
 import com.univerflow.kaznu.ui.launchCatching
@@ -222,6 +223,7 @@ class SettingsForms(private val activity: AppCompatActivity, private val model: 
         form.mobileLayout.setOnCheckedChangeListener { _, checked -> host.setMobileLayout(checked, form) }
         form.animations.setOnCheckedChangeListener { _, checked -> setAnimations(checked, form) }
         form.externalLinks.setOnCheckedChangeListener { _, checked -> setExternalLinks(checked, form) }
+        startPageChoices(form).forEach { (button, page) -> button.setOnClickListener { setStartPage(page, form) } }
         form.classReminders.setOnCheckedChangeListener { _, checked -> setReminders(checked, null, form) }
         form.reminderLead.addOnButtonCheckedListener { _, id, checked -> if (checked) leadOf(form, id)?.let { setReminders(null, it, form) } }
         form.gradeAlerts.setOnCheckedChangeListener { _, checked -> setGradeAlerts(checked, form) }
@@ -314,6 +316,21 @@ class SettingsForms(private val activity: AppCompatActivity, private val model: 
         leads(form).firstOrNull { it.second == state.reminders.lead }?.first?.id?.let { if (form.reminderLead.checkedButtonId != it) form.reminderLead.check(it) }
     }
 
+    private fun startPageChoices(form: SettingsSheetBinding) = listOf(form.startNews to StartPage.NEWS, form.startBachelor to StartPage.BACHELOR)
+
+    private fun setStartPage(page: StartPage, form: SettingsSheetBinding) {
+        if (page == model.state.value.startPage) return
+        activity.launchCatching({ feedback(form, R.string.storage_error); update(form, isFirst(form)) }) { model.setStartPage(page) }
+    }
+
+    private fun updateStartPage(form: SettingsSheetBinding, state: AppState) {
+        form.startPageLabel.text = host.text(R.string.start_page_section)
+        form.startNews.text = host.text(R.string.start_page_news)
+        form.startBachelor.text = host.text(R.string.start_page_bachelor)
+        form.startPageHint.text = host.text(R.string.start_page_hint)
+        startPageChoices(form).firstOrNull { it.second == state.startPage }?.first?.id?.let { if (form.startPage.checkedButtonId != it) form.startPage.check(it) }
+    }
+
     private fun setExternalLinks(enabled: Boolean, form: SettingsSheetBinding) {
         if (enabled == model.state.value.externalLinks || !LinkProfile.available()) return
         activity.launchCatching({ feedback(form, R.string.storage_error); update(form, isFirst(form)) }) { model.setExternalLinks(enabled) }
@@ -399,6 +416,7 @@ class SettingsForms(private val activity: AppCompatActivity, private val model: 
         form.animationsHint.text = text(R.string.animations_hint)
         if (form.animations.isChecked != state.animations) form.animations.isChecked = state.animations
         updateLinks(form, state)
+        updateStartPage(form, state)
         updateReminders(form, state)
         updateGradeAlerts(form, state)
         (form.feedback.tag as? Int)?.let { form.feedback.text = text(it) }

@@ -2,6 +2,7 @@ package com.univerflow.kaznu.web
 
 import java.net.URI
 import com.univerflow.kaznu.domain.AppLanguage
+import com.univerflow.kaznu.domain.StartPage
 
 /** Native shortcuts to observed student routes; every other section stays in the site's own menu. */
 enum class AppSection(val path: String) {
@@ -50,9 +51,14 @@ object SitePolicy {
      * which sets [language] and redirects to the start page, so no Kazakh page shows first. An existing session keeps
      * its language: an unconditional switch would add a request and a redirect to every launch.
      */
-    fun startUrl(cookies: String?, language: AppLanguage): String =
-        if (cookies.orEmpty().split(';').any { it.trim().startsWith("ASP.NET_SessionId=") }) HOME
-        else "$ORIGIN/lang/change/${language.siteCode}/"
+    fun startUrl(cookies: String?, language: AppLanguage, page: StartPage = StartPage.NEWS): String =
+        if (hasSession(cookies)) startPageUrl(page) else "$ORIGIN/lang/change/${language.siteCode}/"
+    fun hasSession(cookies: String?): Boolean = cookies.orEmpty().split(';').any { it.trim().startsWith("ASP.NET_SessionId=") }
+    /** The student's chosen start page. News is the site's own start route, which is also where the read notice is re-posted. */
+    fun startPageUrl(page: StartPage): String = when (page) {
+        StartPage.NEWS -> HOME
+        StartPage.BACHELOR -> "$ORIGIN/student/bachelor/"
+    }
     /** Only the site's real header flag endpoint changes the application language. */
     fun languageChange(url: String?): AppLanguage? = if (!trusted(url)) null else runCatching {
         val code = LANGUAGE_CHANGE.matchEntire(URI(url!!).rawPath)?.groupValues?.get(1)

@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import com.univerflow.kaznu.domain.AppLanguage
 import com.univerflow.kaznu.domain.AppTheme
+import com.univerflow.kaznu.domain.StartPage
 import com.univerflow.kaznu.domain.HomeShortcuts
 import com.univerflow.kaznu.domain.NoticeDetail
 import com.univerflow.kaznu.domain.NoticeKind
@@ -77,6 +78,10 @@ class AppPreferences(context: Context, name: String = "univer.preferences") {
     var theme: AppTheme
         get() = AppTheme.fromCode(preferences.getString("theme", AppTheme.SYSTEM.code))
         set(value) { check(preferences.edit().putString("theme", value.code).commit()) }
+    /** Where the app begins: read at launch, so the choice applies from the next start. */
+    var startPage: StartPage
+        get() = StartPage.fromCode(preferences.getString("start_page", StartPage.NEWS.code))
+        set(value) { check(preferences.edit().putString("start_page", value.code).commit()) }
     /** The last update check: the newer version it found, and when. Not account data, so kept through logout. */
     var updateVersion: String?
         get() = preferences.getString("update_version", null)

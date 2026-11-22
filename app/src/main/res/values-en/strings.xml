@@ -323,6 +323,10 @@
     <string name="report_no_grades">No grades yet</string>
     <string name="report_continued">%1$s (continued)</string>
     <string name="report_file">Grades %1$s</string>
+    <string name="start_page_section">Start page</string>
+    <string name="start_page_news">News</string>
+    <string name="start_page_bachelor">Bachelor</string>
+    <string name="start_page_hint">Opens when the app starts. News takes longer to load, Bachelor is faster.</string>
     <string name="reminders_section">Classes</string>
     <string name="class_reminders">Remind me of classes</string>
     <string name="class_reminders_hint">A notification before each class, from the saved schedule. The schedule is saved when you open it in the app.</string>

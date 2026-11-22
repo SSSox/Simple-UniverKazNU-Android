@@ -4,6 +4,7 @@ import android.os.SystemClock
 import android.security.keystore.KeyPermanentlyInvalidatedException
 import com.univerflow.kaznu.domain.AppLanguage
 import com.univerflow.kaznu.domain.AppTheme
+import com.univerflow.kaznu.domain.StartPage
 import com.univerflow.kaznu.domain.Credentials
 import com.univerflow.kaznu.domain.HomeShortcuts
 import com.univerflow.kaznu.domain.SiteNotice
@@ -51,7 +52,7 @@ class LocalSessionRepository(
         StoredSession(credentials, preferences.language, preferences.autoLoginPaused,
             storageError, preferences.mobileLayout, preferences.textZoom, preferences.animations, preferences.shortcuts, lock, preferences.theme, preferences.notices,
             preferences.sessionClearPending, preferences.manualLogin, externalLinks = preferences.externalLinks,
-            reminders = preferences.reminders, gradeAlerts = preferences.gradeAlerts)
+            reminders = preferences.reminders, gradeAlerts = preferences.gradeAlerts, startPage = preferences.startPage)
     }
 
     override suspend fun saveCredentials(credentials: Credentials) = access {
@@ -148,6 +149,7 @@ class LocalSessionRepository(
     override suspend fun setReminders(settings: ReminderSettings) = access { preferences.reminders = settings }
     override suspend fun setGradeAlerts(enabled: Boolean) = access { preferences.gradeAlerts = enabled }
     override suspend fun setTheme(theme: AppTheme) = access { preferences.theme = theme }
+    override suspend fun setStartPage(page: StartPage) = access { preferences.startPage = page }
     override suspend fun setShortcuts(shortcuts: HomeShortcuts) = access { preferences.shortcuts = shortcuts }
     override suspend fun setNotices(notices: List<SiteNotice>) = access { preferences.notices = notices }
 }

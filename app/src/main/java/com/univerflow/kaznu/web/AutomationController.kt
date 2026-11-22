@@ -98,7 +98,7 @@ class AutomationController(private val web: WebView, private val model: UniverVi
 
     /** The start page, in the app's language from the first frame (see [SitePolicy.startUrl]). */
     fun open() {
-        web.loadUrl(SitePolicy.startUrl(CookieManager.getInstance().getCookie(SitePolicy.ORIGIN), model.state.value.language))
+        web.loadUrl(SitePolicy.startUrl(CookieManager.getInstance().getCookie(SitePolicy.ORIGIN), model.state.value.language, model.state.value.startPage))
     }
 
     fun applyLanguage(language: AppLanguage) {

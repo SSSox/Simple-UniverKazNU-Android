@@ -451,7 +451,7 @@ class MainActivity : AppCompatActivity() {
             if (model.sessionClearPending) finishInterruptedSessionClear()
             else if (rendererUnavailable) retry()
             else if (binding.webView.canGoBack()) binding.webView.goBack()
-            else binding.webView.loadUrl(SitePolicy.HOME)
+            else binding.webView.loadUrl(startPageUrl())
         }
         binding.statusAction.setOnClickListener { retry(signIn = true) }
         configurePull()
@@ -706,7 +706,7 @@ class MainActivity : AppCompatActivity() {
             // A shortcut's section opens first instead of the news while the site session is there; without one the
             // language page and login come first and the section follows (followLaunchTarget).
             else -> launchTarget?.section?.takeIf {
-                SitePolicy.startUrl(CookieManager.getInstance().getCookie(SitePolicy.ORIGIN), model.state.value.language) == SitePolicy.HOME
+                SitePolicy.hasSession(CookieManager.getInstance().getCookie(SitePolicy.ORIGIN))
             }?.let { loadPage(it.url) } ?: automation.open()
         }
         restoredDocument?.let { saved ->
@@ -792,6 +792,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** Answers a tap at once: the shape of the next page fades in over this one, and [pageAbandoned] ends the wait. */
+    private fun startPageUrl() = SitePolicy.startPageUrl(model.state.value.startPage)
+
     private fun leavePage(url: String) {
         binding.pageSkeleton.show(url)
         cover.leave(covered = model.state.value.mobileLayout && SitePolicy.trusted(url))
@@ -962,7 +964,7 @@ class MainActivity : AppCompatActivity() {
                 lock.maybeOfferPin()
                 if (!first && !changed && wasPaused) {
                     noticePresentation.setEnabled(true, retry = true)
-                    binding.webView.loadUrl(SitePolicy.HOME)
+                    binding.webView.loadUrl(startPageUrl())
                 }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { forms.feedback(form, R.string.storage_error) }
@@ -1060,7 +1062,7 @@ class MainActivity : AppCompatActivity() {
             binding.errorOverlay.isVisible = false
             if (model.state.value.paused) configureNoticePresentation() else noticePresentation.setEnabled(true, retry = true)
             automation.resume(replacing = true)
-            leavePage(SitePolicy.HOME)
+            leavePage(startPageUrl())
             automation.open()
             renderBanner()
         }
@@ -1103,7 +1105,7 @@ class MainActivity : AppCompatActivity() {
         model.pageRecovery.spend(SystemClock.elapsedRealtime())
         pageFailed = false
         configureNoticePresentation()
-        loadPage(failedPageUrl?.takeIf(SitePolicy::trusted) ?: SitePolicy.HOME, quietly = true)
+        loadPage(failedPageUrl?.takeIf(SitePolicy::trusted) ?: startPageUrl(), quietly = true)
         notices.startChecks()
     }
 

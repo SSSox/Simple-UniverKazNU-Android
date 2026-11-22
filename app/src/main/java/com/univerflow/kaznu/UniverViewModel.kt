@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.univerflow.kaznu.domain.AppLanguage
 import com.univerflow.kaznu.domain.AppTheme
+import com.univerflow.kaznu.domain.StartPage
 import com.univerflow.kaznu.domain.Credentials
 import com.univerflow.kaznu.domain.HomeShortcuts
 import com.univerflow.kaznu.domain.LockSettings
@@ -37,6 +38,7 @@ data class AppState(val ready: Boolean = false, val language: AppLanguage = AppL
     /** The protected account exists but the PIN (or biometrics) has not opened it in this run: nothing is loaded or shown. */
     val locked: Boolean = false,
     val theme: AppTheme = AppTheme.SYSTEM,
+    val startPage: StartPage = StartPage.NEWS,
     val notices: List<SiteNotice> = emptyList(),
     val manualLogin: Boolean = false,
     /** Links to other sites open in the system browser, not in the app's link window. */
@@ -88,7 +90,7 @@ class UniverViewModel(private val repository: SessionRepository) : ViewModel() {
             mutableState.value = AppState(true, loaded.language, loaded.credentials != null || loaded.lock.enabled, loaded.paused,
                 loaded.storageError, loaded.mobileLayout, loaded.textZoom, loaded.animations, loaded.shortcuts,
                 loaded.lock, locked = loaded.lock.enabled, theme = loaded.theme, notices = loaded.notices, manualLogin = loaded.manualLogin,
-                externalLinks = loaded.externalLinks, reminders = loaded.reminders, gradeAlerts = loaded.gradeAlerts)
+                externalLinks = loaded.externalLinks, reminders = loaded.reminders, gradeAlerts = loaded.gradeAlerts, startPage = loaded.startPage)
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) {
             guard.stop()
@@ -214,6 +216,13 @@ class UniverViewModel(private val repository: SessionRepository) : ViewModel() {
         changes.withLock {
             repository.setExternalLinks(enabled)
             mutableState.update { it.copy(externalLinks = enabled) }
+        }
+    }
+
+    suspend fun setStartPage(page: StartPage) = retained {
+        changes.withLock {
+            repository.setStartPage(page)
+            mutableState.update { it.copy(startPage = page) }
         }
     }
 

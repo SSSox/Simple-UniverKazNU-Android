@@ -3,6 +3,7 @@ package com.univerflow.kaznu.web
 import org.junit.Assert.*
 import org.junit.Test
 import com.univerflow.kaznu.domain.AppLanguage
+import com.univerflow.kaznu.domain.StartPage
 
 class SitePolicyTest {
     @Test fun onlyExplicitUserNavigationCanLaunchAnExternalApplication() {
@@ -158,5 +159,21 @@ class SitePolicyTest {
         val portal = "https://online-test.kaznu.kz/Account/LoginFromUniver?token=abc"
         assertEquals(LinkOpening.APP, LinkPolicy.open(portal, preferBrowser = false, windowAvailable = true))
         assertEquals(LinkOpening.BROWSER, LinkPolicy.open(portal, preferBrowser = true, windowAvailable = true))
+    }
+    @Test fun theChosenStartPageOpensOnlyWithASessionAndNewsStaysTheDefault() {
+        val session = "ASP.NET_SessionId=abc; _ga=1"
+        assertEquals("https://univer.kaznu.kz/", SitePolicy.startUrl(session, AppLanguage.RUSSIAN))
+        assertEquals("https://univer.kaznu.kz/", SitePolicy.startUrl(session, AppLanguage.RUSSIAN, StartPage.NEWS))
+        assertEquals("https://univer.kaznu.kz/student/bachelor/", SitePolicy.startUrl(session, AppLanguage.RUSSIAN, StartPage.BACHELOR))
+        // Without the server session the flag link comes first, whatever the choice, so no Kazakh page shows.
+        assertEquals("https://univer.kaznu.kz/lang/change/en/", SitePolicy.startUrl(null, AppLanguage.ENGLISH, StartPage.BACHELOR))
+        assertTrue(SitePolicy.hasSession(session))
+        assertFalse(SitePolicy.hasSession("_ga=1"))
+        assertTrue(SitePolicy.trusted(SitePolicy.startPageUrl(StartPage.BACHELOR)))
+        assertEquals(PageShape.BACHELOR, PageShapes.of(SitePolicy.startPageUrl(StartPage.BACHELOR)))
+        assertEquals(PageShape.NEWS, PageShapes.of(SitePolicy.startPageUrl(StartPage.NEWS)))
+        assertEquals(StartPage.NEWS, StartPage.fromCode(null))
+        assertEquals(StartPage.NEWS, StartPage.fromCode("unknown"))
+        assertEquals(StartPage.BACHELOR, StartPage.fromCode(StartPage.BACHELOR.code))
     }
 }

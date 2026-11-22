@@ -22,6 +22,15 @@ enum class AppTheme(val code: String) {
     }
 }
 
+/** The page the app opens first: the site's news (default) or Кабинет, which loads much faster. */
+enum class StartPage(val code: String) {
+    NEWS("news"), BACHELOR("bachelor");
+
+    companion object {
+        fun fromCode(code: String?) = entries.firstOrNull { it.code == code } ?: NEWS
+    }
+}
+
 /** Text size of the website, its documents and downloaded files, in percent of the WebView default. */
 object TextZoom {
     const val MIN = 60
@@ -50,6 +59,7 @@ data class StoredSession(
     val externalLinks: Boolean = false,
     val reminders: ReminderSettings = ReminderSettings(),
     val gradeAlerts: Boolean = false,
+    val startPage: StartPage = StartPage.NEWS,
 )
 
 /** Persistence owns dispatching and serialization; callers never access the Keystore directly. */
@@ -86,6 +96,7 @@ interface SessionRepository {
     suspend fun setReminders(settings: ReminderSettings) {}
     suspend fun setGradeAlerts(enabled: Boolean) {}
     suspend fun setTheme(theme: AppTheme)
+    suspend fun setStartPage(page: StartPage) {}
     suspend fun setShortcuts(shortcuts: HomeShortcuts)
     suspend fun setNotices(notices: List<SiteNotice>) {}
 }
