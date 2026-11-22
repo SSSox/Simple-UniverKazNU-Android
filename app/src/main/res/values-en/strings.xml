@@ -362,6 +362,9 @@
     <string name="timetable_none">The schedule is not saved yet. Open it in the app when you are online.</string>
     <string name="timetable_now">Now</string>
     <string name="timetable_note">The offline schedule shows the week you opened last.</string>
+    <string name="last_grades">Latest grades</string>
+    <string name="last_grades_none">No grades are saved yet. Open the journal in the app when you are online.</string>
+    <string name="last_grades_note">These are the totals you saw last. They may have changed since.</string>
     <string name="widget_name">Today’s classes</string>
     <string name="widget_description">Today’s classes from the saved schedule</string>
     <string name="widget_today">Today</string>

@@ -57,6 +57,7 @@
             </intent-filter>
         </receiver>
         <activity android:name=".ui.TimetableActivity" android:exported="false" android:parentActivityName=".MainActivity" />
+        <activity android:name=".ui.LastGradesActivity" android:exported="false" android:parentActivityName=".MainActivity" />
         <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.downloads"
             android:exported="false" android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/download_paths" />

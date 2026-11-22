@@ -369,6 +369,9 @@
     <string name="timetable_none">Расписание ещё не сохранено. Откройте его в приложении, когда будет сеть.</string>
     <string name="timetable_now">Идёт</string>
     <string name="timetable_note">Расписание без сети показывает неделю, которую вы открывали последней.</string>
+    <string name="last_grades">Последние оценки</string>
+    <string name="last_grades_none">Оценки ещё не сохранены. Откройте журнал в приложении, когда будет сеть.</string>
+    <string name="last_grades_note">Показаны итоги, которые вы видели последними. Они могли измениться.</string>
     <string name="widget_name">Пары на сегодня</string>
     <string name="widget_description">Сегодняшние пары из сохранённого расписания</string>
     <string name="widget_today">Сегодня</string>

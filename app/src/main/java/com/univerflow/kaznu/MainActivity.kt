@@ -54,6 +54,7 @@ import com.univerflow.kaznu.data.LockPreferences
 import com.univerflow.kaznu.data.LockVault
 import com.univerflow.kaznu.data.GradeStore
 import com.univerflow.kaznu.data.ExamStore
+import com.univerflow.kaznu.data.LastGradesStore
 import com.univerflow.kaznu.data.TimetableStore
 import com.univerflow.kaznu.databinding.ActivityMainBinding
 import com.univerflow.kaznu.databinding.SettingsSheetBinding
@@ -68,6 +69,7 @@ import com.univerflow.kaznu.domain.TextZoom
 import com.univerflow.kaznu.domain.GradeTotals
 import com.univerflow.kaznu.domain.ExamItem
 import com.univerflow.kaznu.domain.ExamKind
+import com.univerflow.kaznu.domain.LastGrades
 import com.univerflow.kaznu.domain.Timetable
 import com.univerflow.kaznu.download.DownloadEvent
 import com.univerflow.kaznu.download.DownloadService
@@ -100,6 +102,7 @@ import com.univerflow.kaznu.ui.LockUi
 import com.univerflow.kaznu.ui.Motion
 import com.univerflow.kaznu.ui.NoticeLoadingOverlay
 import com.univerflow.kaznu.ui.ThemeMode
+import com.univerflow.kaznu.ui.LastGradesActivity
 import com.univerflow.kaznu.ui.TimetableActivity
 import com.univerflow.kaznu.ui.attempt
 import com.univerflow.kaznu.ui.launchCatching
@@ -410,16 +413,26 @@ class MainActivity : AppCompatActivity() {
      */
     private fun keepGrades(totals: GradeTotals) {
         val state = model.state.value
-        if (!state.gradeAlerts || state.paused || sessionChanging || model.sessionClearPending || !state.canBrowse ||
+        if (state.paused || sessionChanging || model.sessionClearPending || !state.canBrowse ||
             !SitePolicy.gradesPage(binding.webView.url)) return
+        val seen = totals.copy(language = state.language.siteCode)
+        keepLastGrades(seen)
+        if (!state.gradeAlerts) return
         val store = GradeStore.of(applicationContext)
         val since = store.generation
-        val seen = totals.copy(language = state.language.siteCode)
         lifecycleScope.launch(Dispatchers.IO) { store.keep(seen, since) }
     }
 
+    /** The totals as the error screen's «Последние оценки», with or without background alerts. */
+    private fun keepLastGrades(totals: GradeTotals) {
+        val saved = LastGrades.of(totals, System.currentTimeMillis()) ?: return
+        val store = LastGradesStore.of(applicationContext)
+        val since = store.generation
+        lifecycleScope.launch(Dispatchers.IO) { store.write(saved, since) }
+    }
+
     private fun readJournal() {
-        if (!model.state.value.gradeAlerts || !SitePolicy.journalPage(binding.webView.url)) return
+        if (!SitePolicy.journalPage(binding.webView.url)) return
         binding.webView.evaluateJavascript(GradesMessage.READ) { value ->
             if (!isDestroyed && SitePolicy.journalPage(binding.webView.url)) GradesMessage.fromScript(value)?.let(::keepGrades)
         }
@@ -445,6 +458,17 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** «Последние оценки» under a network error, once totals are saved. */
+    private fun offerLastGrades() {
+        binding.errorGrades.isVisible = false
+        if (errorMessageId != R.string.network_error && errorMessageId != R.string.tls_error) return
+        val store = LastGradesStore.of(applicationContext)
+        lifecycleScope.launch {
+            val saved = withContext(Dispatchers.IO) { store.read() != null }
+            binding.errorGrades.isVisible = saved && pageFailed && (errorMessageId == R.string.network_error || errorMessageId == R.string.tls_error)
+        }
+    }
+
     /** The widget and the class alarm follow the reminder setting and the app's language. */
     private fun syncToday(state: AppState) {
         val key = state.reminders to state.language
@@ -458,6 +482,7 @@ class MainActivity : AppCompatActivity() {
         chrome.configure(canOpenDrawer = { !documents.isOpen }, onToolbar = ::toolbarAction, onNavigation = ::navigationAction)
         binding.errorRetry.setOnClickListener { retryFailedPage() }
         binding.errorOffline.setOnClickListener { startActivity(TimetableActivity.intent(this, model.state.value.language)) }
+        binding.errorGrades.setOnClickListener { startActivity(LastGradesActivity.intent(this, model.state.value.language)) }
         binding.errorBack.setOnClickListener {
             if (sessionChanging) return@setOnClickListener
             if (model.sessionClearPending) finishInterruptedSessionClear()
@@ -636,6 +661,7 @@ class MainActivity : AppCompatActivity() {
         binding.errorMessage.text = languages.of(state.language).webErrorText(errorMessageId, errorHttpStatus)
         binding.errorRetry.text = text(R.string.retry)
         binding.errorOffline.text = text(R.string.offline_schedule)
+        binding.errorGrades.text = text(R.string.last_grades)
         binding.errorBack.text = text(R.string.return_to_site)
         val changedLanguage = rendered.language != null && rendered.language != state.language
         rendered = rendered.copy(language = state.language)
@@ -1045,6 +1071,7 @@ class MainActivity : AppCompatActivity() {
         GradeReportFiles.clear(this)
         withContext(Dispatchers.IO) { TodaySync.erase(applicationContext) }
         withContext(GradeAlerts.lane) { GradeAlerts.erase(applicationContext) }
+        withContext(Dispatchers.IO) { LastGradesStore.of(applicationContext).erase() }
         gradesKey = null
         DownloadService.cancelAll(this)
         documents.close(false)
@@ -1166,6 +1193,7 @@ class MainActivity : AppCompatActivity() {
         binding.errorIcon.setImageResource(if (id == R.string.network_error || id == R.string.tls_error) R.drawable.ic_cloud_off else R.drawable.ic_warning)
         Motion.show(binding.errorOverlay, model.state.value.canBrowse)
         offerOfflineSchedule()
+        offerLastGrades()
         Motion.progress(binding.loading, false)
         pageLoading = false
         renderHeading()

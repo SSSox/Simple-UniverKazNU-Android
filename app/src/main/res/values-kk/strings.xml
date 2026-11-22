@@ -361,6 +361,9 @@
     <string name="timetable_none">Кесте әлі сақталмаған. Желі болғанда оны қолданбада ашыңыз.</string>
     <string name="timetable_now">Жүріп жатыр</string>
     <string name="timetable_note">Желісіз кесте сіз соңғы ашқан аптаны көрсетеді.</string>
+    <string name="last_grades">Соңғы бағалар</string>
+    <string name="last_grades_none">Бағалар әлі сақталмаған. Желі болғанда журналды қолданбада ашыңыз.</string>
+    <string name="last_grades_note">Сіз соңғы көрген қорытындылар көрсетілген. Олар өзгерген болуы мүмкін.</string>
     <string name="widget_name">Бүгінгі сабақтар</string>
     <string name="widget_description">Сақталған кестедегі бүгінгі сабақтар</string>
     <string name="widget_today">Бүгін</string>
