@@ -4,7 +4,7 @@
     'use strict';
     if (location.origin !== 'https://univer.kaznu.kz' || window.__univerTablesV1) return;
     var MIN_FIT = 0.8, MIN_ZOOM = 0.25, MAX_ZOOM = 4;
-    var language = 'ru', viewer = null, fitted = new Map();
+    var clean = window.__univerDomV1.clean, language = 'ru', viewer = null, fitted = new Map();
     var SKIP = '.univer-app-cards,.univer-app-courses,.univer-app-materials,.univer-app-document-layout,.univer-app-pairs,.univer-app-nav-table';
     function labels() {
         return language === 'en' ? {expand:'Expand', close:'Close', bigger:'Zoom in', smaller:'Zoom out', fit:'Fit width', table:'Table', zoom:'Zoom'} :
@@ -14,7 +14,6 @@
     function mutate(action) {
         if (window.__univerMobileV1) window.__univerMobileV1.mutate(action); else action();
     }
-    function clean(node) { return String(node?.textContent || '').replace(/\s+/g, ' ').trim(); }
     function boxTable(box) {
         var table = box.firstElementChild;
         return table && table.tagName === 'TABLE' && !table.matches(SKIP) ? table : null;

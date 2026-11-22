@@ -7,7 +7,7 @@
 (function () {
     'use strict';
     if (location.origin !== 'https://univer.kaznu.kz' || window.__univerSyllabusV1) return;
-    var common = window.__univerDomV1, clean = common.clean, fold = common.fold, ownRows = common.ownRows;
+    var common = window.__univerDomV1, clean = common.clean, fold = common.fold, ownRows = common.ownRows, setText = common.setText, setHidden = common.setHidden, setAttribute = common.attr;
     // How much is read, kept and shown.
     var LIMITS = {
         page: 4 * 1024 * 1024,   // characters of one fetched page
@@ -552,9 +552,6 @@
         return node;
     }
     function button(className, content) { var node = element('button', className, content); node.type = 'button'; return node; }
-    function setText(node, value) { if (node.textContent !== value) node.textContent = value; }
-    function setHidden(node, hidden) { if (node.hidden !== hidden) node.hidden = hidden; }
-    function setAttribute(node, name, value) { if (node.getAttribute(name) !== value) node.setAttribute(name, value); }
     function motion() { return window.__univerMotionUI; }
     // A height change is animated from where the box was; a keyboard press (detail 0) changes it at once.
     // Inside batch() the change waits for the others: every height is read, every box written, then read again once.

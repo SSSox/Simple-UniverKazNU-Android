@@ -2,7 +2,7 @@
 (function () {
     'use strict';
     if (location.origin !== 'https://univer.kaznu.kz' || window.__univerNewsV1) return;
-    var dom = window.__univerDomV1, setText = dom.setText, setHidden = dom.setHidden, el = dom.el;
+    var dom = window.__univerDomV1, setText = dom.setText, setHidden = dom.setHidden, attr = dom.attr, el = dom.el;
     var key = 'univer.desktop.news-filter.v1', countKey = 'univer.desktop.news-page-count.v1', state = null, language = 'ru', timer = null;
     var folds = new Map(), foldSources = new WeakMap(), expanded = new WeakMap(), foldObserver = null, foldTimer = null, foldSequence = 0;
     // Bounds of the read-only page fetches: one response and its wait, one search batch, the highest page ever probed.
@@ -47,8 +47,6 @@
         if (node?.matches?.('tr.news')) return Array.from(node.cells).map(cell => clean(cell.querySelector(':scope > .univer-app-news-body') || cell)).join(' ');
         return (node?.textContent || '').replace(/\s+/g, ' ').trim();
     }
-    /** Writes only real changes, so DOM observers are not woken for nothing. */
-    function attr(node, name, value) { if (node.getAttribute(name) !== value) node.setAttribute(name, value); }
     /** Text for matching a search: lower case, "ё" read as "е". */
     function foldCase(value) { return value.toLocaleLowerCase().replace(/ё/g, 'е'); }
 

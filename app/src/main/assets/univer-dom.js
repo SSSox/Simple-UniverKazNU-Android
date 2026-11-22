@@ -61,6 +61,7 @@
         /** Writes only real changes, so DOM observers are not woken for nothing. */
         setText: function (node, value) { if (node.textContent !== value) node.textContent = value; },
         setHidden: function (node, value) { if (node.hidden !== value) node.hidden = value; },
+        attr: function (node, name, value) { if (node.getAttribute(name) !== value) node.setAttribute(name, value); },
         /**
          * «В календарь»: the event as Android reads it (web/CalendarMessage.kt). Wall-clock times without a zone, as the
          * site shows them; [until] (a Date) makes a class repeat weekly through that day.
