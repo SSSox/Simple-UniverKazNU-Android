@@ -81,6 +81,7 @@ import com.univerflow.kaznu.main.LockFlow
 import com.univerflow.kaznu.main.MainChrome
 import com.univerflow.kaznu.main.NetworkWatch
 import com.univerflow.kaznu.main.NoticeFlow
+import com.univerflow.kaznu.main.PageClient
 import com.univerflow.kaznu.main.ReportFlow
 import com.univerflow.kaznu.main.SettingsForms
 import com.univerflow.kaznu.main.SiteData
@@ -1212,7 +1213,7 @@ class MainActivity : AppCompatActivity() {
         binding.webView.configureSecureSettings()
         binding.webView.enableBackForwardCache()
         baseTextZoom = binding.webView.settings.textZoom
-        binding.webView.webViewClient = PageClient()
+        binding.webView.webViewClient = PageClient(pageHost)
         binding.webView.webChromeClient = object : WebChromeClient() {
             override fun onShowFileChooser(webView: WebView, callback: ValueCallback<Array<Uri>>, params: FileChooserParams) =
                 fileChooser.show(callback, params)
@@ -1235,153 +1236,45 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** Navigation policy, page lifecycle, errors and renderer loss of the website's WebView. */
-    private inner class PageClient : WebViewClient() {
-        override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
-            // WebView omits shouldOverrideUrlLoading for POST: it must not send a form to another origin.
-            if (request.isForMainFrame && !SitePolicy.trusted(request.url.toString()))
-                return WebResourceResponse("text/plain", "UTF-8", 403, "Blocked", emptyMap(),
-                    java.io.ByteArrayInputStream(byteArrayOf()))
-            if (Trackers.blocked(request.url.host)) return Trackers.emptyReply()
-            val address = request.url.toString()
-            if (address.contains("bvi", ignoreCase = true) && BviStub.stubs(address, request.method, model.state.value.mobileLayout,
-                    CookieManager.getInstance().getCookie(SitePolicy.ORIGIN))) return BviStub.reply()
-            return null
-        }
-        override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-            if (!request.isForMainFrame) return !SitePolicy.trusted(request.url.toString())
-            if (logoutNavigation.onNavigation(request)) return true
-            // «Онлайн тест»: the student's tap arms the one server redirect to the test portal that answers it; the portal opens
-            // like a tapped link (the link window or the browser), and the page that never left stops showing its cover.
-            val address = request.url.toString()
-            if (SitePolicy.onlineTestExit(address, request.method, request.isRedirect, SystemClock.elapsedRealtime() < onlineTestUntil)) {
-                onlineTestUntil = 0L; settlePage(); openLink(address); return true
-            }
-            if (SitePolicy.onlineTestTap(address, request.method, request.hasGesture(), request.isRedirect)) onlineTestUntil = SystemClock.elapsedRealtime() + ONLINE_TEST_WINDOW_MS
-            else if (request.hasGesture() && !request.isRedirect) onlineTestUntil = 0L
-            // The site sends a request of an ended session to its login form: reopen that page after the login.
-            if (SitePolicy.loginPage(request.url.toString()) && (request.isRedirect || !request.hasGesture()))
-                navigationGetUrl?.takeIf(SitePolicy::resumable)?.let(automation::resumeAfterLogin)
-            else if (request.hasGesture() && !request.isRedirect) automation.resumeAfterLogin(null)
-            navigationGetUrl = request.url.toString().takeIf { request.method.equals("GET", true) && SitePolicy.trusted(it) }
-            if (!sessionChanging && websiteLanguage.onNavigation(request)) return false
-            // A tap on Главная or the news pager opens the direct news list; the login redirect still passes
-            // through the site's notice route.
-            if (!sessionChanging && request.hasGesture() && !request.isRedirect) {
-                SitePolicy.newsShortcut(request.url.toString())?.takeIf { it != request.url.toString() }?.let {
-                    navigationGetUrl = it; leavePage(it); view.loadUrl(it); return true
-                }
-            }
-            return route(request.url.toString(), SitePolicy.externalNavigation(request.url.toString(), request.hasGesture(), request.isRedirect, request.method)).also { routed ->
-                if (!routed && !sessionChanging && request.hasGesture() && !request.isRedirect) leavePage(request.url.toString())
-            }
-        }
+    /** What the website client may use of this screen. */
+    private val pageHost = object : PageClient.Host {
+        override val model get() = this@MainActivity.model
+        override val automation get() = this@MainActivity.automation
+        override val mobilePage get() = this@MainActivity.mobilePage
+        override val shortcutBridge get() = this@MainActivity.shortcutBridge
+        override val channel get() = this@MainActivity.channel
+        override val notices get() = this@MainActivity.notices
+        override val documents get() = this@MainActivity.documents
+        override val noticeLoading get() = this@MainActivity.noticeLoading
+        override val noticePresentation get() = this@MainActivity.noticePresentation
+        override val cover get() = this@MainActivity.cover
+        override val webView get() = binding.webView
+        override val isDestroyed get() = this@MainActivity.isDestroyed
+        override val sessionChanging get() = this@MainActivity.sessionChanging
+        override var navigationGetUrl by this@MainActivity::navigationGetUrl
+        override var pageEpoch by this@MainActivity::pageEpoch
+        override var pageFailed by this@MainActivity::pageFailed
+        override var pageTitle by this@MainActivity::pageTitle
+        override var pageLoading by this@MainActivity::pageLoading
+        override var failedPageUrl by this@MainActivity::failedPageUrl
+        override var rendererUnavailable by this@MainActivity::rendererUnavailable
+        override var lostPageUrl by this@MainActivity::lostPageUrl
+        override val pageSkeletonVisible get() = binding.pageSkeleton.isVisible
 
-        override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
-            pageEpoch++
-            navigationGetUrl = navigationGetUrl?.takeIf { it == url }
-            automation.pageStarted()
-            binding.root.removeCallbacks(pageAbandoned)
-            cover.started()
-            // A tap already named the page coming; the redirects on the way there must not change its shape.
-            if (!binding.pageSkeleton.isVisible) binding.pageSkeleton.show(url)
-            mobilePage.pageStarted(url)
-            if (SitePolicy.trusted(url)) {
-                if (SitePolicy.readNotice(url) &&
-                    model.state.value.hasCredentials && !model.state.value.paused && !model.guard.blocked)
-                    noticeLoading.status(AutomationStatus.NOTICE_CONFIRMING)
-                Motion.progress(binding.loading, true)
-                pageFailed = false
-                pageTitle = null; pageLoading = true
-                renderHeading()
-            } else if (url != "about:blank") view.stopLoading()
-        }
-
-        override fun onPageFinished(view: WebView, url: String?) {
-            if (url != view.url) return
-            noticePresentation.apply()
-            if (!cover.leaving) Motion.progress(binding.loading, false)
-            flushCookiesSoon()
-            mobilePage.apply(model.state.value.mobileLayout, model.state.value.language)
-            if (!SitePolicy.trusted(url) || sessionChanging) return
-            val finishedEpoch = pageEpoch
-            view.evaluateJavascript(PageScripts.STATUS) { result ->
-                if (isDestroyed || finishedEpoch != pageEpoch || url != view.url || sessionChanging) return@evaluateJavascript
-                // The request callback knows its method and retry URL. A later status probe
-                // must not erase that information or replace a network/TLS failure.
-                if (pageFailed) return@evaluateJavascript
-                val status = result.toIntOrNull() ?: 0
-                if (status >= 400) {
-                    failedPageUrl = navigationGetUrl
-                    showError(httpErrorMessage(status), status)
-                } else {
-                    pageArrived()
-                    cover.loaded()
-                    model.pageRecovery.reset()
-                    automation.pageFinished()
-                    if (!model.state.value.mobileLayout) updatePageTitle()
-                }
-            }
-        }
-
-        override fun onPageCommitVisible(view: WebView, url: String?) {
-            pageArrived()
-            noticePresentation.apply()
-            mobilePage.apply(model.state.value.mobileLayout, model.state.value.language)
-        }
-
-        /** A load that fails starts like any other, so only a committed document takes the error screen away. */
-        private fun pageArrived() {
-            if (!pageFailed) Motion.show(binding.errorOverlay, false)
-        }
-
-        override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
-            // A tapped link still has the old address in view.url here, and the browser's own error page comes next.
-            if (request.isForMainFrame) {
-                failedPageUrl = request.url.toString().takeIf { request.method.equals("GET", true) && SitePolicy.trusted(it) }
-                showError(R.string.network_error)
-            }
-        }
-
-        override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, response: WebResourceResponse) {
-            if (request.isForMainFrame && request.url.toString() == view.url && response.statusCode >= 400) {
-                failedPageUrl = request.url.toString().takeIf { request.method.equals("GET", true) && SitePolicy.trusted(it) }
-                showError(httpErrorMessage(response.statusCode), response.statusCode)
-            }
-        }
-
-        override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) {
-            handler.cancel()
-            // A tapped link never commits after this: without the error screen it would just wait for the cover's timeout.
-            if (error.url == view.url || error.url == navigationGetUrl) {
-                failedPageUrl = navigationGetUrl?.takeIf(SitePolicy::trusted)
-                showError(R.string.tls_error)
-            }
-        }
-
-        override fun onFormResubmission(view: WebView, dontResend: Message, resend: Message) { dontResend.sendToTarget() }
-
-        override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
-            noticeLoading.dismiss()
-            noticePresentation.close()
-            mobilePage.close()
-            shortcutBridge.close()
-            channel.close()
-            notices.rendererGone()
-            rendererUnavailable = true
-            pageEpoch++
-            lostPageUrl = view.url?.takeIf(SitePolicy::resumable)
-            documents.close(false)
-            automation.close() // Detaches an attempt in flight; the attempt budgets stay.
-            binding.webView.isVisible = false
-            (view.parent as? android.view.ViewGroup)?.removeView(view)
-            view.destroy()
-            failedPageUrl = null
-            showError(R.string.webview_crashed)
-            // A recreated screen reopens the section by a GET; a POST is never replayed.
-            recoverRenderer()
-            return true
-        }
+        override fun onLogoutNavigation(request: WebResourceRequest) = logoutNavigation.onNavigation(request)
+        override fun onWebsiteLanguageNavigation(request: WebResourceRequest) = websiteLanguage.onNavigation(request)
+        override fun route(url: String, userGesture: Boolean) = this@MainActivity.route(url, userGesture)
+        override fun openLink(url: String) = this@MainActivity.openLink(url)
+        override fun leavePage(url: String) = this@MainActivity.leavePage(url)
+        override fun settlePage() = this@MainActivity.settlePage()
+        override fun cancelPageAbandon() { binding.root.removeCallbacks(pageAbandoned) }
+        override fun showPageSkeleton(url: String?) = binding.pageSkeleton.show(url)
+        override fun showProgress(visible: Boolean) = Motion.progress(binding.loading, visible)
+        override fun hideErrorOverlay() = Motion.show(binding.errorOverlay, false)
+        override fun renderHeading() = this@MainActivity.renderHeading()
+        override fun updatePageTitle() = this@MainActivity.updatePageTitle()
+        override fun showError(id: Int, httpStatus: Int?) = this@MainActivity.showError(id, httpStatus)
+        override fun recoverRenderer() = this@MainActivity.recoverRenderer()
     }
 
     /** Where a link goes: the document viewer, a download, the website itself, or another app. */
@@ -1705,7 +1598,6 @@ class MainActivity : AppCompatActivity() {
     private companion object {
         /** How long a tapped link may take to start a page before the screen goes back to the page it left. */
         const val LEAVE_TIMEOUT_MS = 15_000L
-        const val ONLINE_TEST_WINDOW_MS = 30_000L
         /** How long a pull waits for the page to say it has typed text or an open window. */
         const val PULL_GUARD_MS = 1_500L
         /** The pull's circle goes away by then even if the page neither shows nor fails. */
