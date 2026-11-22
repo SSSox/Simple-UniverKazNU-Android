@@ -379,12 +379,17 @@ class WebViewAutomationTest {
             <a class="simplemodal-close" title="Close"></a><div class="simplemodal-wrap" style="height:100%;width:100%">$reauthFixture</div></div>""",
             reauthScript, "https://univer.kaznu.kz/student")
         phoneWidth(320)
+        // The keyboard reaches the adapter as the visual viewport's resize event; a repeated render reads nothing.
+        eval("""(function(){var l=[];window.__vvHeight=null;Object.defineProperty(window,'visualViewport',{value:{
+            get height(){return window.__vvHeight==null?innerHeight:window.__vvHeight;},offsetTop:0,
+            addEventListener:function(t,f){if(t==='resize')l.push(f);},removeEventListener:function(t,f){l=l.filter(function(g){return g!==f;});}}});
+            window.__vvResize=function(h){window.__vvHeight=h;l.forEach(function(f){f();});};})()""")
         eval("document.getElementById('auth_modal').style.display='block'")
         mobile()
         assertEquals("true", eval("(function(){var r=document.getElementById('simplemodal-container').getBoundingClientRect();return r.left>=0&&r.right<=document.documentElement.clientWidth&&r.bottom<=innerHeight;})()"))
         assertEquals("true", eval("document.getElementById('modal_auth_pass').getBoundingClientRect().width>200 && getComputedStyle(document.getElementById('modal_auth_pass')).fontSize==='16px'"))
-        eval("Object.defineProperty(window,'visualViewport',{value:{height:260,offsetTop:0,addEventListener:function(){},removeEventListener:function(){}}});")
         mobile()
+        eval("window.__vvResize(260)")
         assertEquals("true", eval("document.getElementById('simplemodal-container').getBoundingClientRect().bottom<=248.5"))
         assertEquals("true", eval("document.getElementById('simplemodal-container').scrollHeight>document.getElementById('simplemodal-container').clientHeight"))
         mobile(false)
