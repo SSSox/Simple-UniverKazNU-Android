@@ -279,7 +279,7 @@ const names = set => [...new Set(Object.keys(set).map(k => k.replace(/#.*$/, '')
 // %% too: a lone % left by a translation breaks Android's formatter.
 const holes = text => (text.match(/%(\d+\$)?[sd]|%%|%/g) || []).sort().join(',');
 // Words Kazakh writes the same way as Russian.
-const SAME_IN_KAZAKH_XML = new Set(['Логин', 'Кабинет', 'Аккаунт', 'Силлабус.pdf', 'Файл', 'Транскрипт', 'Силлабус', 'Масштаб %1$d%%', '6 цифр', '%d мин']);
+const SAME_IN_KAZAKH_XML = new Set(['Логин', 'Кабинет', 'Аккаунт', 'Силлабус.pdf', 'Файл', 'Транскрипт', 'Силлабус', 'Масштаб %1$d%%', '6 цифр', '%d мин', 'Бакалавр']);
 
 test('strings.xml has every text in Russian, Kazakh and English with the same placeholders', () => {
     assert.ok(Object.keys(ru).length > 200, 'texts found: ' + Object.keys(ru).length);
