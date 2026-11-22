@@ -16,6 +16,8 @@ The app is an unofficial client of the [Univer KazNU](https://univer.kaznu.kz/) 
 | Downloaded files | The phone's Downloads folder and the app's downloads list | Nowhere |
 | Grade report (PDF or PNG) | The app's temporary folder; deleted on sign-out, and once older than an hour at the next app start or new report | Only to the app you pick in the Share sheet, or to the print service |
 | The saved week of the schedule (courses, times, rooms, teachers) | A file in the app's folder, not backed up; deleted on sign-out | Nowhere. The "Offline schedule" screen, the "Today’s classes" widget and class reminders show it; with a PIN the widget and reminders do not name the course |
+| The latest journal totals (courses and scores you saw in the journal or Кабинет) | A file in the app's folder, not backed up; replaced each time you view the journal, deleted on sign-out | Nowhere. The "Latest grades" screen shows them; it opens from a button on the network error screen |
+| The exam and midterm schedule (course, time, room) | A file in the app's folder, not backed up; deleted on sign-out | Nowhere. It drives the reminders the evening before and before the start when reminders are on; with a PIN the reminder does not name the course |
 | The journal goal and the "new" marks | The app's WebView storage | Nowhere |
 | Journal totals for new-grade notifications (only while they are on) | A file in the app's folder, not backed up; deleted when the notifications are turned off and on sign-out | Nowhere. The check itself sends one GET of the journal to `https://univer.kaznu.kz` with the current session's cookies, without a password and without forms. If the site renews the session cookie in its answer, the app keeps it as a browser would, so a check can extend the session on the site |
 | An "Add to calendar" event (title, time, room) | The app does not keep it | To the calendar app the button opens. From then on the calendar keeps the event and may sync it with its own account |
@@ -30,7 +32,7 @@ The app is an unofficial client of the [Univer KazNU](https://univer.kaznu.kz/) 
 
 ## Deleting data
 
-- "Sign out" deletes the WebView cookies, storage and cache, including the link window's data, grade reports, the saved schedule and journal totals, the encrypted login and password and the PIN; reminders and background grade checks stop. Language and other settings stay.
+- "Sign out" deletes the WebView cookies, storage and cache, including the link window's data, grade reports, the saved schedule, the exam schedule and journal totals, the encrypted login and password and the PIN; reminders and background grade checks stop. Language and other settings stay.
 - "Delete data and sign in again" on the PIN screen (if the PIN is forgotten) deletes the same.
 - Uninstalling the app deletes all of its data; downloaded files stay in Downloads.
 
