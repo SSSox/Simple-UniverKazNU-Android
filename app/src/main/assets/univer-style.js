@@ -403,7 +403,8 @@
 :root.univer-mobile #l4 p.univer-app-attendance-overall { margin:0 0 8px!important; font-size:var(--u-fs-meta)!important; font-weight:600; color:var(--u-muted); }
 :root.univer-mobile #l4 p.univer-app-attendance-overall-value { color:var(--u-ink); font-size:var(--u-fs-section)!important; font-weight:600; }
 /* Control periods (РК1, РК2, exam) are score tiles: the number leads, the maximum and a bar give scale. */
-:root.univer-mobile #l4 :is(.univer-app-attendance-overview,.univer-app-attendance-filter-note,.univer-app-attendance-overall-value)[hidden] { display:none!important; }
+:root.univer-mobile #l4 :is(.univer-app-attendance-overview,.univer-app-attendance-limit,.univer-app-attendance-filter-note,.univer-app-attendance-overall-value)[hidden] { display:none!important; }
+:root.univer-mobile #l4 p.univer-app-attendance-limit { margin:0 0 12px!important; padding:10px 14px!important; border-radius:12px; background:var(--u-band-soft); color:var(--u-band-ink)!important; font-size:var(--u-fs-meta)!important; font-weight:600; line-height:1.4!important; text-align:left; }
 :root.univer-mobile #l4 .univer-app-attendance-scores { display:flex; flex-wrap:wrap; gap:8px; }
 :root.univer-mobile #l4 .univer-app-score { position:relative; display:grid; grid-template-columns:auto 1fr; align-items:baseline; column-gap:4px; min-width:104px; box-sizing:border-box; padding:8px 12px 12px; overflow:hidden; border:1px solid var(--u-brand-line); border-radius:10px; background:var(--u-brand-soft); }
 :root.univer-mobile #l4 .univer-app-score-label { grid-column:1/-1; color:var(--u-brand); font-size:var(--u-fs-caption); font-weight:600; letter-spacing:.02em; }

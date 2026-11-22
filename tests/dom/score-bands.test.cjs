@@ -200,6 +200,28 @@ test('each course counts its «н» marks by class type; a course without any sa
   en.w.close();
 });
 
+const missedTerm = hours => '<table class="wrappertable"><tr id="l4"><td class="center"><table class="mt">' +
+  '<tr class="top"><td class="ct">Социология ([РК1 + РК2 + Экз] (100)) 01.09.2026 - 12.12.2026</td></tr><tr class="mid"><td class="ct"><b>РК1 (100): 63</b></td></tr>' +
+  marked(1, 'лекция', ['н', 'Н', '5', 'нб']) + marked(2, 'семинар', ['н', '4']) + marked(3, 'лабораторная', ['н']) +
+  '<tr class="top"><td class="ct">Психология ([РК1 + РК2 + Экз] (100)) 01.09.2026 - 12.12.2026</td></tr><tr class="mid"><td class="ct"><b>РК1 (100): 80</b></td></tr>' +
+  marked(4, 'лекция', Array(hours - 4).fill('н').concat(['5'])) + '</table></td></tr></table>';
+
+test('more than 25 missed hours in the term warns over every course, whichever course is shown', async () => {
+  const shown = p => p.all('.univer-app-attendance-limit').filter(n => !n.hidden).map(n => n.textContent);
+  const quiet = await page('ru', missedTerm(25));
+  assert.deepEqual(shown(quiet), []);
+  quiet.w.close();
+  const p = await page('ru', missedTerm(26));
+  assert.deepEqual(shown(p), ['Пропущено 26 ч за семестр: это больше 25 ч']);
+  p.all('.univer-app-attendance-course-list button').find(b => b.textContent === 'Социология').click();
+  p.all('.univer-app-attendance-filters button').find(b => b.dataset.kind === 'seminar').click();
+  assert.deepEqual(shown(p), ['Пропущено 26 ч за семестр: это больше 25 ч']);
+  p.w.close();
+  const kz = await page('kz', missedTerm(30));
+  assert.deepEqual(shown(kz), ['Семестрде 30 сағат қатыспадыңыз: бұл 25 сағаттан көп']);
+  kz.w.close();
+});
+
 test('the report carries each course\'s absences and the chosen goal', async () => {
   const w = new JSDOM('<!doctype html><html><body>' + MISSED + '</body></html>', {url: 'https://univer.kaznu.kz/student/attendance/full/', runScripts: 'outside-only'}).window;
   if (w.document.readyState === 'loading') await new Promise(done => w.document.addEventListener('DOMContentLoaded', done));
