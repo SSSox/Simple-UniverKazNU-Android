@@ -130,6 +130,7 @@
 :root.univer-mobile .univer-app-overview-body { padding:12px 20px 16px; }
 :root.univer-mobile .univer-app-overview-caption { margin:0 0 8px!important; color:var(--u-muted,#5b6b7c); font-size:14px!important; }
 :root.univer-mobile .univer-app-overview-empty { margin:4px 0!important; color:var(--u-muted,#5b6b7c); }
+:root.univer-mobile .univer-app-overview-stale { margin:10px 0 0!important; color:var(--u-muted,#5b6b7c); font-size:13px!important; }
 :root.univer-mobile .univer-app-overview :is(ol,ul) { margin:0!important; padding:0!important; list-style:none!important; }
 :root.univer-mobile .univer-app-overview li { display:flex; align-items:flex-start; gap:14px; margin:0!important; padding:10px 0!important; border-top:1px solid var(--u-line,#dfe5ec); list-style:none!important; }
 :root.univer-mobile .univer-app-overview li:first-child { border-top:0; }
@@ -150,6 +151,10 @@
 :root.univer-mobile .univer-app-overview-request { display:flex; align-items:center; gap:12px; width:100%; margin:-6px -10px; padding:6px 10px; border-radius:9px; color:inherit!important; text-decoration:none!important; }
 :root.univer-mobile .univer-app-overview-request:focus-visible { outline:2px solid var(--u-brand,#1b5fa6); outline-offset:0; }
 :root.univer-mobile .univer-app-overview-request>.univer-app-status { margin-left:auto; }
+/* The week's independent work under the two panels: course, its entry and score, and the task in two lines. */
+:root.univer-mobile .univer-app-overview-work-list .univer-app-overview-course-link { display:block; color:var(--u-brand,#1b5fa6)!important; font-size:14px; font-weight:500; line-height:1.4; text-decoration:none; }
+:root.univer-mobile .univer-app-overview-work-list .univer-app-overview-course-link:hover { text-decoration:underline; }
+:root.univer-mobile .univer-app-overview-work-topic { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; margin:4px 0 0!important; overflow:hidden; color:var(--u-ink,#16283b); font-size:13px!important; line-height:1.45; overflow-wrap:anywhere; }
 :root.univer-mobile .univer-app-overview-score { position:relative; display:inline-flex; align-items:baseline; gap:6px; min-width:84px; padding:6px 10px 9px; border:1px solid var(--u-line,#dfe5ec); border-radius:9px; overflow:hidden; }
 :root.univer-mobile .univer-app-overview-score-label { color:var(--u-muted,#5b6b7c); font-size:12px; }
 :root.univer-mobile .univer-app-overview-score-value { color:var(--u-ink,#16283b); font-size:16px; font-weight:650; font-variant-numeric:tabular-nums; }
