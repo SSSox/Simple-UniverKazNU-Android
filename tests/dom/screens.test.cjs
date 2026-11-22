@@ -382,7 +382,8 @@ function tap(w, node) {
 test("«В календарь» sends a coming exam to the calendar only on the student's own tap", () => {
   const sent = [];
   const rows = slot(stamp(-2, 10), 'Прошедшая дисциплина', 'Экзамен') + slot(stamp(3, 11), 'Первая дисциплина', 'Экзамен <i>(Письменный)</i>');
-  const p = page('/student/myexam/schedule/', schedule(rows), { native: message => sent.push(message) });
+  // The page also reports its coming exams to the app (tested below); only the calendar messages count here.
+  const p = page('/student/myexam/schedule/', schedule(rows), { native: message => { if (message.startsWith('univer-calendar:')) sent.push(message); } });
   p.apply();
   const buttons = p.all('.univer-scr-calendar');
   // The next exam's card and its own slot; a past exam has none.
@@ -406,4 +407,51 @@ test("without the app's sender (Original, a frame) the exam days have no calenda
   p.apply();
   assert.equal(p.all('.univer-scr-calendar').length, 0);
   p.close();
+});
+
+function localStart(days, hour) {
+  const at = new Date(); at.setDate(at.getDate() + days); at.setHours(hour, 0, 0, 0);
+  const two = n => String(n).padStart(2, '0');
+  return `${at.getFullYear()}-${two(at.getMonth() + 1)}-${two(at.getDate())}T${two(hour)}:00`;
+}
+
+test('the exam page reports only its coming exams to the app, as keyed local times, once per change', () => {
+  const sent = [];
+  const rows = slot(stamp(-2, 10), 'Прошедшая дисциплина', 'Экзамен') + slot(stamp(3, 9), 'Первая дисциплина', 'Консультация') +
+    slot(stamp(3, 11), 'Первая дисциплина', 'Экзамен <i>(Письменный)</i>') + slot(stamp(10, 13), 'Вторая дисциплина', 'Экзамен');
+  const p = page('/student/myexam/schedule/', schedule(rows), { native: message => sent.push(message) });
+  p.apply();
+  p.apply();
+  const exams = sent.filter(message => message.startsWith('univer-exams:'));
+  assert.equal(exams.length, 1, 'the same list is not sent twice');
+  assert.deepEqual(JSON.parse(exams[0].slice('univer-exams:'.length)), { v: 1, kind: 'exam', items: [
+    { kind: 'exam', subject: 'Первая дисциплина', start: localStart(3, 11), place: 'ФИТ · Онлайн' },
+    { kind: 'exam', subject: 'Вторая дисциплина', start: localStart(10, 13), place: 'ФИТ · Онлайн' }] });
+  p.close();
+});
+
+test('the midterm page reports its items as midterms, and a list with nothing ahead reports an empty one', () => {
+  const sent = [];
+  const midterm = page('/student/mymidterm/schedule/', schedule(slot(stamp(5, 15), 'Третья дисциплина', 'Рубежный контроль')), { native: message => sent.push(message) });
+  midterm.apply();
+  const items = JSON.parse(sent[0].slice('univer-exams:'.length));
+  assert.equal(items.kind, 'midterm');
+  assert.deepEqual(items.items.map(item => [item.kind, item.subject, item.start]), [['midterm', 'Третья дисциплина', localStart(5, 15)]]);
+  midterm.close();
+  const past = [];
+  const old = page('/student/myexam/schedule/', schedule(slot(stamp(-3, 10), 'Прошедшая дисциплина', 'Экзамен')), { native: message => past.push(message) });
+  old.apply();
+  assert.deepEqual(JSON.parse(past[0].slice('univer-exams:'.length)), { v: 1, kind: 'exam', items: [] });
+  old.close();
+});
+
+test('an empty exam page sends nothing (its rows may still be loading), and so does a page without the sender', () => {
+  const sent = [];
+  const loading = page('/student/myexam/schedule/', schedule(''), { native: message => sent.push(message) });
+  loading.apply();
+  assert.equal(sent.length, 0);
+  loading.close();
+  const plain = page('/student/myexam/schedule/', schedule(slot(stamp(3, 11), 'Первая дисциплина', 'Экзамен')));
+  assert.doesNotThrow(() => plain.apply());
+  plain.close();
 });

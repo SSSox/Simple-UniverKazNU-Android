@@ -336,12 +336,20 @@
     <string name="reminders_section">Пары</string>
     <string name="class_reminders">Напоминать о парах</string>
     <string name="class_reminders_hint">Уведомление перед парой по сохранённому расписанию. Расписание сохраняется, когда вы открываете его в приложении.</string>
-    <string name="class_reminders_on">Напомним до начала пары за выбранное время.</string>
+    <string name="class_reminders_on">Напомним до начала пары за выбранное время. Об экзаменах и рубежном контроле, открытых в приложении, — накануне в 19:00 и за то же время.</string>
     <string name="reminder_lead">%d мин</string>
     <string name="reminder_lead_description" tools:ignore="PluralsCandidate">За %d минут до пары</string>
     <string name="notifications_denied">Уведомления запрещены. Разрешите их в настройках телефона.</string>
     <string name="channel_classes">Пары</string>
     <string name="channel_classes_description">Напоминания перед парами</string>
+    <string name="channel_exams">Экзамены</string>
+    <string name="channel_exams_description">Напоминания об экзаменах и рубежном контроле</string>
+    <string name="exam_kind_exam">экзамен</string>
+    <string name="exam_kind_midterm">рубежный контроль</string>
+    <string name="exam_tomorrow">Завтра %s</string>
+    <string name="exam_tomorrow_title">Завтра %1$s: %2$s</string>
+    <string name="exam_soon">Скоро %s</string>
+    <string name="exam_title">Через %1$d мин %2$s: %3$s</string>
     <string name="grades_section">Оценки</string>
     <string name="grade_alerts">Следить за оценками в фоне</string>
     <string name="grade_alerts_hint">Через 10 минут после выхода из приложения оно заглядывает в журнал и сообщает о новых оценках. Сайт сам завершает вход, если им какое-то время не пользоваться, и тогда проверка ждёт, пока вы снова откроете приложение: пароль в фоне не вводится.</string>

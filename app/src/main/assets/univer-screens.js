@@ -257,11 +257,27 @@
         });
         return button;
     }
+    // The coming exams (or midterms, by the page) go to the app for its reminders, as local wall-clock times. The list
+    // replaces the app's copy of this kind, so it is sent whenever it changes, an empty one included; consultations are
+    // not exams. Never sent without the app's keyed sender (Original layout, frames).
+    var sentExams = '';
+    function saveExams(items, midterm) {
+        if (typeof __univerNative !== 'function') return;
+        var now = Date.now(), kind = midterm ? 'midterm' : 'exam', two = function (n) { return String(n).padStart(2, '0'); };
+        var coming = items.filter(function (item) { return item.kind !== 'consult' && item.at.getTime() > now; }).slice(0, 60).map(function (item) {
+            return {kind:kind, subject:item.name.slice(0, 200), start:item.at.getFullYear() + '-' + two(item.at.getMonth() + 1) + '-' + two(item.at.getDate()) + 'T' + hhmm(item.at),
+                place:item.place.slice(0, 200)};
+        }).filter(function (item) { return item.subject; });
+        var message = 'univer-exams:' + JSON.stringify({v:1, kind:kind, items:coming});
+        if (message === sentExams) return;
+        sentExams = message; __univerNative(message);
+    }
     function exams() {
         instructions();
         var list = document.getElementById('scheduleList'), host = list && list.closest('td');
         var items = list && host ? scheduleItems(list) : [], head = list && host ? scheduleHead(host, list) : null;
         if (!items.length) { forget('exams'); scheduleEmpty(); return; }
+        saveExams(items, /midterm/i.test(location.pathname));
         forget('scheduleEmpty');
         var next = upcoming(items), signature = language + '|' + items.map(function (i) { return i.key; }).join('#') + '|' + (next ? next.key : '');
         var view = views.exams;

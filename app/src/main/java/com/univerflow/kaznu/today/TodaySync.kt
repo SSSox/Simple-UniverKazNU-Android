@@ -3,6 +3,7 @@ package com.univerflow.kaznu.today
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import com.univerflow.kaznu.data.ExamStore
 import com.univerflow.kaznu.data.TimetableStore
 
 /** Keeps the widget and the class reminder in step with the saved week, the settings and the phone's clock. */
@@ -11,12 +12,15 @@ object TodaySync {
     fun changed(context: Context) {
         TodayWidget.refresh(context)
         ClassReminders.schedule(context)
+        ExamReminders.schedule(context)
     }
 
     /** Sign-out: the week, its alarm and its reminder go, and the widget shows that nothing is saved. */
     fun erase(context: Context) {
         TimetableStore.erase(context)
         ClassReminders.cancel(context)
+        ExamStore.erase(context)
+        ExamReminders.cancel(context)
         TodayWidget.refresh(context)
     }
 

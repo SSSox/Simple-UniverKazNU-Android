@@ -44,6 +44,7 @@
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_today_info" />
         </receiver>
         <receiver android:name=".today.ClassReminders$ReminderReceiver" android:exported="false" />
+        <receiver android:name=".today.ExamReminders$ReminderReceiver" android:exported="false" />
         <service android:name=".grades.GradeCheckJob" android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
         <receiver android:name=".today.TodaySync$TimeEvents" android:exported="false">

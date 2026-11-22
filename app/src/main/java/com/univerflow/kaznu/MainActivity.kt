@@ -53,6 +53,7 @@ import com.univerflow.kaznu.data.LocalSessionRepository
 import com.univerflow.kaznu.data.LockPreferences
 import com.univerflow.kaznu.data.LockVault
 import com.univerflow.kaznu.data.GradeStore
+import com.univerflow.kaznu.data.ExamStore
 import com.univerflow.kaznu.data.TimetableStore
 import com.univerflow.kaznu.databinding.ActivityMainBinding
 import com.univerflow.kaznu.databinding.SettingsSheetBinding
@@ -65,6 +66,8 @@ import com.univerflow.kaznu.domain.Shortcuts
 import com.univerflow.kaznu.domain.StudyFolders
 import com.univerflow.kaznu.domain.TextZoom
 import com.univerflow.kaznu.domain.GradeTotals
+import com.univerflow.kaznu.domain.ExamItem
+import com.univerflow.kaznu.domain.ExamKind
 import com.univerflow.kaznu.domain.Timetable
 import com.univerflow.kaznu.download.DownloadEvent
 import com.univerflow.kaznu.download.DownloadService
@@ -84,6 +87,7 @@ import com.univerflow.kaznu.main.TextSizeDialog
 import com.univerflow.kaznu.main.UpdateFlow
 import com.univerflow.kaznu.report.GradeReportFiles
 import com.univerflow.kaznu.grades.GradeAlerts
+import com.univerflow.kaznu.today.ExamReminders
 import com.univerflow.kaznu.today.TodaySync
 import com.univerflow.kaznu.ui.AppLockSession
 import com.univerflow.kaznu.ui.DocumentViewer
@@ -353,7 +357,7 @@ class MainActivity : AppCompatActivity() {
                     event == null -> message(R.string.calendar_error)
                     !CalendarHandoff.open(this, event) -> message(R.string.calendar_missing)
                 }
-            }, onTimetable = ::keepTimetable, onGrades = ::keepGrades) { request ->
+            }, onTimetable = ::keepTimetable, onGrades = ::keepGrades, onExams = ::keepExams) { request ->
             lifecycleScope.launch {
                 if (!attempt(false) { model.updateShortcuts(request) }) message(R.string.pin_failed)
                 shortcutBridge.configure(model.state.value.shortcuts)
@@ -389,6 +393,14 @@ class MainActivity : AppCompatActivity() {
         val since = TimetableStore.generation
         val context = applicationContext
         lifecycleScope.launch(Dispatchers.IO) { if (TimetableStore.write(context, timetable, since)) TodaySync.changed(context) }
+    }
+
+    /** The exams or midterms the schedule page lists, kept for exam reminders; under the same guard as [keepTimetable]. */
+    private fun keepExams(kind: ExamKind, items: List<ExamItem>) {
+        if (sessionChanging || model.sessionClearPending || !model.state.value.canBrowse) return
+        val since = ExamStore.generation
+        val context = applicationContext
+        lifecycleScope.launch(Dispatchers.IO) { if (ExamStore.replace(context, kind, items, since)) ExamReminders.schedule(context) }
     }
 
     /**
