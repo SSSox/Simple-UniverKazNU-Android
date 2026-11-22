@@ -324,7 +324,7 @@ internal object Rtf {
 
         private fun style() {
             val name = styleName.toString().trim().lowercase(Locale.ROOT)
-            val level = Regex("^heading ([1-9])$").find(name)?.groupValues?.get(1)?.toInt()?.coerceAtMost(6) ?: if (name == "title") 1 else null
+            val level = HEADING_STYLE.find(name)?.groupValues?.get(1)?.toInt()?.coerceAtMost(6) ?: if (name == "title") 1 else null
             if (level != null) headingStyles[styleNumber] = level
             styleName.setLength(0)
         }
@@ -361,6 +361,7 @@ internal object Rtf {
         }
     }
 
+    private val HEADING_STYLE = Regex("^heading ([1-9])$")
     private val HYPERLINK = Regex("^\\s*HYPERLINK\\s+(?:\\\\[a-z]\\s+)*\"?([^\"\\s]+)", RegexOption.IGNORE_CASE)
 
     /** Destinations marked \* that hold something the reader uses. */

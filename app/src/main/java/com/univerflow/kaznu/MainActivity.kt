@@ -643,12 +643,15 @@ class MainActivity : AppCompatActivity() {
         val changedAnimations = rendered.animations != null && rendered.animations != state.animations
         val changedShortcuts = rendered.shortcuts != null && rendered.shortcuts != state.shortcuts
         val changedLanguage = rendered.language != state.language
+        val previousShortcuts = rendered.shortcuts
         rendered = rendered.copy(mobileLayout = state.mobileLayout, animations = state.animations, shortcuts = state.shortcuts)
         mobilePage.animations = state.animations
         Motion.enabled = state.animations
-        mobilePage.shortcuts = ShortcutBridge.script(state.shortcuts)
-        // Both placeholders draw the home page with the student's own tiles, so the hand-off after a notice does not jump.
-        Shortcuts.tiles(state.shortcuts).let { binding.pageSkeleton.tiles = it; binding.noticeSkeleton.tiles = it }
+        if (previousShortcuts != state.shortcuts) {
+            mobilePage.shortcuts = ShortcutBridge.script(state.shortcuts)
+            // Both placeholders draw the home page with the student's own tiles, so the hand-off after a notice does not jump.
+            Shortcuts.tiles(state.shortcuts).let { binding.pageSkeleton.tiles = it; binding.noticeSkeleton.tiles = it }
+        }
         if (!rendererUnavailable && changedShortcuts) shortcutBridge.configure(state.shortcuts)
         if (!rendererUnavailable && (changedMobileLayout || changedAnimations || changedLanguage))
             mobilePage.apply(state.mobileLayout, state.language)

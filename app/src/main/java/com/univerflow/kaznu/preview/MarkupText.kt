@@ -47,12 +47,22 @@ internal object HtmlText {
 
     /** The page's characters in its declared charset, or as [TextPreview] detects them. */
     fun decode(bytes: ByteArray): String {
-        val declared = Regex("charset\\s*=\\s*[\"']?([A-Za-z0-9_-]+)", RegexOption.IGNORE_CASE)
-            .find(String(bytes, 0, minOf(bytes.size, 4096), Charsets.ISO_8859_1))?.groupValues?.get(1)
+        val declared = CHARSET.find(String(bytes, 0, minOf(bytes.size, 4096), Charsets.ISO_8859_1))?.groupValues?.get(1)
         return declared?.let { name -> runCatching { String(bytes, Charset.forName(name)) }.getOrNull() } ?: TextPreview.decode(bytes, bytes.size)
     }
 
+    private val CHARSET = Regex("charset\\s*=\\s*[\"']?([A-Za-z0-9_-]+)", RegexOption.IGNORE_CASE)
     private val BLOCK = Regex("<(script|style|head|xml)\\b", RegexOption.IGNORE_CASE)
+    private val COMMENT = Regex("<!--.*?-->", RegexOption.DOT_MATCHES_ALL)
+    private val WHITESPACE = Regex("\\s+")
+    private val BLOCK_TAG = Regex("</?(p|div|br|h[1-6]|li|tr|table|ul|ol|blockquote|pre|section|article|header|footer)\\b[^>]*>", RegexOption.IGNORE_CASE)
+    private val CELL_END = Regex("</t[dh]\\s*>", RegexOption.IGNORE_CASE)
+    private val ANY_TAG = Regex("<[^>]*>")
+    private val SPACES = Regex("[ \\u00A0]{2,}")
+    private val BLANK_LINES = Regex("\n{3,}")
+    private val ENTITY = Regex("&(#x[0-9a-fA-F]{1,6}|#[0-9]{1,7}|[a-zA-Z]{2,8});")
+    // Only the BLOCK names reach this, so the cache holds four patterns at most.
+    private val CLOSERS = java.util.concurrent.ConcurrentHashMap<String, Regex>()
 
     /**
      * [change] applied up to the last [closing] of the text. What these patterns match ends with [closing], so the
@@ -71,7 +81,7 @@ internal object HtmlText {
         while (true) {
             val open = BLOCK.find(text, at) ?: break
             val name = open.groupValues[1].lowercase()
-            val close = if (name in unclosed) null else Regex("</$name\\s*>", RegexOption.IGNORE_CASE).find(text, open.range.last + 1)
+            val close = if (name in unclosed) null else CLOSERS.getOrPut(name) { Regex("</$name\\s*>", RegexOption.IGNORE_CASE) }.find(text, open.range.last + 1)
             if (close == null) {
                 unclosed += name // Nor does any later one close.
                 out.append(text, at, open.range.last + 1)
@@ -86,19 +96,19 @@ internal object HtmlText {
 
     fun text(bytes: ByteArray): String {
         return decode(bytes)
-            .through("-->") { it.replace(Regex("<!--.*?-->", RegexOption.DOT_MATCHES_ALL), " ") }
+            .through("-->") { it.replace(COMMENT, " ") }
             .let(::withoutBlocks)
             // As in a browser, line breaks in the source are spaces; only blocks start lines.
-            .replace(Regex("\\s+"), " ")
-            .through(">") { it.replace(Regex("</?(p|div|br|h[1-6]|li|tr|table|ul|ol|blockquote|pre|section|article|header|footer)\\b[^>]*>", RegexOption.IGNORE_CASE), "\n") }
-            .replace(Regex("</t[dh]\\s*>", RegexOption.IGNORE_CASE), "\t")
-            .through(">") { it.replace(Regex("<[^>]*>"), "") }
+            .replace(WHITESPACE, " ")
+            .through(">") { it.replace(BLOCK_TAG, "\n") }
+            .replace(CELL_END, "\t")
+            .through(">") { it.replace(ANY_TAG, "") }
             .let(::entities)
-            .lines().joinToString("\n") { it.replace(Regex("[ \\u00A0]{2,}"), " ").trim() }
-            .replace(Regex("\n{3,}"), "\n\n").take(TextExtract.LIMIT).trim()
+            .lines().joinToString("\n") { it.replace(SPACES, " ").trim() }
+            .replace(BLANK_LINES, "\n\n").take(TextExtract.LIMIT).trim()
     }
 
-    fun entities(text: String) = Regex("&(#x[0-9a-fA-F]{1,6}|#[0-9]{1,7}|[a-zA-Z]{2,8});").replace(text) { match ->
+    fun entities(text: String) = ENTITY.replace(text) { match ->
         val name = match.groupValues[1]
         when {
             name.startsWith("#x") || name.startsWith("#X") -> name.substring(2).toIntOrNull(16)?.takeIf { it in 1..0x10FFFF }?.let { String(Character.toChars(it)) }

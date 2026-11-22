@@ -11,6 +11,7 @@ import java.util.zip.ZipInputStream
  * links become plain external anchors.
  */
 object DocxHtml {
+    private val HEADING_STYLE = Regex("^heading ([1-6])$")
     private const val W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
     private const val R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
     private const val M = "http://schemas.openxmlformats.org/officeDocument/2006/math"
@@ -85,7 +86,7 @@ object DocxHtml {
                 if (local == "style") current = attributes.getValue(W, "styleId")
                 if (local == "name") {
                     val name = attributes.getValue(W, "val")?.lowercase(Locale.ROOT).orEmpty()
-                    val level = Regex("^heading ([1-6])$").find(name)?.groupValues?.get(1)?.toInt() ?: if (name == "title") 1 else null
+                    val level = HEADING_STYLE.find(name)?.groupValues?.get(1)?.toInt() ?: if (name == "title") 1 else null
                     current?.let { id -> if (level != null) result[id] = level }
                 }
             }

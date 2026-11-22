@@ -58,11 +58,11 @@ object HtmlView {
             if (closing) { endTag(name); return end }
             if (name in RAW_TEXT) {
                 // Script-like content is not markup: it ends only at its own end tag.
-                val close = Regex("</$name[\\s/>]", RegexOption.IGNORE_CASE).find(source, end)
+                val close = tagRegex(rawEnds, name, "</$name[\\s/>]").find(source, end)
                 return close?.let { source.indexOf('>', it.range.first).let { gt -> if (gt < 0) source.length else gt + 1 } } ?: source.length
             }
             // A head ends at its end tag or where the body starts, even when the page forgets to close it.
-            if (name == "head") return Regex("</head\\s*>|<body[\\s>]", RegexOption.IGNORE_CASE).find(source, end)
+            if (name == "head") return HEAD_END.find(source, end)
                 ?.let { if (it.value.startsWith("</")) it.range.last + 1 else it.range.first } ?: source.length
             val selfClosing = source.getOrNull(end - 2) == '/'
             // <embed> never has an end tag and a self-closing <svg/> holds nothing: only the tag itself is dropped.
@@ -106,9 +106,16 @@ object HtmlView {
         }
 
         /** Skips a dropped element with its content, counting nested elements of the same name. */
+        // Only names from RAW_TEXT / DROPPED reach these, so the caches stay small.
+        private val rawEnds = HashMap<String, Regex>()
+        private val skipTags = HashMap<String, Regex>()
+
+        private fun tagRegex(cache: HashMap<String, Regex>, name: String, pattern: String) =
+            cache.getOrPut(name) { Regex(pattern, RegexOption.IGNORE_CASE) }
+
         private fun skip(name: String, from: Int): Int {
             var depth = 1
-            val pattern = Regex("<(/?)$name(?=[\\s/>])", RegexOption.IGNORE_CASE)
+            val pattern = tagRegex(skipTags, name, "<(/?)$name(?=[\\s/>])")
             var at = from
             while (depth > 0) {
                 if (++steps % 2048 == 0) checkActive()
@@ -198,6 +205,7 @@ object HtmlView {
 
         companion object {
             private const val DEPTH_LIMIT = 256
+            private val HEAD_END = Regex("</head\\s*>|<body[\\s>]", RegexOption.IGNORE_CASE)
             private val RAW_TEXT = setOf("script", "style", "title", "textarea", "xmp", "iframe", "noembed", "noframes", "plaintext", "template")
             private val DROPPED = setOf("svg", "math", "object", "embed", "applet", "select", "canvas", "audio", "video", "button", "frameset", "map", "xml")
             private val ELEMENTS = mapOf(
