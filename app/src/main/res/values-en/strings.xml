@@ -49,6 +49,9 @@
     <string name="download_preparing">Preparing file…</string>
     <string name="download_login">Sign in to Univer to download this file, then tap the file link again.</string>
     <string name="download_permission">Allow file storage to save documents to Downloads.</string>
+    <string name="diagnostics">File for a fault report</string>
+    <string name="diagnostics_saved">Saved “%1$s” to Downloads. It has no login, password or personal data; attach it to your report.</string>
+    <string name="diagnostics_failed">Could not save the file.</string>
     <string name="downloads">Downloads</string>
     <string name="download_complete">File saved to Downloads.</string>
     <string name="open_file">Open</string>

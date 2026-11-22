@@ -267,6 +267,9 @@
             style="@style/Widget.Material3.Button.TonalButton" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:layout_marginTop="16dp" android:minHeight="48dp"
             android:text="@string/downloads" app:icon="@drawable/ic_downloads" app:iconGravity="textStart" />
+        <com.google.android.material.button.MaterialButton android:id="@+id/diagnostics"
+            style="@style/Widget.Material3.Button.TextButton" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:layout_marginTop="4dp" android:minHeight="48dp" />
         <TextView android:id="@+id/about" style="@style/Univer.RowHint" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:layout_marginHorizontal="4dp" android:layout_marginTop="12dp" />
         </LinearLayout>

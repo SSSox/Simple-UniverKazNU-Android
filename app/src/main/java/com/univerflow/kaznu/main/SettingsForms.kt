@@ -48,6 +48,8 @@ class SettingsForms(private val activity: AppCompatActivity, private val model: 
         fun signOut()
         fun manualLogin(form: SettingsSheetBinding)
         fun openDownloads()
+        /** Saves the diagnostics file to Downloads and tells the student its name. */
+        fun saveDiagnostics()
         fun setMobileLayout(enabled: Boolean, form: SettingsSheetBinding?)
         fun setTextZoom(percent: Int)
         val updateState: UpdateState
@@ -177,6 +179,7 @@ class SettingsForms(private val activity: AppCompatActivity, private val model: 
         form.moreOptions.setOnClickListener { toggle(form, form.preferences) }
         form.closeSettings.setOnClickListener { dismiss() }
         form.downloads.setOnClickListener { dismiss(); host.openDownloads() }
+        form.diagnostics.setOnClickListener { host.saveDiagnostics() }
         form.login.doAfterTextChanged { form.loginLayout.error = null }
         form.password.doAfterTextChanged { form.passwordLayout.error = null }
         // The saved password is never put back into a field: the show-password toggle would reveal it to whoever holds the phone.
@@ -376,6 +379,8 @@ class SettingsForms(private val activity: AppCompatActivity, private val model: 
         form.moreOptions.text = text(R.string.more_options)
         form.downloads.isVisible = !first
         form.downloads.text = text(R.string.downloads)
+        form.diagnostics.isVisible = !first
+        form.diagnostics.text = text(R.string.diagnostics)
         form.title.text = text(if (first) R.string.welcome else R.string.settings)
         form.subtitle.text = text(R.string.welcome_hint)
         // Explanatory text is only part of the first-run screen; settings show controls alone.

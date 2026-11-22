@@ -50,6 +50,9 @@
     <string name="download_preparing">Подготовка файла…</string>
     <string name="download_login">Для скачивания нужно войти в Univer. После входа нажмите ссылку на файл ещё раз.</string>
     <string name="download_permission">Разрешите сохранение файлов, чтобы скачать документ в «Загрузки».</string>
+    <string name="diagnostics">Файл для сообщения об ошибке</string>
+    <string name="diagnostics_saved">Сохранён файл «%1$s» в «Загрузки». В нём нет логина, пароля и личных данных; приложите его к сообщению.</string>
+    <string name="diagnostics_failed">Не удалось сохранить файл.</string>
     <string name="downloads">Загрузки</string>
     <string name="download_complete">Файл сохранён в «Загрузки».</string>
     <string name="open_file">Открыть</string>
