@@ -293,7 +293,7 @@
         var select = document.getElementById('weekSelect');
         if (!select || select.tagName !== 'SELECT' || typeof __univerNative !== 'function' || document.querySelector('.univer-app-schedule-export')) return;
         var box = el('div', 'univer-app-schedule-export'); box.setAttribute('role', 'group'); box.setAttribute('aria-label', text().exportLabel);
-        [['ics', text().exportIcs, text().exportIcsTitle]].forEach(function (kind) {
+        [['ics', text().exportIcs, text().exportIcsTitle], ['png', text().exportPng, text().exportPngTitle]].forEach(function (kind) {
             var button = el('button', '', kind[1]); button.type = 'button'; button.title = kind[2]; button.setAttribute('data-univer-export', kind[0]); box.appendChild(button);
         });
         (select.closest('.ts') || select.parentElement).appendChild(box); owned.push(box);

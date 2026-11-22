@@ -45,7 +45,7 @@ function trusted(w, node) {
   const impl = jsdomUtils.implForWrapper(event); impl.isTrusted = true;
   jsdomUtils.implForWrapper(node)._dispatch(impl);
 }
-const button = p => p.d.querySelector('.univer-app-schedule-export button[data-univer-export=ics]');
+const button = (p, kind = 'ics') => p.d.querySelector('.univer-app-schedule-export button[data-univer-export=' + kind + ']');
 const settle = async () => { for (let i = 0; i < 30; i++) await new Promise(r => setImmediate(r)); };
 // The week the page keeps for the widget is sent too when it is the current one; only the export messages count here.
 const sentExports = p => p.sent.filter(m => m.startsWith('univer-export:'));
@@ -53,12 +53,11 @@ const exported = p => { assert.equal(sentExports(p).length, 1); return JSON.pars
 const subjects = week => week.lessons.map(l => [l.day, l.start, l.end, l.subject]);
 
 test('the schedule page has the calendar button in the page language, and none without the app channel', () => {
-  for (const [lang, label] of [['ru', 'В календарь'], ['en', 'To calendar'], ['kz', 'Күнтізбеге']]) {
+  for (const [lang, label, picture] of [['ru', 'В календарь', 'Картинкой'], ['en', 'To calendar', 'As picture'], ['kz', 'Күнтізбеге', 'Сурет ретінде']]) {
     const p = page({ lang });
     const group = p.d.querySelector('.univer-app-schedule-export');
     assert.equal(group.getAttribute('role'), 'group');
-    assert.equal(button(p).textContent, label);
-    assert.equal(button(p).type, 'button');
+    assert.deepEqual(Array.from(group.querySelectorAll('button')).map(b => [b.type, b.dataset.univerExport, b.textContent]), [['button', 'ics', label], ['button', 'png', picture]]);
     p.w.__univerOverviewV1.apply(lang);
     assert.equal(p.d.querySelectorAll('.univer-app-schedule-export').length, 1, 'a second pass draws nothing again');
     p.w.__univerOverviewV1.release();
@@ -134,6 +133,16 @@ test('a neighbour that cannot be read is named in missing and nothing stands in 
     assert.deepEqual(data.missing, [13], name);
     p.w.close();
   }
+});
+
+test('«Картинкой» reads the same two weeks and asks for a picture', async () => {
+  const p = page();
+  trusted(p.w, button(p, 'png')); await settle();
+  const data = exported(p);
+  assert.equal(data.kind, 'png');
+  assert.deepEqual(data.weeks.map(w => w.number), [12, 13]);
+  assert.equal(p.requests.length, 1);
+  p.w.close();
 });
 
 test('a page that cannot be read at all is reported to the app, not dropped', async () => {

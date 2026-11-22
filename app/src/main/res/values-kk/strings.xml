@@ -75,6 +75,15 @@
     <string name="schedule_part_other">Көрші апта оқылмады, оның сабақтары файлда жоқ: көрсетілген аптаның сабақтары екі аптада бір рет қайталанады.</string>
     <string name="schedule_part_open">Ашу</string>
     <string name="calendar_part">Көрші апта оқылмады: сабақ көрсетілген аптадан бастап екі аптада бір рет қосылады.</string>
+    <string name="schedule_week_heading">%1$d апта, %2$s</string>
+    <string name="schedule_odd">тақ</string>
+    <string name="schedule_even">жұп</string>
+    <string name="schedule_other_week">Көрші апта</string>
+    <string name="schedule_unread">Бұл аптаны оқу мүмкін болмады</string>
+    <string name="schedule_room">дәрісхана %1$s</string>
+    <string name="schedule_no_classes">Сабақ жоқ</string>
+    <string name="schedule_picture_part_named">%1$d апта оқылмады: суретте ол белгіленген, тек %2$d аптаның сабақтары көрсетілген.</string>
+    <string name="schedule_picture_part_other">Көрші апта оқылмады: суретте ол белгіленген, тек көрсетілген аптаның сабақтары көрсетілген.</string>
     <string name="nav_attestation">Ағымдағы аттестация</string>
     <string name="nav_distance">Қашықтан оқыту курстары</string>
     <string name="nav_all_sections">Сайттың барлық бөлімдері</string>

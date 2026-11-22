@@ -75,6 +75,15 @@
     <string name="schedule_part_other">The neighbouring week could not be read and its classes are not in the file: the classes of the shown week repeat every second week.</string>
     <string name="schedule_part_open">Open</string>
     <string name="calendar_part">The neighbouring week could not be read: the class will be added every second week, starting with the shown week.</string>
+    <string name="schedule_week_heading">Week %1$d, %2$s</string>
+    <string name="schedule_odd">odd</string>
+    <string name="schedule_even">even</string>
+    <string name="schedule_other_week">Neighbouring week</string>
+    <string name="schedule_unread">This week could not be read</string>
+    <string name="schedule_room">room %1$s</string>
+    <string name="schedule_no_classes">No classes</string>
+    <string name="schedule_picture_part_named">Week %1$d could not be read: the picture marks it and shows only the classes of week %2$d.</string>
+    <string name="schedule_picture_part_other">The neighbouring week could not be read: the picture marks it and shows only the classes of the shown week.</string>
     <string name="nav_attestation">Current attestation</string>
     <string name="nav_distance">Distance courses</string>
     <string name="nav_all_sections">All website sections</string>

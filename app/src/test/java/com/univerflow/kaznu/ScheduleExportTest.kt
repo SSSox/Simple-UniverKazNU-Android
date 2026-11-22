@@ -4,6 +4,7 @@ import com.univerflow.kaznu.domain.ExportKind
 import com.univerflow.kaznu.domain.ExportWeek
 import com.univerflow.kaznu.domain.SchedulePair
 import com.univerflow.kaznu.domain.ScheduleCalendar
+import com.univerflow.kaznu.domain.SchedulePicture
 import com.univerflow.kaznu.domain.Timetable
 import com.univerflow.kaznu.domain.TimetableLesson
 import org.junit.Assert.assertEquals
@@ -141,5 +142,35 @@ class ScheduleExportTest {
         assertNull("one number twice", SchedulePair.of(message("weeks" to listOf(weeks[0], tweak(weeks[1], "number" to 12)))))
         assertNull("not a Monday", SchedulePair.of(message("weeks" to listOf(tweak(weeks[0], "monday" to "2026-11-17"), weeks[1]))))
         assertNull("a class out of shape", SchedulePair.of(message("weeks" to listOf(tweak(weeks[0], "lessons" to listOf(mapOf("day" to 9))), weeks[1]))))
+    }
+
+    @Test fun thePictureHasAColumnPerWeekInNumberOrderWithItsDaysAndClassesSorted() {
+        // The later week listed first: the picture orders by the week numbers.
+        val request = pair(week(13, even, otherOnly, lesson(2, 8 * 60, "История")), week(12, odd, shownOnly, both))
+        val columns = SchedulePicture.weeks(request)
+        assertEquals(listOf(12, 13), columns.map { it.number })
+        assertEquals(listOf(odd, odd + 4), columns[0].days.map { it.date })
+        assertEquals("the second week's Wednesday: two classes by start time", listOf("История", "Культурология"), columns[1].days.single().lessons.map { it.subject })
+        assertTrue(columns.none { it.missing })
+        assertTrue(columns[0].odd.not() && columns[1].odd)
+    }
+
+    @Test fun anUnreadWeekIsAnEmptyMarkedColumnInItsPlaceAndNoOtherWeekStandsInForIt() {
+        val columns = SchedulePicture.weeks(pair(week(12, odd, shownOnly), missing = listOf(13)))
+        assertEquals(listOf(12, 13), columns.map { it.number })
+        assertTrue(columns[1].missing)
+        assertTrue(columns[1].days.isEmpty())
+        assertTrue("numbered like the read week", columns[1].labelled)
+        val before = SchedulePicture.weeks(pair(week(13, even, otherOnly), missing = listOf(12)))
+        assertEquals(listOf(true, false), before.map { it.missing })
+        assertEquals(12, before.first().number)
+    }
+
+    @Test fun aWeekThatStartsMidweekLeavesOutTheClassesOfWeekdaysItDoesNotReach() {
+        val monday = day("2026-08-31")
+        val column = SchedulePicture.weeks(pair(week(1, monday, lesson(0, 9 * 60, "Политология"), lesson(2, 9 * 60, "Культурология"), first = day("2026-09-02")),
+            week(2, monday + 7)))[0]
+        assertEquals(listOf("Культурология"), column.days.single().lessons.map { it.subject })
+        assertEquals(day("2026-09-02"), column.days.single().date)
     }
 }
