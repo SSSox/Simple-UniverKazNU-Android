@@ -70,6 +70,7 @@ import com.univerflow.kaznu.domain.GradeTotals
 import com.univerflow.kaznu.domain.ExamItem
 import com.univerflow.kaznu.domain.ExamKind
 import com.univerflow.kaznu.domain.LastGrades
+import com.univerflow.kaznu.domain.CalendarEvent
 import com.univerflow.kaznu.domain.Timetable
 import com.univerflow.kaznu.download.DownloadEvent
 import com.univerflow.kaznu.download.DownloadService
@@ -83,6 +84,7 @@ import com.univerflow.kaznu.main.NetworkWatch
 import com.univerflow.kaznu.main.NoticeFlow
 import com.univerflow.kaznu.main.PageClient
 import com.univerflow.kaznu.main.ReportFlow
+import com.univerflow.kaznu.main.ScheduleFlow
 import com.univerflow.kaznu.main.SettingsForms
 import com.univerflow.kaznu.main.SiteData
 import com.univerflow.kaznu.main.StatusBanner
@@ -185,6 +187,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var forms: SettingsForms
     private lateinit var downloads: DownloadLauncher
     private lateinit var reports: ReportFlow
+    private lateinit var schedule: ScheduleFlow
     private lateinit var updates: UpdateFlow
     private val hosts = Hosts()
     private val languages = LanguageResources(this)
@@ -271,6 +274,7 @@ class MainActivity : AppCompatActivity() {
         forms = SettingsForms(this, model, lock, hosts)
         downloads = DownloadLauncher(this, model, hosts)
         reports = ReportFlow(this, model, hosts)
+        schedule = ScheduleFlow(this, model, hosts)
         updates = UpdateFlow(this, model, hosts)
         // Leaving the app for longer than the chosen time locks it: the password leaves memory and the PIN is asked again.
         AppLockSession.track(this) {
@@ -359,15 +363,22 @@ class MainActivity : AppCompatActivity() {
             onCalendar = { event ->
                 if (pageInView()) when {
                     event == null -> message(R.string.calendar_error)
-                    !CalendarHandoff.open(this, event) -> message(R.string.calendar_missing)
+                    // The neighbouring week was not read: said first, the student decides.
+                    event.partial -> schedule.confirm(text(R.string.calendar_part), { openInCalendar(event) })
+                    else -> openInCalendar(event)
                 }
-            }, onTimetable = ::keepTimetable, onGrades = ::keepGrades, onExams = ::keepExams) { request ->
+            }, onTimetable = ::keepTimetable, onGrades = ::keepGrades, onExams = ::keepExams,
+            onSchedule = { request -> if (pageInView()) schedule.offer(request) }) { request ->
             lifecycleScope.launch {
                 if (!attempt(false) { model.updateShortcuts(request) }) message(R.string.pin_failed)
                 shortcutBridge.configure(model.state.value.shortcuts)
             }
         }
         notices = NoticeFlow(this, binding, model, hosts)
+    }
+
+    private fun openInCalendar(event: CalendarEvent) {
+        if (!CalendarHandoff.open(this, event)) message(R.string.calendar_missing)
     }
 
     /** The document and service (Moodle) window over the page, with its own automation for each kind. */
@@ -1069,6 +1080,7 @@ class MainActivity : AppCompatActivity() {
         downloads.reset()
         fileChooser.clear()
         reports.cancel()
+        schedule.cancel()
         GradeReportFiles.clear(this)
         withContext(Dispatchers.IO) { TodaySync.erase(applicationContext) }
         withContext(GradeAlerts.lane) { GradeAlerts.erase(applicationContext) }
@@ -1481,7 +1493,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** What the screen's parts ask of the page and the session. */
-    private inner class Hosts : DownloadLauncher.Host, LockFlow.Host, SettingsForms.Host, UpdateFlow.Host, NoticeFlow.Host, ReportFlow.Host {
+    private inner class Hosts : DownloadLauncher.Host, LockFlow.Host, SettingsForms.Host, UpdateFlow.Host, NoticeFlow.Host, ReportFlow.Host, ScheduleFlow.Host {
         override fun text(id: Int) = this@MainActivity.text(id)
         override fun labels() = this@MainActivity.labels()
         override fun message(id: Int) = this@MainActivity.message(id)

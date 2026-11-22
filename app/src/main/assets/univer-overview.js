@@ -25,6 +25,12 @@
     Object.assign(WORDS.en, {upNow:'Class in progress', upNext:'Next class', upThen:'Then', upLast:'Last class today', upRoom:'Room'});
     Object.assign(WORDS.kz, {upNow:'Сабақ жүріп жатыр', upNext:'Келесі сабақ', upThen:'Содан кейін', upLast:'Бүгінгі соңғы сабақ', upRoom:'Дәрісхана'});
     Object.assign(WORDS.ru, {upNow:'Идёт пара', upNext:'Следующая пара', upThen:'Затем', upLast:'Это последняя пара сегодня', upRoom:'Ауд.'});
+    Object.assign(WORDS.en, {exportLabel:'Export schedule', exportIcs:'To calendar', exportPng:'As picture',
+        exportIcsTitle:'Both weeks to the calendar (.ics file)', exportPngTitle:'Both weeks as a picture (PNG)'});
+    Object.assign(WORDS.kz, {exportLabel:'Кестені экспорттау', exportIcs:'Күнтізбеге', exportPng:'Сурет ретінде',
+        exportIcsTitle:'Екі аптаны да күнтізбеге (.ics файлы)', exportPngTitle:'Екі аптаны да сурет ретінде (PNG)'});
+    Object.assign(WORDS.ru, {exportLabel:'Экспорт расписания', exportIcs:'В календарь', exportPng:'Картинкой',
+        exportIcsTitle:'Обе недели в календарь (файл .ics)', exportPngTitle:'Обе недели картинкой (PNG)'});
     function text() { return language === 'en' ? WORDS.en : language === 'kz' ? WORDS.kz : WORDS.ru; }
     // The schedule page's countdown words: "через 2 ч 15 мин", "ещё 25 мин".
     function duration(m) {
@@ -177,15 +183,8 @@
         var from = dates.length === 2 ? courseDay(dates[0], monday, false) : null, until = dates.length === 2 ? courseDay(dates[1], monday, true) : null;
         return from && until && from <= until ? {from:isoDay(from), until:isoDay(until)} : {from:null, until:null};
     }
-    // Only a week that holds [now]: its Monday, every class with its weekday (Monday = 0), clock times, names and course
-    // dates, and the account the page belongs to. Another week, an undated page or a page without the table gives null.
-    function timetable(doc, now) {
-        var select = doc.getElementById('weekSelect'); if (!select || !doc.querySelector('table.schedule')) return null;
-        var options = Array.from(select.options), current = options.find(function (o) { return o.selected || o.hasAttribute('selected'); }) || options[0];
-        var range = current && weekRange(current.value + ' ' + current.textContent); if (!range) return null;
-        var monday = new Date(range[0].getFullYear(), range[0].getMonth(), range[0].getDate() - (range[0].getDay() + 6) % 7);
-        var today = new Date(now.getFullYear(), now.getMonth(), now.getDate()), next = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 7);
-        if (today < monday || today >= next) return null;
+    // The classes of [doc]'s week: weekday (Monday = 0), clock times, names and course dates ([monday] dates the yearless ones).
+    function weekLessons(doc, monday) {
         var lessons = [];
         for (var column = 1; column < Math.min(columns(doc), 8); column++) (lessonsOn(doc, column) || []).forEach(function (lesson) {
             var info = lesson.info || {}, dates = courseDates(info.dates || [], monday);
@@ -194,8 +193,121 @@
                 type:(info.type || '').slice(0, 60), room:(info.room || '').slice(0, 100), faculty:(info.faculty || '').slice(0, 100), teacher:(info.teacher || '').slice(0, 200),
                 from:dates.from, until:dates.until});
         });
-        return {v:1, week:isoDay(monday), owner:account().slice(0, 128), lessons:lessons.slice(0, 80)};
+        return lessons.slice(0, 80);
     }
+    function mondayOf(date) { return new Date(date.getFullYear(), date.getMonth(), date.getDate() - (date.getDay() + 6) % 7); }
+    // Only a week that holds [now]: its Monday, every class with its weekday (Monday = 0), clock times, names and course
+    // dates, and the account the page belongs to. Another week, an undated page or a page without the table gives null.
+    function timetable(doc, now) {
+        var select = doc.getElementById('weekSelect'); if (!select || !doc.querySelector('table.schedule')) return null;
+        var options = Array.from(select.options), current = options.find(function (o) { return o.selected || o.hasAttribute('selected'); }) || options[0];
+        var range = current && weekRange(current.value + ' ' + current.textContent); if (!range) return null;
+        var monday = mondayOf(range[0]);
+        var today = new Date(now.getFullYear(), now.getMonth(), now.getDate()), next = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 7);
+        if (today < monday || today >= next) return null;
+        return {v:1, week:isoDay(monday), owner:account().slice(0, 128), lessons:weekLessons(doc, monday)};
+    }
+
+    /* The shown week and its neighbour. The site alternates odd and even weeks, so a class that is in one of the two and not
+       in the other must not repeat every week. The neighbour is the week right after the shown one, else the one right before
+       it (a week after a gap may be of the same parity); it is read by GET at the site's own week address, nothing may
+       redirect, and the page that answers must name the week that was asked for. A neighbour that cannot be read is named in
+       `missing`: no other week stands in for it. */
+    var EXPORT_VALUE = /^\/student\/myschedule\/\d{4}\/[12]\/\d{1,2}\.\d{1,2}\.\d{4}\/\d{1,2}\.\d{1,2}\.\d{4}\/?$/;
+    var SCHEDULE_PAGE = /^\/student\/myschedule(?:\/\d{4}\/[12](?:\/\d{1,2}\.\d{1,2}\.\d{4}\/\d{1,2}\.\d{1,2}\.\d{4})?)?\/?$/;
+    function dayAfter(date) { return new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1).getTime(); }
+    // The site's number of the week from its option ("7 неделя …"), else its place in the list.
+    function weekNumber(option, index) {
+        var label = clean(option).replace(/\d{1,2}\.\d{1,2}\.\d{4}/g, ' '), found = parseInt((label.match(/\d{1,2}/) || [''])[0], 10);
+        return found >= 1 && found <= 40 ? {number:found, labelled:true} : {number:index + 1, labelled:false};
+    }
+    function weekFrame(doc) {
+        var select = doc.getElementById('weekSelect'); if (!select || !doc.querySelector('table.schedule')) return null;
+        var options = Array.from(select.options), at = Math.max(select.selectedIndex, 0), shown = options[at];
+        var ranges = options.map(function (o) { return weekRange(o.value + ' ' + o.textContent); });
+        var term = shown && /^\/student\/myschedule\/(\d{4})\/([12])\//.exec(shown.value);
+        return ranges[at] && term ? {options:options, ranges:ranges, at:at, term:term[1] + '/' + term[2]} : null;
+    }
+    function weekEntry(frame, index, doc) {
+        var range = frame.ranges[index], number = weekNumber(frame.options[index], index), monday = mondayOf(range[0]);
+        return {number:number.number, labelled:number.labelled, monday:isoDay(monday), first:isoDay(range[0]), last:isoDay(range[range.length - 1]), lessons:weekLessons(doc, monday)};
+    }
+    async function readWeek(option, range) {
+        var value = option.value, url = new URL(value, location.origin);
+        if (!EXPORT_VALUE.test(value) || url.origin !== location.origin) throw new Error('Address');
+        var abort = new AbortController(), timeout = setTimeout(function () { abort.abort(); }, READ_TIMEOUT);
+        try {
+            var response = await fetch(url.href, {credentials:'same-origin', cache:'no-store', redirect:'error', signal:abort.signal});
+            var final = new URL(response.url, location.origin);
+            if (response.status !== 200 || final.origin !== location.origin || final.pathname !== url.pathname) throw new Error('Unavailable');
+            var html = await response.text(); if (html.length > MAX_HTML) throw new Error('Oversized');
+            var doc = new DOMParser().parseFromString(html, 'text/html');
+            if (doc.querySelector('#login_frm') || !doc.querySelector('table.schedule')) throw new Error('Unread');
+            var got = weekFrame(doc), asked = range[range.length - 1].getTime();
+            var shown = got && got.ranges[got.at];
+            if (!shown || shown[0].getTime() !== range[0].getTime() || shown[shown.length - 1].getTime() !== asked) throw new Error('Other week');
+            return doc;
+        } finally { clearTimeout(timeout); }
+    }
+    // {v, term, until (the last day the site lists), weeks (the shown one first, then its neighbour), missing (numbers)}.
+    async function readPair() {
+        var frame = weekFrame(document); if (!frame) throw new Error('No week');
+        var shown = frame.ranges[frame.at], start = shown[0].getTime(), end = dayAfter(shown[shown.length - 1]), after = -1, before = -1, latest = shown[shown.length - 1];
+        frame.ranges.forEach(function (r, i) {
+            if (!r) return;
+            if (r[r.length - 1] > latest) latest = r[r.length - 1];
+            if (i === frame.at) return;
+            if (r[0].getTime() === end && after < 0) after = i;
+            if (dayAfter(r[r.length - 1]) === start && before < 0) before = i;
+        });
+        var pair = {v:1, term:frame.term, until:isoDay(latest), weeks:[weekEntry(frame, frame.at, document)], missing:[]}, other = after >= 0 ? after : before;
+        if (other >= 0) {
+            try { pair.weeks.push(weekEntry(frame, other, await readWeek(frame.options[other], frame.ranges[other]))); }
+            catch (_) { pair.missing.push(weekNumber(frame.options[other], other).number); }
+        }
+        return pair;
+    }
+    // One reading shared by the class cards' buttons for a minute; a failed one is not kept.
+    var pairCache = null;
+    function weekPair() {
+        var select = document.getElementById('weekSelect'), key = location.pathname + '|' + (select ? select.selectedIndex : -1);
+        if (!pairCache || pairCache.key !== key || Date.now() - pairCache.at > 60000) {
+            var made = {key:key, at:Date.now(), promise:readPair()};
+            made.promise.catch(function () { if (pairCache === made) pairCache = null; });
+            pairCache = made;
+        }
+        return pairCache.promise;
+    }
+
+    /* The schedule page's «В календарь» and «Картинкой». Only the student's own press counts; the app builds the file. */
+    var exporting = false, exportToken = 0;
+    function exportButtons(on) {
+        Array.prototype.forEach.call(document.querySelectorAll('.univer-app-schedule-export button[data-univer-export]'), function (b) {
+            // Busy, not disabled: a disabled button would drop the keyboard focus of the student who pressed it.
+            if (on) { b.setAttribute('aria-busy', 'true'); b.setAttribute('aria-disabled', 'true'); } else { b.removeAttribute('aria-busy'); b.removeAttribute('aria-disabled'); }
+        });
+    }
+    function exportDone(token) { if (token !== exportToken) return; exporting = false; exportToken++; exportButtons(false); }
+    function exportBox() {
+        var select = document.getElementById('weekSelect');
+        if (!select || select.tagName !== 'SELECT' || typeof __univerNative !== 'function' || document.querySelector('.univer-app-schedule-export')) return;
+        var box = el('div', 'univer-app-schedule-export'); box.setAttribute('role', 'group'); box.setAttribute('aria-label', text().exportLabel);
+        [['ics', text().exportIcs, text().exportIcsTitle]].forEach(function (kind) {
+            var button = el('button', '', kind[1]); button.type = 'button'; button.title = kind[2]; button.setAttribute('data-univer-export', kind[0]); box.appendChild(button);
+        });
+        (select.closest('.ts') || select.parentElement).appendChild(box); owned.push(box);
+    }
+    document.addEventListener('click', function (event) {
+        var button = event.isTrusted && event.target && event.target.closest ? event.target.closest('.univer-app-schedule-export button[data-univer-export]') : null;
+        if (!button || exporting || typeof __univerNative !== 'function' || !SCHEDULE_PAGE.test(location.pathname)) return;
+        var kind = button.getAttribute('data-univer-export'); if (kind !== 'ics' && kind !== 'png') return;
+        exporting = true; var token = ++exportToken; exportButtons(true);
+        var timer = setTimeout(function () { exportDone(token); }, 40000);
+        // A page that cannot be read at all is sent as {v:0}: the app says so.
+        readPair().then(function (pair) { pair.kind = kind; return pair; }, function () { return {v:0, kind:kind}; }).then(function (pair) {
+            if (token === exportToken) __univerNative('univer-export:' + JSON.stringify(pair));
+        }).then(function () { clearTimeout(timer); exportDone(token); }, function () { clearTimeout(timer); exportDone(token); });
+    }, true);
     // Hands the week to the app once per page; the same week read again (another pass, the kept copy) is not sent twice.
     var sentWeek = '';
     function saveWeek(doc) {
@@ -474,12 +586,13 @@
             active = true;
             if (/^\/student\/bachelor\/?$/i.test(location.pathname)) bachelor();
             else if (/^\/ssc\/?$/i.test(location.pathname)) desk();
-            else if (/^\/student\/myschedule\//i.test(location.pathname)) saveWeek(document);
+            else if (/^\/student\/myschedule\//i.test(location.pathname)) { saveWeek(document); exportBox(); }
         },
         release: release,
         // Test hooks: the same readers on a supplied document.
         // A site page read once per visit (GET, same origin), shared with the tab-page helpers.
         page: function (url) { return once(url, url); },
+        weekPair: weekPair, readPair: readPair,
         lessonsToday: lessonsToday, timetable: timetable, courseScores: courseScores, requests: requests, nextClasses: nextClasses, dayCaption: dayCaption
     };
 })();

@@ -64,15 +64,19 @@
         attr: function (node, name, value) { if (node.getAttribute(name) !== value) node.setAttribute(name, value); },
         /**
          * «В календарь»: the event as Android reads it (web/CalendarMessage.kt). Wall-clock times without a zone, as the
-         * site shows them; [until] (a Date) makes a class repeat weekly through that day.
+         * site shows them; [until] (a Date) makes a class repeat weekly (every second week with [interval] 2) through that day.
          */
         calendarMessage: function (item) {
             function two(n) { return String(n).padStart(2, '0'); }
             function day(d) { return d.getFullYear() + '-' + two(d.getMonth() + 1) + '-' + two(d.getDate()); }
             function text(value, max) { return String(value || '').replace(/\s+/g, ' ').trim().slice(0, max); }
-            return 'univer-calendar:' + JSON.stringify({v:1, title:text(item.title, 200), start:day(item.start) + 'T' + two(item.start.getHours()) + ':' + two(item.start.getMinutes()),
+            var message = {v:1, title:text(item.title, 200), start:day(item.start) + 'T' + two(item.start.getHours()) + ':' + two(item.start.getMinutes()),
                 end:day(item.end) + 'T' + two(item.end.getHours()) + ':' + two(item.end.getMinutes()), place:text(item.place, 200), notes:text(item.notes, 500),
-                until:item.until ? day(item.until) : null});
+                until:item.until ? day(item.until) : null};
+            // A class of only one of the site's two weeks repeats every second week; [partial]: the other week could not be read.
+            if (item.interval === 2) message.interval = 2;
+            if (item.partial === true) message.partial = true;
+            return 'univer-calendar:' + JSON.stringify(message);
         },
         /**
          * Where a score ("63" of "100", "12,5" of "25") stands against the marks students go by, as a share of its

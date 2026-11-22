@@ -522,21 +522,38 @@
         return end;
     }
     // «В календарь» on a class card: the student's own tap hands the next time this class meets to the phone's calendar
-    // app, repeating weekly through its course dates when the site gives them.
+    // app, through its course dates when the site gives them. The site alternates odd and even weeks, so the neighbouring week
+    // is read first (overview.weekPair): a class in both weeks repeats every week, one in only the shown week every second
+    // week; with the neighbour unread it is every second week and the app says that the other week was not read.
+    function repeatOf(pair, info, dayIndex, from, to) {
+        if (!pair || pair.missing.length) return {interval:2, partial:true};
+        if (pair.weeks.length < 2) return {interval:1, once:true};
+        var begin = +from[0] * 60 + +from[1], finish = +to[0] * 60 + +to[1];
+        var minutes = function (value) { var m = String(value).split(':'); return +m[0] * 60 + +m[1]; };
+        var both = pair.weeks[1].lessons.some(function (l) {
+            return l.day === dayIndex && minutes(l.start) === begin && minutes(l.end) === finish && l.subject === info.subject && l.type === (info.type || '') &&
+                l.room === (info.room || '') && l.teacher === (info.teacher || '');
+        });
+        return {interval:both ? 1 : 2};
+    }
     function calendarButton(info, dayIndex, from, to) {
         var button = document.createElement('button'); button.type = 'button'; button.className = 'univer-app-calendar';
         button.textContent = labels().calendar;
         button.addEventListener('click', function (event) {
             if (!event.isTrusted || typeof __univerNative !== 'function' || !window.__univerDomV1) return;
-            var monday = shownWeek(new Date()).monday, start = dayStart(monday, dayIndex), until = info.dates.length === 2 ? periodEnd(info.dates[1], monday) : null;
-            start.setHours(+from[0], +from[1], 0, 0);
-            var end = new Date(start); end.setHours(+to[0], +to[1], 0, 0);
-            // A class already over this week starts the series from next week's.
-            while (start.getTime() < Date.now()) { start.setDate(start.getDate() + 7); end.setDate(end.getDate() + 7); }
-            if (until && (until < dayStart(start) || until - start > 366 * 86400000)) until = null;
-            var room = info.room ? window.__univerLesson.words(selectedLanguage).roomShort + ' ' + info.room : '';
-            __univerNative(window.__univerDomV1.calendarMessage({title:info.subject + (info.type ? ' (' + info.type + ')' : ''), start:start, end:end,
-                place:[room, info.faculty].filter(Boolean).join(', '), notes:info.teacher, until:until}));
+            var overview = window.__univerOverviewV1, reading = overview && overview.weekPair ? overview.weekPair() : Promise.reject(new Error('No reader'));
+            reading.then(function (pair) { return pair; }, function () { return null; }).then(function (pair) {
+                var repeat = repeatOf(pair, info, dayIndex, from, to), step = 7 * repeat.interval;
+                var monday = shownWeek(new Date()).monday, start = dayStart(monday, dayIndex), until = !repeat.once && info.dates.length === 2 ? periodEnd(info.dates[1], monday) : null;
+                start.setHours(+from[0], +from[1], 0, 0);
+                var end = new Date(start); end.setHours(+to[0], +to[1], 0, 0);
+                // A class already over this week starts the series from its next turn: the next week's, or the one after for every second week.
+                while (start.getTime() < Date.now()) { start.setDate(start.getDate() + step); end.setDate(end.getDate() + step); }
+                if (until && (until < dayStart(start) || until - start > 366 * 86400000)) until = null;
+                var room = info.room ? window.__univerLesson.words(selectedLanguage).roomShort + ' ' + info.room : '';
+                __univerNative(window.__univerDomV1.calendarMessage({title:info.subject + (info.type ? ' (' + info.type + ')' : ''), start:start, end:end,
+                    place:[room, info.faculty].filter(Boolean).join(', '), notes:info.teacher, until:until, interval:repeat.interval, partial:!!repeat.partial}));
+            });
         });
         return button;
     }

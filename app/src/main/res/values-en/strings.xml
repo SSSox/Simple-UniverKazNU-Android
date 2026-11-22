@@ -65,6 +65,16 @@
     <string name="refresh_kept_dialog">Close the window on the page first, then refresh it</string>
     <string name="calendar_error">Could not prepare the calendar event</string>
     <string name="calendar_missing">There is no calendar app on this phone</string>
+    <!-- Schedule export: both weeks to the calendar as a file, or as a picture. -->
+    <string name="schedule_error">Could not prepare the schedule</string>
+    <string name="schedule_empty">These weeks have no classes to export</string>
+    <string name="schedule_file_weeks">Schedule, weeks %1$s</string>
+    <string name="schedule_file_week">Schedule, week %1$s</string>
+    <string name="schedule_calendar_name">KazNU schedule</string>
+    <string name="schedule_part_named">Week %1$d could not be read and its classes are not in the file: the classes of week %2$d repeat every second week.</string>
+    <string name="schedule_part_other">The neighbouring week could not be read and its classes are not in the file: the classes of the shown week repeat every second week.</string>
+    <string name="schedule_part_open">Open</string>
+    <string name="calendar_part">The neighbouring week could not be read: the class will be added every second week, starting with the shown week.</string>
     <string name="nav_attestation">Current attestation</string>
     <string name="nav_distance">Distance courses</string>
     <string name="nav_all_sections">All website sections</string>

@@ -11,9 +11,13 @@ import java.util.TimeZone
  * An exam or a class the student sends to their calendar app with «В календарь». Times are the site's wall clock in
  * the phone's zone. A class repeats every week until [until] (the last day of its course dates); an exam does not.
  */
-data class CalendarEvent(val title: String, val start: Long, val end: Long, val place: String, val notes: String, val until: Long?) {
-    /** The calendar's repeat rule: every week on the start's weekday, through [until] (in UTC, as RFC 5545 asks). */
-    val rule: String? get() = until?.let { "FREQ=WEEKLY;UNTIL=" + SimpleDateFormat("yyyyMMdd'T'HHmmss'Z'", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }.format(Date(it)) }
+data class CalendarEvent(val title: String, val start: Long, val end: Long, val place: String, val notes: String, val until: Long?,
+    val interval: Int = 1, val partial: Boolean = false) {
+    /**
+     * The calendar's repeat rule: every [interval] weeks on the start's weekday (2 for a class of only one of the site's
+     * odd and even weeks), through [until] (in UTC, as RFC 5545 asks). [partial]: the other week of the pair was not read.
+     */
+    val rule: String? get() = until?.let { "FREQ=WEEKLY;" + (if (interval == 2) "INTERVAL=2;" else "") + "UNTIL=" + SimpleDateFormat("yyyyMMdd'T'HHmmss'Z'", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }.format(Date(it)) }
 
     companion object {
         const val MESSAGE_PREFIX = "univer-calendar:"
@@ -43,7 +47,9 @@ data class CalendarEvent(val title: String, val start: Long, val end: Long, val 
                 is String -> lastMoment(value, zone)?.takeIf { it >= start && it <= start + 366 * DAY } ?: return null
                 else -> return null
             }
-            return CalendarEvent(title, start, end, place, notes, until)
+            val interval = when (map["interval"]) { null, 1 -> 1; 2 -> 2; else -> return null }
+            val partial = when (val value = map["partial"]) { null -> false; is Boolean -> value; else -> return null }
+            return CalendarEvent(title, start, end, place, notes, until, interval, partial)
         }
 
         /** Absent is empty; text is trimmed with its spaces folded, within [max]. */

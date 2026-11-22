@@ -41,6 +41,10 @@ object GradeReportFiles {
 
     fun uri(context: Context, file: File): Uri = FileProvider.getUriForFile(context, context.packageName + ".downloads", file)
 
+    /** Opens [file] in an app that handles [type] (a calendar file in the calendar app), with a read grant for that file only. */
+    fun view(context: Context, file: File, type: String): Intent =
+        Intent(Intent.ACTION_VIEW).setDataAndType(uri(context, file), type).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+
     /**
      * The system share sheet for one report's [files] (a PDF, or its page images in order); the receiving app may read
      * only these files. Which of several pages to send is chosen there, as for any set of pictures.

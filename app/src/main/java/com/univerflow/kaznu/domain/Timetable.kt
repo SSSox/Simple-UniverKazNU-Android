@@ -96,11 +96,11 @@ data class Timetable(val owner: String, val week: Long, val saved: Long, val les
             val owner = text(map["owner"], 128) ?: return null
             val items = map["lessons"] as? List<*> ?: return null
             if (items.size > MAX_LESSONS) return null
-            val lessons = items.map { lesson(it as? Map<*, *> ?: return null, week) ?: return null }
+            val lessons = items.map { lessonOf(it as? Map<*, *> ?: return null, week) ?: return null }
             return Timetable(owner, week, saved, lessons)
         }
 
-        private fun lesson(map: Map<*, *>, week: Long): TimetableLesson? {
+        internal fun lessonOf(map: Map<*, *>, week: Long): TimetableLesson? {
             val day = (map["day"] as? Int)?.takeIf { it in 0..6 } ?: return null
             val start = minutes(map["start"]) ?: return null
             val end = minutes(map["end"])?.takeIf { it > start } ?: return null
