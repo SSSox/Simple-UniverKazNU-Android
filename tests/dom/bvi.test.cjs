@@ -52,3 +52,10 @@ test('a page with the real script is left alone', () => {
   assert.equal(w.document.getElementById('univer-bvi-real'), null);
   w.close();
 });
+
+test('Original chosen before the reading layout ever ran still gets the real script', () => {
+  const w = page();
+  w.__univerMobileV1.setEnabled(false, 'ru');
+  assert.ok(w.document.getElementById('univer-bvi-real'));
+  w.close();
+});

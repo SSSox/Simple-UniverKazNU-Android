@@ -1609,7 +1609,6 @@
     }
     function disable(language) {
         enabled = false; helpless = new WeakSet();
-        realBvi();
         if (observer) observer.disconnect();
         document.removeEventListener('click', dismissMenu); document.removeEventListener('keydown', dismissMenu);
         window.removeEventListener('resize', resized);
@@ -1659,11 +1658,11 @@
     }
     // [styled]: the app (MobilePageAdapter) will apply the presentation stylesheet; it then goes in before the pass.
     function setEnabled(value, language, styled) {
-        // AJAX is handled by the observer. Repeated native renders need no full DOM/layout traversal.
-        if (enabled === !!value && selectedLanguage === language) {
-            if (enabled) dialogViewport();
-            return;
-        }
+        // Original shows the site header: the real low-vision script loads even when the reading layout never ran here.
+        if (!value) realBvi();
+        // AJAX is handled by the observer. Repeated native renders need no full DOM/layout traversal; the dialog sizes
+        // follow the viewport's own events (reading them here laid the page out once more after each render).
+        if (enabled === !!value && selectedLanguage === language) return;
         localizeChrome(language);
         if (value && !enabled) enable();
         else if (!value && enabled) disable(language);
