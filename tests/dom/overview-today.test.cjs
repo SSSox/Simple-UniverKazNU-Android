@@ -86,29 +86,3 @@ test('after the day is over the card counts down to the next classes on their da
     assert.deepEqual(upnext(p.body()), ['next', 'Следующая пара через 3 д 14 ч', 'Культурология · 09:00–10:00']);
   } finally { p.close(); }
 });
-
-test('coming back to Бакалавр within minutes reads the schedule and grades from this session, for the same account only', async () => {
-  const visit = async (saved, account) => {
-    const w = new JSDOM('<body><div id="l4"><table class="mt"></table></div></body>', {url: 'https://univer.kaznu.kz/student/bachelor/', runScripts: 'outside-only', pretendToBeVisual: true}).window;
-    const fetched = [];
-    Object.entries(saved).forEach(([key, value]) => w.sessionStorage.setItem(key, value));
-    w.localStorage.setItem('univer.app.account.v1', account);
-    w.fetch = async url => { fetched.push(url); return {status: 200, url: 'https://univer.kaznu.kz' + url, text: async () => (/myschedule/.test(url) ? SCHEDULE : '<html><body></body></html>')}; };
-    w.eval(read('univer-dom.js')); w.eval(read('univer-overview.js'));
-    w.__univerOverviewV1.apply('ru');
-    const body = () => w.document.querySelector('.univer-app-overview-today .univer-app-overview-body');
-    for (let i = 0; i < 200 && !body().querySelector('.univer-app-overview-caption'); i++) await new Promise(resolve => setTimeout(resolve, 5));
-    const kept = Object.fromEntries(Object.keys(w.sessionStorage).map(key => [key, w.sessionStorage.getItem(key)]));
-    const lessons = body().querySelectorAll('.univer-app-overview-lesson').length;
-    w.__univerOverviewV1.release(); w.close();
-    return {fetched, kept, lessons};
-  };
-  const first = await visit({}, 'student1');
-  assert.deepEqual(first.fetched.sort(), ['/student/attendance/full/', '/student/myschedule/']);
-  const again = await visit(first.kept, 'student1');
-  assert.deepEqual(again.fetched, []);
-  assert.equal(again.lessons, first.lessons);
-  assert.equal((await visit(first.kept, 'student2')).fetched.length, 2, 'another account reads its own pages');
-  const aged = Object.fromEntries(Object.entries(first.kept).map(([key, value]) => [key, JSON.stringify({...JSON.parse(value), at: Date.now() - 11 * 60000})]));
-  assert.equal((await visit(aged, 'student1')).fetched.length, 2, 'pages older than ten minutes are read again');
-});

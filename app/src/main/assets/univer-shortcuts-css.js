@@ -130,6 +130,7 @@
 :root.univer-mobile .univer-app-overview-body { padding:12px 20px 16px; }
 :root.univer-mobile .univer-app-overview-caption { margin:0 0 8px!important; color:var(--u-muted,#5b6b7c); font-size:14px!important; }
 :root.univer-mobile .univer-app-overview-empty { margin:4px 0!important; color:var(--u-muted,#5b6b7c); }
+:root.univer-mobile .univer-app-overview-stale { margin:10px 0 0!important; color:var(--u-muted,#5b6b7c); font-size:13px!important; }
 :root.univer-mobile .univer-app-overview :is(ol,ul) { margin:0!important; padding:0!important; list-style:none!important; }
 :root.univer-mobile .univer-app-overview li { display:flex; align-items:flex-start; gap:14px; margin:0!important; padding:10px 0!important; border-top:1px solid var(--u-line,#dfe5ec); list-style:none!important; }
 :root.univer-mobile .univer-app-overview li:first-child { border-top:0; }

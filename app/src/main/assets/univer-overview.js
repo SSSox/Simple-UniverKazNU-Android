@@ -22,6 +22,9 @@
             days:['Воскресенье','Понедельник','Вторник','Среда','Четверг','Пятница','Суббота']}
     };
     // The line before today's list: the class under way and what follows it, or when the next one starts.
+    Object.assign(WORDS.en, {stale:'Saved {0}. Could not refresh.'});
+    Object.assign(WORDS.kz, {stale:'{0} сақталған. Жаңарту мүмкін болмады.'});
+    Object.assign(WORDS.ru, {stale:'Сохранено {0}. Обновить не удалось.'});
     Object.assign(WORDS.en, {upNow:'Class in progress', upNext:'Next class', upThen:'Then', upLast:'Last class today', upRoom:'Room'});
     Object.assign(WORDS.kz, {upNow:'Сабақ жүріп жатыр', upNext:'Келесі сабақ', upThen:'Содан кейін', upLast:'Бүгінгі соңғы сабақ', upRoom:'Дәрісхана'});
     Object.assign(WORDS.ru, {upNow:'Идёт пара', upNext:'Следующая пара', upThen:'Затем', upLast:'Это последняя пара сегодня', upRoom:'Ауд.'});
@@ -45,7 +48,7 @@
     function tickCounts(root) { var now = +new Date(); root.querySelectorAll('[data-univer-count-at]').forEach(function (node) { tick(node, now); }); }
 
     /* Site pages, each read once per visit. */
-    async function read(url, keep) {
+    async function read(url) {
         var abort = new AbortController(), timeout = setTimeout(function () { abort.abort(); }, READ_TIMEOUT);
         try {
             var response = await fetch(url, {credentials:'same-origin', cache:'no-store', signal:abort.signal});
@@ -54,30 +57,70 @@
             var html = await response.text(); if (html.length > MAX_HTML) throw new Error('Oversized');
             var doc = new DOMParser().parseFromString(html, 'text/html');
             if (doc.querySelector('#login_frm')) throw new Error('Session expired');
-            if (keep) keep(html);
             return doc;
         } finally { clearTimeout(timeout); }
     }
     function once(key, url) { if (!loads.has(key)) loads.set(key, read(url)); return loads.get(key); }
-    // The Бакалавр panels' pages (the week's schedule, the grades) are kept for KEPT_AGE in this app session, for the
-    // account that signed in last and the page's language: coming back to the tab within minutes reads nothing again.
-    // Sign-out erases the site's storage; another account never gets them.
-    var KEPT = 'univer.app.overview.v1:', KEPT_AGE = 10 * 60000, KEPT_SIZE = 1500000;
+    // The last visit's panels. They belong to the account that signed in here (the mark the sign-in form leaves) and to one
+    // language; without the mark nothing is read or written, and another account's or a damaged record is removed. Only
+    // parsed text is kept, never the site's markup. Sign-out erases the site's storage (SiteData.erase), and the site's own
+    // logout link forgets the record at once.
+    var KEY = 'univer.app.overview.v2', LIMIT = 200000, WEEK = 7 * 86400000, AGE = 14 * 86400000;
     function account() { try { return localStorage.getItem('univer.app.account.v1') || ''; } catch (_) { return ''; } }
-    function kept(key, url) {
-        if (loads.has(key)) return loads.get(key);
-        var name = KEPT + language + ':' + url, owner = account(), saved = null;
-        try { saved = JSON.parse(sessionStorage.getItem(name)); } catch (_) { }
-        var age = saved ? Date.now() - saved.at : -1;
-        if (saved && saved.owner === owner && typeof saved.html === 'string' && age >= 0 && age < KEPT_AGE) {
-            var doc = new DOMParser().parseFromString(saved.html, 'text/html');
-            if (!doc.querySelector('#login_frm')) { loads.set(key, Promise.resolve(doc)); return loads.get(key); }
-        }
-        loads.set(key, read(url, function (html) {
-            try { if (html.length <= KEPT_SIZE) sessionStorage.setItem(name, JSON.stringify({owner:owner, at:Date.now(), html:html})); else sessionStorage.removeItem(name); } catch (_) { }
-        }));
-        return loads.get(key);
+    function forget() { try { localStorage.removeItem(KEY); } catch (_) { } }
+    function kept() {
+        var who = account(); if (!who) return null;
+        try {
+            var raw = localStorage.getItem(KEY); if (!raw) return null;
+            var all = raw.length <= LIMIT ? JSON.parse(raw) : null;
+            if (!all || typeof all !== 'object' || all.owner !== who) { forget(); return null; }
+            return all;
+        } catch (_) { forget(); return null; }
     }
+    function saved(name, valid) {
+        var all = kept(), part = all && all.language === language ? all[name] : null;
+        try { return part && Number.isFinite(part.at) && part.at <= Date.now() + 60000 && valid(part) ? part : null; } catch (_) { return null; }
+    }
+    function keep(name, part, valid) {
+        var who = account(); if (!who) return;
+        try {
+            part.at = Date.now(); if (!valid(part)) return;
+            var all = kept(); if (!all || all.language !== language) all = {owner:who, language:language};
+            all[name] = part;
+            var raw = JSON.stringify(all); if (raw.length <= LIMIT) localStorage.setItem(KEY, raw);
+        } catch (_) { }
+    }
+    function words(value, max) { return typeof value === 'string' && value.length <= (max || 400); }
+    function isInfo(info) {
+        return info === undefined || !!info && typeof info === 'object' && ['subject', 'type', 'kind', 'teacher', 'room', 'faculty'].every(function (k) { return words(info[k], 400); }) &&
+            Array.isArray(info.dates) && info.dates.length <= 2 && info.dates.every(function (v) { return words(v, 40); }) &&
+            Array.isArray(info.extra) && info.extra.length <= 12 && info.extra.every(function (v) { return words(v, 400); });
+    }
+    function isLessons(list) {
+        return Array.isArray(list) && list.length <= 40 && list.every(function (l) {
+            return l && Number.isInteger(l.start) && Number.isInteger(l.end) && l.start >= 0 && l.end <= 1500 && words(l.subject) && words(l.details, 2000) && isInfo(l.info);
+        });
+    }
+    function isWeek(part) {
+        return Number.isFinite(part.start) && Number.isFinite(part.end) && part.end > part.start && part.end - part.start <= WEEK && Array.isArray(part.days) && part.days.length <= 8 && part.days.every(isLessons) &&
+            (part.following == null || Number.isFinite(part.following.date) && isLessons(part.following.lessons));
+    }
+    function isCourses(part) {
+        return Date.now() - part.at < AGE && Array.isArray(part.list) && part.list.length <= 80 && part.list.every(function (c) {
+            return c && words(c.name) && words(c.token, 2000) && Array.isArray(c.scores) && c.scores.length <= 8 &&
+                c.scores.every(function (s) { return s && words(s.label, 40) && words(s.max, 40) && words(s.value, 40); });
+        });
+    }
+    function isRequests(part) {
+        return Date.now() - part.at < AGE && Array.isArray(part.list) && part.list.length <= 60 && part.list.every(function (r) {
+            return r && words(r.service) && words(r.date, 40) && words(r.sort, 80) && words(r.status) && /^\/ssc\/(?:StatementPage\?statementId=\d{1,12}|StatementList)$/.test(r.href);
+        });
+    }
+    // The site's own sign-out link: the next account must not find these panels.
+    document.addEventListener('click', function (event) {
+        var link = event.target && event.target.closest ? event.target.closest('a[href]') : null;
+        try { if (link && /^\/user\/logout\/?$/i.test(new URL(link.getAttribute('href'), location.href).pathname)) forget(); } catch (_) { }
+    }, true);
 
     /* The weekly schedule table, read the same way as the schedule page itself. */
     function minutes(value) { var m = value.split(':'); return +m[0] * 60 + +m[1]; }
@@ -260,17 +303,37 @@
     }
 
     /* Panels. */
+    function pending() { return el('p', 'univer-app-pending', text().loading); }
     function panel(cls, title, href, linkText) {
         var box = el('section', 'univer-app-overview ' + cls); box.setAttribute('aria-label', title);
         var head = el('div', 'univer-app-overview-head'), h = el('h2', '', title), link = el('a', 'univer-app-overview-link', linkText);
         link.href = href; head.append(h, link); box.appendChild(head);
-        var body = el('div', 'univer-app-overview-body'); body.appendChild(el('p', 'univer-app-pending', text().loading)); box.appendChild(body);
+        var body = el('div', 'univer-app-overview-body'); body.appendChild(pending()); box.appendChild(body);
         return {box:box, body:body};
     }
     function settled(body, render) {
         if (window.__univerMotionUI) window.__univerMotionUI.change(body, render, 'content'); else render();
     }
     function fail(body) { settled(body, function () { body.textContent = ''; body.append(el('p', 'univer-app-overview-empty', text().failed)); }); }
+    // A list drawn from the last visit that the site did not confirm says when it was read.
+    function stale(body, at) {
+        if (body.querySelector('.univer-app-overview-stale')) return;
+        var date = new Date(at);
+        body.appendChild(el('p', 'univer-app-overview-stale', text().stale.replace('{0}', dayMonth(date) + ', ' + clock(date.getHours() * 60 + date.getMinutes()))));
+    }
+    // A panel with one list: drawn at once from the last visit, then read from the site and redrawn only if it differs.
+    function listed(box, name, url, valid, parse, render) {
+        var epoch = generation, old = saved(name, valid), shown = '';
+        if (old) {
+            try { render(box.body, old.list); shown = JSON.stringify(old.list); }
+            catch (_) { shown = ''; box.body.textContent = ''; box.body.appendChild(pending()); }
+        }
+        once(name, url).then(function (doc) {
+            var list = parse(doc);
+            keep(name, {list:list}, valid);
+            if (epoch === generation && JSON.stringify(list) !== shown) settled(box.body, function () { render(box.body, list); });
+        }, function () { if (epoch !== generation) return; if (shown) stale(box.body, old.at); else fail(box.body); });
+    }
     // Long lists show their first items; the rest open in place with the same motion as other disclosures.
     function limit(list, count) {
         // A button that only reveals one more item is clutter: collapse only when at least two would hide.
@@ -300,10 +363,10 @@
     function span(lesson) { return clock(lesson.start) + '–' + clock(lesson.end); }
     // Kazakh month names from our own list: whether Chromium 109 and old Android WebViews format 'kk' dates was never checked.
     var KZ_MONTHS = ['қаңтар','ақпан','наурыз','сәуір','мамыр','маусым','шілде','тамыз','қыркүйек','қазан','қараша','желтоқсан'];
-    function dayName(date) {
-        return text().days[date.getDay()] + ', ' + (language === 'kz' ? date.getDate() + ' ' + KZ_MONTHS[date.getMonth()] :
-            date.toLocaleDateString(language === 'en' ? 'en-GB' : 'ru-RU', {day:'numeric', month:'long'}));
+    function dayMonth(date) {
+        return language === 'kz' ? date.getDate() + ' ' + KZ_MONTHS[date.getMonth()] : date.toLocaleDateString(language === 'en' ? 'en-GB' : 'ru-RU', {day:'numeric', month:'long'});
     }
+    function dayName(date) { return text().days[date.getDay()] + ', ' + dayMonth(date); }
     // "Сегодня, понедельник, 2 ноября", "Завтра, вторник, 3 ноября" or the date alone for a later day.
     function dayCaption(date, now) {
         var shift = Math.round((new Date(date.getFullYear(), date.getMonth(), date.getDate()) - new Date(now.getFullYear(), now.getMonth(), now.getDate())) / 86400000);
@@ -361,31 +424,73 @@
         appendList(body, list, 4);
     }
     // Draws the panel again, keeping its list expanded and its focus when it had them.
-    function repaintToday(body, lessons, upcoming) {
+    function repaintToday(body, lessons, upcoming, instant) {
         var expanded = body.querySelector('button[aria-expanded=true]'), focused = body.contains(document.activeElement);
-        settled(body, function () { renderToday(body, lessons, upcoming); });
+        if (instant) renderToday(body, lessons, upcoming); else settled(body, function () { renderToday(body, lessons, upcoming); });
         var more = body.querySelector('button');
         if (expanded && more) more.click();
         if (focused && more) more.focus();
     }
-    // The panel's clock tick: a new day reads the schedule again, and the panel is drawn only when what it shows changes.
-    function todayUpdater(body, doc, epoch) {
-        var signature = '', updating = false, loadedDay = new Date().toDateString(), scheduleDoc = doc;
-        return async function update() {
-            if (updating || epoch !== generation || (signature && document.hidden)) return;
-            updating = true;
-            try {
-                var now = new Date();
-                if (loadedDay !== now.toDateString()) {
-                    try { scheduleDoc = await once('schedule-day:' + now.toDateString(), '/student/myschedule/'); loadedDay = now.toDateString(); saveWeek(scheduleDoc); }
-                    catch (_) { if (epoch === generation && signature !== 'unavailable') { signature = 'unavailable'; fail(body); } return; }
-                }
-                var lessons = lessonsToday(scheduleDoc, now), upcoming = null, at = minuteOf(now);
-                if (noneLeft(lessons, at)) { try { upcoming = await nextClasses(scheduleDoc, now); } catch (_) { upcoming = null; } }
-                var key = now.toDateString() + JSON.stringify([lessons, upcoming, (lessons || []).map(function (l) { return at < l.start ? 'next' : at < l.end ? 'now' : 'done'; })]);
-                if (epoch === generation && key !== signature) { signature = key; repaintToday(body, lessons, upcoming); }
-                else if (epoch === generation) tickCounts(body);
-            } finally { updating = false; }
+    // The week the site showed, by column, with the first classes of the following week once they were read.
+    function weekOf(doc, now, upcoming) {
+        var select = doc.getElementById('weekSelect'), table = doc.querySelector('table.schedule'); if (!select || !table) return null;
+        var options = Array.from(select.options), current = options.find(function (o) { return o.selected || o.hasAttribute('selected'); }) || options[0];
+        var range = current && weekRange(current.value + ' ' + current.textContent), start = range ? range[0].getTime() : NaN;
+        // The week ends with the last day the site names: one that starts midweek is not next Monday's.
+        var end = range ? range[range.length - 1].getTime() + 86400000 : NaN;
+        if (!(now.getTime() >= start && now.getTime() < end)) return null;
+        var following = upcoming && upcoming.date.getTime() >= end ? {date:upcoming.date.getTime(), lessons:upcoming.lessons} : null;
+        var days = []; for (var column = 1; column < columns(doc); column++) days.push(lessonsOn(doc, column) || []);
+        return {start:start, end:end, days:days, following:following};
+    }
+    // The panel's clock: [drawKept] shows this week from the last visit until the site's page arrives; [update] is the
+    // clock tick, where a new day reads the schedule again and the panel is drawn only when what it shows changes.
+    function todayPanel(body, epoch) {
+        var signature = '', updating = false, loadedDay = new Date().toDateString(), scheduleDoc = null, keptDoc = null, keptMark = '', live = false;
+        function show(lessons, upcoming, now, instant) {
+            var at = minuteOf(now);
+            var key = now.toDateString() + JSON.stringify([lessons, upcoming, (lessons || []).map(function (l) { return at < l.start ? 'next' : at < l.end ? 'now' : 'done'; })]);
+            if (key === signature) { tickCounts(body); return; }
+            signature = key; repaintToday(body, lessons, upcoming, instant);
+        }
+        function keepWeek(doc, now, upcoming) {
+            var week = weekOf(doc, now, upcoming); if (!week) return;
+            var mark = week.start + '|' + !!week.following;
+            if (doc === keptDoc && mark === keptMark) return;
+            if (!week.following) { var old = saved('schedule', isWeek); if (old && old.start === week.start) week.following = old.following || null; }
+            keptDoc = doc; keptMark = mark; keep('schedule', week, isWeek);
+        }
+        return {
+            drawKept: function () {
+                var week = saved('schedule', isWeek), first = new Date();
+                if (!week || !(first.getTime() >= week.start && first.getTime() < week.end)) return;
+                try {
+                    var column = first.getDay() === 0 ? 7 : first.getDay(), lessons = first.getDay() === 0 ? [] : week.days[column - 1] || [], upcoming = null;
+                    if (noneLeft(lessons, minuteOf(first))) {
+                        for (var c = column + 1; !upcoming && c <= week.days.length; c++)
+                            if (week.days[c - 1].length) upcoming = {date:new Date(first.getFullYear(), first.getMonth(), first.getDate() + c - first.getDay()), lessons:week.days[c - 1]};
+                        if (!upcoming && week.following && week.following.date > first.getTime()) upcoming = {date:new Date(week.following.date), lessons:week.following.lessons};
+                    }
+                    show(lessons, upcoming, first, true);
+                } catch (_) { signature = ''; body.textContent = ''; body.appendChild(pending()); }
+            },
+            load: function (doc) { scheduleDoc = doc; },
+            update: async function () {
+                // A hidden page waits, except for the first reading after a panel drawn from the last visit.
+                if (updating || epoch !== generation || (live && signature && document.hidden)) return;
+                updating = true;
+                try {
+                    var now = new Date();
+                    if (loadedDay !== now.toDateString()) {
+                        try { scheduleDoc = await once('schedule-day:' + now.toDateString(), '/student/myschedule/'); loadedDay = now.toDateString(); saveWeek(scheduleDoc); }
+                        catch (_) { if (epoch === generation && signature !== 'unavailable') { signature = 'unavailable'; fail(body); } return; }
+                    }
+                    var lessons = lessonsToday(scheduleDoc, now), upcoming = null;
+                    if (noneLeft(lessons, minuteOf(now))) { try { upcoming = await nextClasses(scheduleDoc, now); } catch (_) { upcoming = null; } }
+                    keepWeek(scheduleDoc, now, upcoming);
+                    if (epoch === generation) { show(lessons, upcoming, now, false); live = true; }
+                } finally { updating = false; }
+            }
         };
     }
 
@@ -438,10 +543,6 @@
     }
 
     /* The tab pages. */
-    // Draws the page read once under [key] into [body], or the failure note; a release in between leaves [body] alone.
-    function fill(body, key, url, epoch, render, load) {
-        (load || once)(key, url).then(function (doc) { if (epoch === generation) settled(body, function () { render(doc); }); }, function () { if (epoch === generation) fail(body); });
-    }
     function bachelor() {
         if (document.querySelector('.univer-app-overview-grid')) return;
         var grid = el('div', 'univer-app-overview-grid'); owned.push(grid);
@@ -450,22 +551,22 @@
         grid.append(today.box, grades.box);
         var anchor = document.querySelector('.univer-app-gpa') || document.querySelector('#l4 table.mt');
         if (!anchor) return; if (anchor.classList.contains('univer-app-gpa')) anchor.after(grid); else anchor.before(grid);
-        var epoch = generation;
-        kept('schedule', '/student/myschedule/').then(async function (doc) {
-            saveWeek(doc);
-            var update = todayUpdater(today.body, doc, epoch);
-            await update();
-            // A grid built again in the same generation (the site replaced the old one) keeps a single clock.
-            if (epoch === generation) { clearInterval(scheduleTimer); scheduleTimer = setInterval(update, REFRESH); }
+        var epoch = generation, ticker = todayPanel(today.body, epoch);
+        ticker.drawKept();
+        once('schedule', '/student/myschedule/').then(async function (doc) {
+            saveWeek(doc); ticker.load(doc);
+            await ticker.update();
+            // A grid built again in the same generation (the site replaced the old one) keeps a single ticker.
+            if (epoch === generation) { clearInterval(scheduleTimer); scheduleTimer = setInterval(ticker.update, REFRESH); }
         }, function () { if (epoch === generation) fail(today.body); });
-        fill(grades.body, 'grades', '/student/attendance/full/', epoch, function (doc) { renderGrades(grades.body, courseScores(doc)); saveGrades(doc); }, kept);
+        listed(grades, 'grades', '/student/attendance/full/', isCourses, function (doc) { saveGrades(doc); return courseScores(doc); }, renderGrades);
     }
     function desk() {
         if (document.querySelector('.univer-app-overview-requests-panel')) return;
         var box = panel('univer-app-overview-requests-panel', text().requests, '/ssc/StatementList', text().allRequests); owned.push(box.box);
         var anchor = document.querySelector('.univer-app-desk-cards') || document.querySelector('#l4 .univer-app-service-card')?.closest('.ts') || document.querySelector('.univer-app-credentials') || document.querySelector('.univer-app-ssc-nav');
         if (!anchor) return; anchor.after(box.box);
-        fill(box.body, 'requests', '/ssc/StatementList', generation, function (doc) { renderRequests(box.body, requests(doc)); });
+        listed(box, 'requests', '/ssc/StatementList', isRequests, requests, renderRequests);
     }
     function release() { active = false; generation++; clearInterval(scheduleTimer); owned.forEach(function (node) { window.__univerMotionUI?.stop(node); node.remove(); }); owned = []; }
     window.__univerOverviewV1 = {
