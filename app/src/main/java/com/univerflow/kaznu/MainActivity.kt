@@ -103,6 +103,7 @@ import com.univerflow.kaznu.ui.paintSystemBands
 import com.univerflow.kaznu.update.UpdateManager
 import com.univerflow.kaznu.web.AppSection
 import com.univerflow.kaznu.web.AutomationController
+import com.univerflow.kaznu.web.BviStub
 import com.univerflow.kaznu.web.AutomationStatus
 import com.univerflow.kaznu.web.ChannelGuard
 import com.univerflow.kaznu.web.LinkOpening
@@ -1200,6 +1201,9 @@ class MainActivity : AppCompatActivity() {
                 return WebResourceResponse("text/plain", "UTF-8", 403, "Blocked", emptyMap(),
                     java.io.ByteArrayInputStream(byteArrayOf()))
             if (Trackers.blocked(request.url.host)) return Trackers.emptyReply()
+            val address = request.url.toString()
+            if (address.contains("bvi", ignoreCase = true) && BviStub.stubs(address, request.method, model.state.value.mobileLayout,
+                    CookieManager.getInstance().getCookie(SitePolicy.ORIGIN))) return BviStub.reply()
             return null
         }
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {

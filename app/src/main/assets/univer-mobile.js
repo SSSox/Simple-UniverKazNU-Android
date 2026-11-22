@@ -1591,8 +1591,25 @@
         });
     }
     // Original: every class, attribute, node and listener the adapter added goes, and moved site nodes return.
+    // The reading layout gave the site's low-vision script a stand-in (web/BviStub.kt): its button is in the hidden header.
+    // Original shows that button, so the real script loads now and starts with the options the page gave the stand-in.
+    function realBvi() {
+        var kit = window.isvek, queue = window.__univerBviQueue;
+        if (window !== window.top || !kit?.Bvi?.univerStub || !queue?.length || document.getElementById('univer-bvi-real')) return;
+        var script = document.createElement('script');
+        script.id = 'univer-bvi-real';
+        script.src = '/Content/js/bvi.min.js?univer-full';
+        script.onload = function () {
+            if (!window.isvek?.Bvi || window.isvek.Bvi.univerStub) return;
+            queue.splice(0).forEach(function (options) { try { new window.isvek.Bvi(options); } catch (_) {} });
+        };
+        // The stand-in gives way to the real constructor the script defines.
+        delete kit.Bvi;
+        (document.head || document.documentElement).appendChild(script);
+    }
     function disable(language) {
         enabled = false; helpless = new WeakSet();
+        realBvi();
         if (observer) observer.disconnect();
         document.removeEventListener('click', dismissMenu); document.removeEventListener('keydown', dismissMenu);
         window.removeEventListener('resize', resized);
