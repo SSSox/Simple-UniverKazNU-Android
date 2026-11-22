@@ -1538,6 +1538,8 @@ html:root:root:root.univer-mobile .univer-app-overview-score-value { color:var(-
 html:root:root:root.univer-mobile .univer-app-overview-score-bar { display:block!important; position:absolute; left:0; bottom:0; height:3px; width:var(--univer-score); background:var(--u-teal); }
 html:root:root:root.univer-mobile .univer-app-overview-courses>li, html:root:root:root:root.univer-mobile #l4 ul.univer-app-attendance-overview-list>li { display:flex!important; flex-wrap:nowrap; align-items:center; justify-content:space-between; gap:12px; padding:8px 0!important; }
 html:root:root:root:root.univer-mobile #l4 .univer-app-overview-courses>li>a.univer-app-overview-course-link, html:root:root:root.univer-mobile .univer-app-overview-courses>li>a.univer-app-overview-course-link { display:block!important; flex:1 1 auto; min-width:0; min-height:0!important; padding:0!important; line-height:1.3!important; }
+html:root:root:root:root.univer-mobile #l4 .univer-app-overview-work-list .univer-app-overview-lesson-main>a.univer-app-overview-course-link { display:block!important; min-height:0!important; margin:0!important; padding:0!important; line-height:1.4!important; }
+html:root:root:root.univer-mobile .univer-app-overview-work-list>li { padding:12px 0!important; }
 /* Journal filters: subjects as chips in a row that scrolls sideways, class types as a segment under their name. */
 html:root:root:root:root.univer-mobile #l4 .univer-app-attendance-tools { margin:0 0 12px!important; padding:0!important; border:0!important; background:none!important; box-shadow:none!important; }
 html:root:root:root:root.univer-mobile #l4 button.univer-app-attendance-report { margin:12px 0 0!important; }

@@ -22,9 +22,9 @@
             days:['Воскресенье','Понедельник','Вторник','Среда','Четверг','Пятница','Суббота']}
     };
     // The line before today's list: the class under way and what follows it, or when the next one starts.
-    Object.assign(WORDS.en, {stale:'Saved {0}. Could not refresh.'});
-    Object.assign(WORDS.kz, {stale:'{0} сақталған. Жаңарту мүмкін болмады.'});
-    Object.assign(WORDS.ru, {stale:'Сохранено {0}. Обновить не удалось.'});
+    Object.assign(WORDS.en, {stale:'Saved {0}. Could not refresh.', work:'Independent work this week', workRead:'Read from the schedule on {0}', points:'max score: '});
+    Object.assign(WORDS.kz, {stale:'{0} сақталған. Жаңарту мүмкін болмады.', work:'Осы аптадағы БӨЖ', workRead:'Кестеден оқылды: {0}', points:'ең жоғары балл: '});
+    Object.assign(WORDS.ru, {stale:'Сохранено {0}. Обновить не удалось.', work:'СРО на этой неделе', workRead:'Прочитано в расписании {0}', points:'макс. балл: '});
     Object.assign(WORDS.en, {upNow:'Class in progress', upNext:'Next class', upThen:'Then', upLast:'Last class today', upRoom:'Room'});
     Object.assign(WORDS.kz, {upNow:'Сабақ жүріп жатыр', upNext:'Келесі сабақ', upThen:'Содан кейін', upLast:'Бүгінгі соңғы сабақ', upRoom:'Дәрісхана'});
     Object.assign(WORDS.ru, {upNow:'Идёт пара', upNext:'Следующая пара', upThen:'Затем', upLast:'Это последняя пара сегодня', upRoom:'Ауд.'});
@@ -81,11 +81,13 @@
         var all = kept(), part = all && all.language === language ? all[name] : null;
         try { return part && Number.isFinite(part.at) && part.at <= Date.now() + 60000 && valid(part) ? part : null; } catch (_) { return null; }
     }
-    function keep(name, part, valid) {
-        var who = account(); if (!who) return;
+    // lang: the page's language when another page writes here (the schedule's independent work), since only apply() on
+    // the home pages sets this module's own.
+    function keep(name, part, valid, lang) {
+        var who = account(), as = lang || language; if (!who) return;
         try {
             part.at = Date.now(); if (!valid(part)) return;
-            var all = kept(); if (!all || all.language !== language) all = {owner:who, language:language};
+            var all = kept(); if (!all || all.language !== as) all = {owner:who, language:as};
             all[name] = part;
             var raw = JSON.stringify(all); if (raw.length <= LIMIT) localStorage.setItem(KEY, raw);
         } catch (_) { }
@@ -110,6 +112,17 @@
             return c && words(c.name) && words(c.token, 2000) && Array.isArray(c.scores) && c.scores.length <= 8 &&
                 c.scores.every(function (s) { return s && words(s.label, 40) && words(s.max, 40) && words(s.value, 40); });
         });
+    }
+    // The week's independent work as the schedule page listed it (univer-syllabus.js): only the week it showed, only while
+    // that week was the current one, consultations left out. The site's own scripts can write this storage too, so every
+    // field is bounded and the course address must be a UMKD course page.
+    var COURSE = /^\/student\/umkd\/\d{1,12}\/\d{4}\/[12]$/;
+    function isWork(part) {
+        return Number.isFinite(part.start) && Number.isFinite(part.end) && part.end > part.start && part.end - part.start <= WEEK &&
+            Array.isArray(part.list) && part.list.length <= 40 && part.list.every(function (w) {
+                return w && words(w.course) && typeof w.href === 'string' && COURSE.test(w.href) && words(w.name, 80) && words(w.topic, 1200) &&
+                    Number.isFinite(w.score) && w.score >= 0 && w.score <= 1000;
+            });
     }
     function isRequests(part) {
         return Date.now() - part.at < AGE && Array.isArray(part.list) && part.list.length <= 60 && part.list.every(function (r) {
@@ -445,7 +458,7 @@
     }
     // The panel's clock: [drawKept] shows this week from the last visit until the site's page arrives; [update] is the
     // clock tick, where a new day reads the schedule again and the panel is drawn only when what it shows changes.
-    function todayPanel(body, epoch) {
+    function todayPanel(body, epoch, tick) {
         var signature = '', updating = false, loadedDay = new Date().toDateString(), scheduleDoc = null, keptDoc = null, keptMark = '', live = false;
         function show(lessons, upcoming, now, instant) {
             var at = minuteOf(now);
@@ -481,6 +494,7 @@
                 updating = true;
                 try {
                     var now = new Date();
+                    if (tick) tick(now);
                     if (loadedDay !== now.toDateString()) {
                         try { scheduleDoc = await once('schedule-day:' + now.toDateString(), '/student/myschedule/'); loadedDay = now.toDateString(); saveWeek(scheduleDoc); }
                         catch (_) { if (epoch === generation && signature !== 'unavailable') { signature = 'unavailable'; fail(body); } return; }
@@ -534,6 +548,34 @@
         link.append(main, status); li.appendChild(link);
         return li;
     }
+    // The week's independent work, drawn only from what the schedule page kept: the home page reads no syllabus itself.
+    function renderWork(body, part) {
+        body.textContent = '';
+        var t = text(), read = new Date(part.at), first = new Date(part.start), last = new Date(part.end - 86400000);
+        // "16–22 ноября" within one month, "30 ноября – 6 декабря" across two.
+        body.appendChild(el('p', 'univer-app-overview-caption', first.getMonth() === last.getMonth() ? first.getDate() + '–' + dayMonth(last) : dayMonth(first) + ' – ' + dayMonth(last)));
+        var list = el('ul', 'univer-app-overview-work-list');
+        part.list.forEach(function (item) {
+            var li = el('li', ''), main = el('div', 'univer-app-overview-lesson-main'), course = el('a', 'univer-app-overview-course-link', item.course);
+            course.href = item.href; main.appendChild(course);
+            var score = item.score > 0 ? t.points + String(item.score).replace('.', language === 'en' ? '.' : ',') : '';
+            var meta = [item.name, score].filter(Boolean).join(' · ');
+            if (meta) main.appendChild(el('span', 'univer-app-overview-work-meta', meta));
+            if (item.topic) { var topic = el('p', 'univer-app-overview-work-topic', item.topic); topic.title = item.topic; main.appendChild(topic); }
+            li.appendChild(main); list.appendChild(li);
+        });
+        appendList(body, list, 4);
+        body.appendChild(el('p', 'univer-app-overview-stale', t.workRead.replace('{0}', dayMonth(read) + ', ' + clock(read.getHours() * 60 + read.getMinutes()))));
+    }
+    // Shown only while the kept week lasts and when it has work in it; it goes when the week ends with the page open.
+    function work(after) {
+        var part = saved('work', isWork), now = Date.now();
+        if (!part || now < part.start || now >= part.end || !part.list.length) return null;
+        var box = panel('univer-app-overview-work', text().work, '/student/myschedule/', text().allSchedule); owned.push(box.box);
+        try { renderWork(box.body, part); } catch (_) { box.box.remove(); return null; }
+        after.after(box.box);
+        return {box:box.box, end:part.end};
+    }
     function renderRequests(body, items) {
         body.textContent = '';
         if (!items.length) { body.appendChild(el('p', 'univer-app-overview-empty', text().noRequests)); return; }
@@ -551,7 +593,9 @@
         grid.append(today.box, grades.box);
         var anchor = document.querySelector('.univer-app-gpa') || document.querySelector('#l4 table.mt');
         if (!anchor) return; if (anchor.classList.contains('univer-app-gpa')) anchor.after(grid); else anchor.before(grid);
-        var epoch = generation, ticker = todayPanel(today.body, epoch);
+        var weekWork = work(grid), epoch = generation, ticker = todayPanel(today.body, epoch, function (now) {
+            if (weekWork && now.getTime() >= weekWork.end) { weekWork.box.remove(); weekWork = null; }
+        });
         ticker.drawKept();
         once('schedule', '/student/myschedule/').then(async function (doc) {
             saveWeek(doc); ticker.load(doc);
@@ -578,6 +622,12 @@
             else if (/^\/student\/myschedule\//i.test(location.pathname)) saveWeek(document);
         },
         release: release,
+        // The schedule page's list of this week's independent work, kept for the home page (univer-syllabus.js).
+        keepWork: function (lang, part) {
+            if (['ru', 'kz', 'en'].indexOf(lang) < 0 || !part || !Array.isArray(part.list)) return;
+            var list = part.list.map(function (w) { return w && {course:w.course, href:w.href, name:w.name, topic:w.topic, score:w.score}; });
+            keep('work', {start:part.start, end:part.end, list:list}, isWork, lang);
+        },
         // Test hooks: the same readers on a supplied document.
         // A site page read once per visit (GET, same origin), shared with the tab-page helpers.
         page: function (url) { return once(url, url); },
