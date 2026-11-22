@@ -15,14 +15,26 @@ data class TimetableLesson(val day: Int, val start: Int, val end: Int, val subje
 /** A class on one date: [date] as an epoch day, [startAt] and [endAt] as moments in the phone's zone. */
 data class LessonTime(val lesson: TimetableLesson, val date: Long, val startAt: Long, val endAt: Long)
 
+/** The week right after or right before the saved one, whose Monday is [week]: the site's other week of its odd and even cycle. */
+data class AlternateWeek(val week: Long, val lessons: List<TimetableLesson>)
+
 /**
  * The week of the schedule the student last opened, kept on the phone for the widget, class reminders and the
  * offline schedule. A class meets on its weekday within its course dates; one without them is taken to repeat for
- * [UNDATED_WEEKS] weeks after the saved one, after which the phone stops guessing.
+ * [UNDATED_WEEKS] weeks after the saved one, after which the phone stops guessing. The site alternates odd and even
+ * weeks: with the neighbouring week saved as [alternate], the saved week's classes meet in every second week from it
+ * and the alternate's in the weeks between; without it (an old copy, a neighbour that could not be read) the saved
+ * week repeats every week.
  */
-data class Timetable(val owner: String, val week: Long, val saved: Long, val lessons: List<TimetableLesson>) {
+data class Timetable(val owner: String, val week: Long, val saved: Long, val lessons: List<TimetableLesson>, val alternate: AlternateWeek? = null) {
+    /** The classes of the week that [date] falls in: the saved week's, or the alternate's in the weeks between. */
+    private fun weekLessons(date: Long): List<TimetableLesson> {
+        val other = alternate ?: return lessons
+        return if (Math.floorMod((date - weekday(date) - week) / 7, 2L) == 0L) lessons else other.lessons
+    }
+
     /** The classes on [date] (an epoch day), by start time. */
-    fun on(date: Long): List<TimetableLesson> = lessons.filter { lesson ->
+    fun on(date: Long): List<TimetableLesson> = weekLessons(date).filter { lesson ->
         lesson.day == weekday(date) && (lesson.from == null || date >= lesson.from) &&
             date <= (lesson.until ?: (week + 7 * (UNDATED_WEEKS + 1) - 1))
     }.sortedWith(compareBy({ it.start }, { it.end }))
@@ -41,7 +53,7 @@ data class Timetable(val owner: String, val week: Long, val saved: Long, val les
 
     companion object {
         const val MESSAGE_PREFIX = "univer-schedule:"
-        const val MAX_LENGTH = 65536
+        const val MAX_LENGTH = 131072
         const val MAX_LESSONS = 80
         const val UNDATED_WEEKS = 3
         private const val DAY = 86_400_000L
@@ -94,10 +106,23 @@ data class Timetable(val owner: String, val week: Long, val saved: Long, val les
             val week = date(map["week"])?.takeIf { weekday(it) == 0 } ?: return null
             val saved = (map["saved"] as? Number)?.toLong()?.takeIf { it > 0 } ?: return null
             val owner = text(map["owner"], 128) ?: return null
-            val items = map["lessons"] as? List<*> ?: return null
+            val lessons = lessons(map["lessons"], week) ?: return null
+            // An old copy has no neighbour; a neighbour out of shape refuses the whole copy.
+            val alternate = when (val value = map["second"]) {
+                null -> null
+                is Map<*, *> -> {
+                    val other = date(value["week"])?.takeIf { weekday(it) == 0 && Math.abs(it - week) == 7L } ?: return null
+                    AlternateWeek(other, lessons(value["lessons"], other) ?: return null)
+                }
+                else -> return null
+            }
+            return Timetable(owner, week, saved, lessons, alternate)
+        }
+
+        private fun lessons(value: Any?, week: Long): List<TimetableLesson>? {
+            val items = value as? List<*> ?: return null
             if (items.size > MAX_LESSONS) return null
-            val lessons = items.map { lessonOf(it as? Map<*, *> ?: return null, week) ?: return null }
-            return Timetable(owner, week, saved, lessons)
+            return items.map { lessonOf(it as? Map<*, *> ?: return null, week) ?: return null }
         }
 
         internal fun lessonOf(map: Map<*, *>, week: Long): TimetableLesson? {

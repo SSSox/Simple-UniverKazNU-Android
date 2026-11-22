@@ -250,8 +250,9 @@
         } finally { clearTimeout(timeout); }
     }
     // {v, term, until (the last day the site lists), weeks (the shown one first, then its neighbour), missing (numbers)}.
-    async function readPair() {
-        var frame = weekFrame(document); if (!frame) throw new Error('No week');
+    async function readPair(doc) {
+        doc = doc || document;
+        var frame = weekFrame(doc); if (!frame) throw new Error('No week');
         var shown = frame.ranges[frame.at], start = shown[0].getTime(), end = dayAfter(shown[shown.length - 1]), after = -1, before = -1, latest = shown[shown.length - 1];
         frame.ranges.forEach(function (r, i) {
             if (!r) return;
@@ -260,7 +261,7 @@
             if (r[0].getTime() === end && after < 0) after = i;
             if (dayAfter(r[r.length - 1]) === start && before < 0) before = i;
         });
-        var pair = {v:1, term:frame.term, until:isoDay(latest), weeks:[weekEntry(frame, frame.at, document)], missing:[]}, other = after >= 0 ? after : before;
+        var pair = {v:1, term:frame.term, until:isoDay(latest), weeks:[weekEntry(frame, frame.at, doc)], missing:[]}, other = after >= 0 ? after : before;
         if (other >= 0) {
             try { pair.weeks.push(weekEntry(frame, other, await readWeek(frame.options[other], frame.ranges[other]))); }
             catch (_) { pair.missing.push(weekNumber(frame.options[other], other).number); }
@@ -309,13 +310,20 @@
         }).then(function () { clearTimeout(timer); exportDone(token); }, function () { clearTimeout(timer); exportDone(token); });
     }, true);
     // Hands the week to the app once per page; the same week read again (another pass, the kept copy) is not sent twice.
-    var sentWeek = '';
+    // The site alternates odd and even weeks, so the neighbouring week (one GET, read-only) goes along as `second` and the
+    // widget and reminders follow the parity; with it unread (or none listed) the week goes alone and repeats as before.
+    var sentWeek = '', weekTicket = 0;
     function saveWeek(doc) {
         if (typeof __univerNative !== 'function') return;
         var week = timetable(doc, new Date()); if (!week) return;
-        var message = 'univer-schedule:' + JSON.stringify(week);
-        if (message === sentWeek) return;
-        sentWeek = message; __univerNative(message);
+        var key = JSON.stringify(week);
+        if (key === sentWeek) return;
+        sentWeek = key; var ticket = ++weekTicket;
+        readPair(doc).then(function (pair) { return pair.weeks[1] ? {week:pair.weeks[1].monday, lessons:pair.weeks[1].lessons} : null; }, function () { return null; }).then(function (second) {
+            if (ticket !== weekTicket) return;
+            if (second) week.second = second;
+            __univerNative('univer-schedule:' + JSON.stringify(week));
+        });
     }
 
     // The grades panel shows the journal's totals, so the app keeps them as seen: a background check does not announce

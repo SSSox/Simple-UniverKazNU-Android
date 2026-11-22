@@ -231,7 +231,7 @@ class MobilePageAdapter(
          */
         private const val NATIVE = "var __univerNative=__univerSend&&typeof __univerSend.app==='function'?function(v){'use strict';" +
             "if(typeof v!=='string'||v.length<11)return;" +
-            "var k=['univer-pin:',8192,'univer-download-all:',65536,'univer-report:',65536,'univer-calendar:',4096,'univer-schedule:',65536,'univer-export:',98304,'univer-grades:',65536,'univer-exams:',32768],i,j,p,m=false;" +
+            "var k=['univer-pin:',8192,'univer-download-all:',65536,'univer-report:',65536,'univer-calendar:',4096,'univer-schedule:',131072,'univer-export:',98304,'univer-grades:',65536,'univer-exams:',32768],i,j,p,m=false;" +
             "for(j=0;j<k.length&&!m;j+=2){p=k[j];m=v.length<=k[j+1];for(i=0;m&&i<p.length;i++)if(v[i]!==p[i])m=false;}" +
             "if(window===window.top&&m)__univerSend.app(v);}:null;"
 
