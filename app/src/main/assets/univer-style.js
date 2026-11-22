@@ -241,6 +241,8 @@
 :root.univer-mobile .univer-app-materials a.downLoad { display:inline-flex!important; align-items:center; gap:8px; min-height:32px!important; padding:5px 12px!important; border:1px solid var(--u-brand-line)!important; border-radius:8px!important; background:var(--u-brand-soft)!important; color:var(--u-brand)!important; font-size:var(--u-fs-body)!important; font-weight:600!important; text-decoration:none!important; overflow-wrap:anywhere; }
 :root.univer-mobile .univer-app-materials a.downLoad::before { content:''; width:15px; height:15px; flex:0 0 auto; background:currentColor; -webkit-mask:${icons.download} center/contain no-repeat; }
 :root.univer-mobile :is(.univer-app-courses,.univer-app-materials) td { overflow-wrap:break-word!important; }
+/* A file added since the last visit (univer-folds.js): a text tag after the file's button, never the button's own text. */
+:root.univer-mobile #l4 .univer-app-file-new { display:inline-flex; align-items:center; height:22px; margin:0 0 0 8px; padding:0 8px; box-sizing:border-box; border-radius:6px; background:var(--u-brand); color:#fff; font-size:12px; font-weight:600; line-height:1; vertical-align:middle; white-space:nowrap; }
 
 /* Schedule: a day agenda at every width, plus the unchanged source grid on request. */
 :root.univer-mobile .univer-app-schedule { display:block!important; width:100%; }
