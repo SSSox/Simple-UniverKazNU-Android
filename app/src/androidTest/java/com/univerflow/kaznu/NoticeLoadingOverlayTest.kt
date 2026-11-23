@@ -49,16 +49,20 @@ class NoticeLoadingOverlayTest {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             lateinit var binding: ActivityMainBinding
             lateinit var loading: NoticeLoadingOverlay
-            val timedOut = CountDownLatch(1)
+            // The overlay leaves with a fade after the timeout; a fixed delay raced that fade on a busy emulator.
+            val revealed = CountDownLatch(1)
             scenario.onActivity { activity ->
                 binding = ActivityMainBinding.inflate(activity.layoutInflater)
                 activity.setContentView(binding.root)
                 loading = NoticeLoadingOverlay(binding.webView, binding.noticeLoadingOverlay, 100)
                 loading.beginStartup()
-                binding.root.postDelayed({ timedOut.countDown() }, 300)
+                assertEquals(View.VISIBLE, binding.noticeLoadingOverlay.visibility)
+                binding.root.viewTreeObserver.addOnGlobalLayoutListener {
+                    if (binding.noticeLoadingOverlay.visibility == View.GONE) revealed.countDown()
+                }
             }
             try {
-                assertTrue(timedOut.await(10, TimeUnit.SECONDS))
+                assertTrue("the timeout alone reveals the page", revealed.await(10, TimeUnit.SECONDS))
                 scenario.onActivity {
                     assertEquals(View.GONE, binding.noticeLoadingOverlay.visibility)
                     loading.status(AutomationStatus.NOTICE_CONFIRMING)
