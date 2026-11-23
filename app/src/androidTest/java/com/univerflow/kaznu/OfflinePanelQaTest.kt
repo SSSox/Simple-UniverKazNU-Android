@@ -224,6 +224,20 @@ class OfflinePanelQaTest {
         assertNull(views.offlineBands.contentDescription)
     }
 
+    @Test fun anExamTodayFillsItsTileAndAnEmptyWeekKeepsOnlyTheHeader() {
+        val friday = at(20, 8)
+        val drawn = draw("today", OfflineDigest.of(null, week.copy(lessons = emptyList()), exams, friday, zone), dark = true)
+        val day = drawn.views.offlineExamDays.getChildAt(0)
+        assertEquals("Сегодня", day.findViewById<TextView>(R.id.exam_relative).text.toString())
+        assertEquals(colour(themed(true), R.color.brand_fill), day.findViewById<PlateLayout>(R.id.exam_date).fill)
+        assertNull(day.findViewById<PlateLayout>(R.id.exam_date).stroke)
+        // No class within a week: the card keeps its header with the week button, and no rows.
+        assertTrue(drawn.views.offlineDay.isVisible)
+        assertEquals(AppLanguage.RUSSIAN.context(instrumentation.targetContext).getString(R.string.widget_none_week),
+            drawn.views.offlineDayTitle.text.toString())
+        assertFalse(drawn.views.offlineLessons.isVisible)
+    }
+
     @Test fun nothingSavedSaysHowToKeepGradesAndHidesTheRest() {
         val drawn = draw("empty", OfflineDigest.of(null, null, null, now, zone))
         assertFalse("no saved data: the window may be captured as before", drawn.panel.shown)
