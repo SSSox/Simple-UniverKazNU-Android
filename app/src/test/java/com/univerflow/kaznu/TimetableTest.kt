@@ -110,4 +110,51 @@ class TimetableTest {
         assertEquals(at(17, 0), TodayPlan.nextChange(timetable, at(16, 12), almaty))
         assertEquals(at(17, 0), TodayPlan.nextChange(null, at(16, 12), almaty))
     }
+
+    // The saved week's neighbour (week of Monday 23 November): Monday 9:00 Культурология only.
+    private fun second(vararg lessons: Map<String, Any?>, week: String = "2026-11-23") = mapOf<String, Any?>("week" to week, "lessons" to lessons.toList())
+    private val alternating = Timetable.of(message("second" to second(lesson(0, "09:00", "09:50", "Культурология"))), now, almaty)!!
+
+    @Test fun withTheNeighbouringWeekSavedTheOddAndEvenWeeksFollowTheirParity() {
+        // The saved week 16 November: Политология and Культурология on Monday, История on Wednesday.
+        assertEquals(listOf("Политология", "Культурология"), alternating.on(day(16)).map { it.subject })
+        assertEquals(listOf("История"), alternating.on(day(18)).map { it.subject })
+        // The week after belongs to the neighbour: its Monday, and no Wednesday class.
+        assertEquals(listOf("Культурология"), alternating.on(day(23)).map { it.subject })
+        assertEquals(emptyList<String>(), alternating.on(day(25)).map { it.subject })
+        // Two weeks on it is the saved week's again, and so on, forwards and backwards.
+        assertEquals(listOf("Политология", "Культурология"), alternating.on(day(30)).map { it.subject })
+        assertEquals(listOf("Культурология"), alternating.on(day(9)).map { it.subject })
+        assertEquals(listOf("Политология", "Культурология"), alternating.on(day(2)).map { it.subject })
+        // Reminders look at the same days: from Sunday evening the next class is the neighbour week's Monday one.
+        assertEquals("Культурология", alternating.next(at(22, 20), almaty)!!.lesson.subject)
+        assertEquals(day(23), alternating.next(at(22, 20), almaty)!!.date)
+    }
+
+    @Test fun aNeighbourBeforeTheSavedWeekPairsTheSameWay() {
+        val before = Timetable.of(message("second" to second(lesson(1, "09:00", "09:50", "Физика"), week = "2026-11-09")), now, almaty)!!
+        assertEquals(listOf("Физика"), before.on(day(10)).map { it.subject })
+        assertEquals(emptyList<String>(), before.on(day(17)).map { it.subject })
+        assertEquals(listOf("Физика"), before.on(day(24)).map { it.subject })
+    }
+
+    @Test fun aCopyWithoutTheNeighbourRepeatsTheSavedWeekAsBefore() {
+        // Files written before the odd and even weeks were kept, and a page whose neighbour could not be read.
+        assertNull(timetable.alternate)
+        assertEquals(listOf("Политология", "Культурология"), timetable.on(day(23)).map { it.subject })
+        assertNotNull(Timetable.restore(message("saved" to now)))
+        assertNull(Timetable.restore(message("saved" to now))!!.alternate)
+    }
+
+    @Test fun aNeighbourOutOfShapeRefusesTheWholeCopy() {
+        val good = lesson(0, "09:00", "09:50", "Культурология")
+        val refused = listOf(
+            second(good, week = "2026-11-30"), second(good, week = "2026-11-16"), second(good, week = "2026-11-24"), second(good, week = "2026-11-02"),
+            second(lesson(7, "09:00", "09:50", "Предмет")), second(lesson(0, "09:50", "09:00", "Предмет")),
+            mapOf<String, Any?>("week" to "2026-11-23", "lessons" to "none"), mapOf<String, Any?>("lessons" to listOf(good)))
+        for (value in refused) assertNull(value.toString(), Timetable.of(message("second" to value), now, almaty))
+        assertNull(Timetable.of(message("second" to "2026-11-23"), now, almaty))
+        assertNull(Timetable.of(message("second" to second(*Array(81) { good })), now, almaty))
+        assertNotNull("a neighbour week without classes is a week without classes", Timetable.of(message("second" to second()), now, almaty))
+    }
 }

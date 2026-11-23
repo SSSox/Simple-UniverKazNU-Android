@@ -3,6 +3,7 @@ package com.univerflow.kaznu.data
 import android.content.Context
 import android.util.AtomicFile
 import com.univerflow.kaznu.domain.Timetable
+import com.univerflow.kaznu.domain.TimetableLesson
 import com.univerflow.kaznu.web.PageJson
 import org.json.JSONArray
 import org.json.JSONObject
@@ -14,7 +15,7 @@ import java.io.File
  */
 object TimetableStore {
     private const val NAME = "timetable.json"
-    private const val MAX_SIZE = 96 * 1024
+    private const val MAX_SIZE = 192 * 1024
 
     /** Grows with every [erase]: a write that began before it is not kept. */
     @Volatile var generation = 0
@@ -50,10 +51,14 @@ object TimetableStore {
 
     private fun json(timetable: Timetable) = JSONObject().put("v", 1).put("week", Timetable.iso(timetable.week))
         .put("saved", timetable.saved).put("owner", timetable.owner)
-        .put("lessons", JSONArray(timetable.lessons.map { lesson ->
-            JSONObject().put("day", lesson.day).put("start", Timetable.clock(lesson.start)).put("end", Timetable.clock(lesson.end))
-                .put("subject", lesson.subject).put("type", lesson.type).put("room", lesson.room).put("faculty", lesson.faculty)
-                .put("teacher", lesson.teacher).put("from", lesson.from?.let(Timetable::iso) ?: JSONObject.NULL)
-                .put("until", lesson.until?.let(Timetable::iso) ?: JSONObject.NULL)
-        }))
+        .put("lessons", lessons(timetable.lessons))
+        // Absent in a copy with no neighbouring week, as in files written before the odd and even weeks were kept.
+        .apply { timetable.alternate?.let { put("second", JSONObject().put("week", Timetable.iso(it.week)).put("lessons", lessons(it.lessons))) } }
+
+    private fun lessons(list: List<TimetableLesson>) = JSONArray(list.map { lesson ->
+        JSONObject().put("day", lesson.day).put("start", Timetable.clock(lesson.start)).put("end", Timetable.clock(lesson.end))
+            .put("subject", lesson.subject).put("type", lesson.type).put("room", lesson.room).put("faculty", lesson.faculty)
+            .put("teacher", lesson.teacher).put("from", lesson.from?.let(Timetable::iso) ?: JSONObject.NULL)
+            .put("until", lesson.until?.let(Timetable::iso) ?: JSONObject.NULL)
+    })
 }

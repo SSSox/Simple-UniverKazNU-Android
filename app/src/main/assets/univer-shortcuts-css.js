@@ -128,6 +128,11 @@
 :root.univer-mobile .univer-app-overview-head>h2 { flex:1 1 auto; margin:0!important; color:var(--u-ink,#16283b)!important; font-size:17px!important; font-weight:650; }
 :root.univer-mobile .univer-app-overview-link { color:var(--u-brand,#1b5fa6)!important; font-size:14px!important; font-weight:600; text-decoration:none!important; white-space:nowrap; }
 :root.univer-mobile .univer-app-overview-body { padding:12px 20px 16px; }
+/* The schedule page's export buttons. */
+:root.univer-mobile .univer-app-schedule-export { display:flex; flex-wrap:wrap; gap:8px; margin:8px 0 0; }
+:root.univer-mobile .univer-app-schedule-export button { box-sizing:border-box; min-height:44px; padding:0 14px!important; border:1px solid var(--u-line,#dfe5ec)!important; border-radius:10px!important; background:var(--u-surface,#fff)!important; color:var(--u-brand,#1b5fa6)!important; font-family:inherit; font-size:14px!important; font-weight:600; line-height:1.2; cursor:pointer; }
+:root.univer-mobile .univer-app-schedule-export button[aria-busy=true] { opacity:.6; }
+:root.univer-mobile .univer-app-schedule-export button:focus-visible { outline:2px solid var(--u-brand,#1b5fa6); outline-offset:2px; }
 :root.univer-mobile .univer-app-overview-caption { margin:0 0 8px!important; color:var(--u-muted,#5b6b7c); font-size:14px!important; }
 :root.univer-mobile .univer-app-overview-empty { margin:4px 0!important; color:var(--u-muted,#5b6b7c); }
 :root.univer-mobile .univer-app-overview-stale { margin:10px 0 0!important; color:var(--u-muted,#5b6b7c); font-size:13px!important; }

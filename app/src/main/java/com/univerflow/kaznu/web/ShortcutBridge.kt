@@ -7,9 +7,11 @@ import com.univerflow.kaznu.domain.CalendarEvent
 import com.univerflow.kaznu.domain.ExamItem
 import com.univerflow.kaznu.domain.ExamKind
 import com.univerflow.kaznu.domain.ExamPlan
+import com.univerflow.kaznu.domain.ExportKind
 import com.univerflow.kaznu.domain.GradeReport
 import com.univerflow.kaznu.domain.GradeTotals
 import com.univerflow.kaznu.domain.HomeShortcuts
+import com.univerflow.kaznu.domain.SchedulePair
 import com.univerflow.kaznu.domain.ShortcutRequest
 import com.univerflow.kaznu.domain.Shortcuts
 import com.univerflow.kaznu.domain.Timetable
@@ -26,7 +28,7 @@ import org.json.JSONTokener
 class ShortcutBridge(private val web: WebView, private val channel: ChannelGuard, private val onDownloadAll: (DownloadBatch) -> Unit = {},
     private val onReport: (GradeReport?) -> Unit = {}, private val onCalendar: (CalendarEvent?) -> Unit = {},
     private val onTimetable: (Timetable) -> Unit = {}, private val onGrades: (GradeTotals) -> Unit = {},
-    private val onExams: (ExamKind, List<ExamItem>) -> Unit = { _, _ -> },
+    private val onExams: (ExamKind, List<ExamItem>) -> Unit = { _, _ -> }, private val onSchedule: (Pair<ExportKind, SchedulePair>?) -> Unit = {},
     private val onRequest: (ShortcutRequest) -> Unit) {
     private var closed = false
 
@@ -45,6 +47,8 @@ class ShortcutBridge(private val web: WebView, private val channel: ChannelGuard
                 // The journal's totals, sent without a tap for the background check's base; one out of shape is dropped.
                 data.startsWith(GradeTotals.MESSAGE_PREFIX) -> GradesMessage.parse(data)?.let(onGrades)
                 // The exam or midterm schedule's coming items, sent without a tap; one out of shape is dropped.
+                // The schedule's «В календарь» or «Картинкой»; a page that could not be read, or one out of shape, is said.
+                data.startsWith(SchedulePair.MESSAGE_PREFIX) -> onSchedule(ScheduleExportMessage.parse(data))
                 data.startsWith(ExamPlan.MESSAGE_PREFIX) -> ExamMessage.parse(data)?.let { (kind, items) -> onExams(kind, items) }
                 else -> parse(data)?.let(onRequest)
             }

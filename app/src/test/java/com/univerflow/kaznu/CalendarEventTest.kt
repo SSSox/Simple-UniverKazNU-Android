@@ -53,4 +53,13 @@ class CalendarEventTest {
         assertNull(of(message("start" to "2026-11-19T11:00", "end" to "2026-11-19T12:00", "until" to null)))
         assertNull(of(message("start" to "2028-11-22T09:00", "end" to "2028-11-22T10:00", "until" to null)))
     }
+
+    @Test fun aClassOfOneOfTheTwoWeeksRepeatsEverySecondWeek() {
+        val event = of(message("interval" to 2, "partial" to true))!!
+        assertEquals("FREQ=WEEKLY;INTERVAL=2;UNTIL=20261215T185900Z", event.rule)
+        assertEquals(true, event.partial)
+        assertEquals("the default is every week, the other week read", "FREQ=WEEKLY;UNTIL=20261215T185900Z", of(message())!!.rule)
+        assertEquals(false, of(message("interval" to 1))!!.partial)
+        for (change in listOf("interval" to 3, "interval" to 0, "interval" to "2", "partial" to "yes", "partial" to 1)) assertNull(change.toString(), of(message(change)))
+    }
 }

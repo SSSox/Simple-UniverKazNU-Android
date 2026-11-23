@@ -26,11 +26,12 @@ function page(path, content, { native = () => {}, day = 18, hour = 10, routes = 
   w.Date = class extends RealDate { constructor(...args) { super(...(args.length ? args : [2026, 10, day, hour, 30])); } static now() { return new RealDate(2026, 10, day, hour, 30).getTime(); } };
   w.TextDecoder = TextDecoder;
   w.localStorage.setItem('univer.app.account.v1', 'acc-1');
-  w.fetch = async url => ({ status: 200, url: 'https://univer.kaznu.kz' + url, text: async () => routes[url] ?? '<html><body></body></html>' });
+  w.fetch = async url => { const path = String(url).replace('https://univer.kaznu.kz', ''); return { status: 200, url: 'https://univer.kaznu.kz' + path, text: async () => routes[path] ?? '<html><body></body></html>' }; };
   if (native) w.__univerNative = native;
   scripts.forEach(script => w.eval(script));
   return w;
 }
+const settle = async () => { for (let i = 0; i < 30; i++) await new Promise(resolve => setImmediate(resolve)); };
 const parse = html => new JSDOM(html).window.document;
 const sentWeeks = sent => sent.map(m => { assert.match(m, /^univer-schedule:/); return JSON.parse(m.slice('univer-schedule:'.length)); });
 
@@ -81,6 +82,7 @@ test('the schedule page hands its week to the app once per page', async () => {
   const w = page('/student/myschedule/', week() + SCHEDULE, { native: m => sent.push(m) });
   w.__univerOverviewV1.apply('ru');
   w.__univerOverviewV1.apply('ru');
+  await settle();
   const weeks = sentWeeks(sent);
   assert.equal(weeks.length, 1, 'a second pass over the same page sends nothing');
   assert.equal(weeks[0].lessons.length, 4);
@@ -88,6 +90,7 @@ test('the schedule page hands its week to the app once per page', async () => {
   const other = [];
   const old = page('/student/myschedule/2026/1/09.11.2026/15.11.2026/', week('Неделя 11. 09.11.2026 - 15.11.2026', '/student/myschedule/2026/1/09.11.2026/15.11.2026/') + SCHEDULE, { native: m => other.push(m) });
   old.__univerOverviewV1.apply('ru');
+  await settle();
   assert.deepEqual(other, [], 'a past week the student looks at is not saved as this week');
   old.close();
 });
@@ -103,4 +106,33 @@ test('Бакалавр hands over the week it reads for its Today panel; without
   const lone = page('/student/myschedule/', week() + SCHEDULE, { native: null });
   assert.doesNotThrow(() => lone.__univerOverviewV1.apply('ru'));
   lone.close();
+});
+
+// The neighbouring week (the site alternates odd and even weeks) goes along, so the widget and reminders follow the parity.
+const NEIGHBOUR = '/student/myschedule/2026/1/09.11.2026/15.11.2026/';
+const neighbourPage = '<html><body><select id="weekSelect"><option value="' + NEIGHBOUR + '" selected>Неделя 11. 09.11.2026 - 15.11.2026</option>' +
+  '<option value="/student/myschedule/2026/1/16.11.2026/22.11.2026/">Неделя 12. 16.11.2026 - 22.11.2026</option></select>' +
+  '<table class="schedule"><tr><th>&nbsp;</th><th>ПН</th><th>ВТ</th></tr><tr>' + time('09:00-09:50') + '<td class="field"></td>' + cell('Физика', 'лекция', 'Физиков Ф. Ф.', '101') + '</tr></table></body></html>';
+
+test('the schedule page sends the week with its neighbour once that is read, and alone when it cannot be', async () => {
+  const sent = [];
+  const w = page('/student/myschedule/', week() + SCHEDULE, { native: m => sent.push(m), routes: { [NEIGHBOUR]: neighbourPage } });
+  w.__univerOverviewV1.apply('ru');
+  await settle();
+  const [saved] = sentWeeks(sent);
+  assert.equal(sent.length, 1, 'one message, sent after the neighbour was read');
+  assert.equal(saved.week, '2026-11-16');
+  assert.equal(saved.lessons.length, 4);
+  assert.equal(saved.second.week, '2026-11-09', 'the week right before: nothing is listed after');
+  assert.deepEqual(saved.second.lessons.map(l => [l.day, l.start, l.end, l.subject, l.room]), [[1, '09:00', '09:50', 'Физика', '101']]);
+  w.close();
+  for (const routes of [{}, { [NEIGHBOUR]: SCHEDULE }, { [NEIGHBOUR]: '<form id="login_frm"></form>' }]) {
+    const alone = [];
+    const p = page('/student/myschedule/', week() + SCHEDULE, { native: m => alone.push(m), routes });
+    p.__univerOverviewV1.apply('ru');
+    await settle();
+    assert.equal(sentWeeks(alone).length, 1);
+    assert.equal('second' in sentWeeks(alone)[0], false, 'an unread neighbour is left out, not guessed');
+    p.close();
+  }
 });

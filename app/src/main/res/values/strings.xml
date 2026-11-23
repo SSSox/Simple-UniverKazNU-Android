@@ -69,6 +69,25 @@
     <string name="refresh_kept_dialog">Сначала закройте окно на странице, затем обновите её</string>
     <string name="calendar_error">Не удалось подготовить событие для календаря</string>
     <string name="calendar_missing">На телефоне нет приложения календаря</string>
+    <!-- Schedule export: both weeks to the calendar as a file, or as a picture. -->
+    <string name="schedule_error">Не удалось подготовить расписание</string>
+    <string name="schedule_empty">В этих неделях нет занятий для экспорта</string>
+    <string name="schedule_file_weeks">Расписание, недели %1$s</string>
+    <string name="schedule_file_week">Расписание, неделя %1$s</string>
+    <string name="schedule_calendar_name">Расписание КазНУ</string>
+    <string name="schedule_part_named">Неделя %1$d не прочитана, её занятий в файле нет: занятия недели %2$d повторяются раз в две недели.</string>
+    <string name="schedule_part_other">Соседняя неделя не прочитана, её занятий в файле нет: занятия показанной недели повторяются раз в две недели.</string>
+    <string name="schedule_part_open">Открыть</string>
+    <string name="calendar_part">Соседняя неделя не прочитана: занятие добавится раз в две недели, начиная с показанной недели.</string>
+    <string name="schedule_week_heading">Неделя %1$d, %2$s</string>
+    <string name="schedule_odd">нечётная</string>
+    <string name="schedule_even">чётная</string>
+    <string name="schedule_other_week">Соседняя неделя</string>
+    <string name="schedule_unread">Эту неделю не удалось прочитать</string>
+    <string name="schedule_room">ауд. %1$s</string>
+    <string name="schedule_no_classes">Занятий нет</string>
+    <string name="schedule_picture_part_named">Неделя %1$d не прочитана: на картинке она отмечена, показаны только занятия недели %2$d.</string>
+    <string name="schedule_picture_part_other">Соседняя неделя не прочитана: на картинке она отмечена, показаны только занятия показанной недели.</string>
     <string name="nav_attestation">Текущая аттестация</string>
     <string name="nav_distance">Дистанционные курсы</string>
     <string name="nav_all_sections">Все разделы сайта</string>
