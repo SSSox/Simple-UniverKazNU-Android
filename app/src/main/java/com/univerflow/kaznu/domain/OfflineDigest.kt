@@ -17,11 +17,19 @@ data class OfflineDigest(
     val day: Day?,
     /** Exams and midterms that have not started, soonest first. */
     val exams: List<ExamItem>,
+    /** The epoch day on the phone's clock: how far each exam day is follows it, so after midnight the digest differs. */
+    val today: Long,
 ) {
     enum class Day { TODAY, TOMORROW, LATER }
 
+    /** The exams of one day, as the site's exam timetable groups them; [inDays] 0 is today. */
+    data class ExamDay(val date: Long, val inDays: Long, val exams: List<ExamItem>)
+
     /** Nothing kept at all: the error screen stays as it was. */
     val empty: Boolean get() = grades == null && timetableSaved == null && exams.isEmpty()
+
+    /** [exams] by day, soonest first. */
+    val examDays: List<ExamDay> get() = exams.groupBy { it.date }.map { (date, items) -> ExamDay(date, date - today, items) }
 
     companion object {
         /** A whole day of classes: the offline screen has room for all of them. */
@@ -40,7 +48,7 @@ data class OfflineDigest(
             }
             val ahead = exams?.items.orEmpty().map { it to it.startAt(zone) }.filter { it.second > now }
                 .sortedBy { it.second }.take(EXAM_ROWS).map { it.first }
-            return OfflineDigest(grades, timetable?.saved, plan, day, ahead)
+            return OfflineDigest(grades, timetable?.saved, plan, day, ahead, today)
         }
     }
 }

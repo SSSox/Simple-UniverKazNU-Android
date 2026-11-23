@@ -1,52 +1,64 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- What the phone kept, under a network error (ui/OfflinePanel): grades, the day's classes, exams ahead. -->
+<!-- What the phone kept, under a network error (ui/OfflinePanel), drawn like the same parts of the site layer: the
+     journal's summary card with score chips and the colour legend, the day's classes in a card with its header, and the
+     exam days of the exam timetable. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/offline_panel" android:layout_width="match_parent" android:layout_height="wrap_content"
     android:layout_marginTop="32dp" android:orientation="vertical" android:visibility="gone">
-    <TextView android:id="@+id/offline_grades_title" android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:paddingHorizontal="4dp" android:textAppearance="?attr/textAppearanceTitleSmall" android:textColor="?attr/colorOnSurface" />
-    <com.google.android.material.card.MaterialCardView android:id="@+id/offline_grades_card" android:layout_width="match_parent"
-        android:layout_height="wrap_content" android:layout_marginTop="8dp" app:cardBackgroundColor="@color/card_surface"
-        app:cardCornerRadius="16dp" app:strokeColor="?attr/colorOutlineVariant" app:strokeWidth="1dp">
+    <com.univerflow.kaznu.ui.PlateLayout android:id="@+id/offline_grades" android:layout_width="match_parent"
+        android:layout_height="wrap_content" android:orientation="vertical">
+        <TextView android:id="@+id/offline_grades_title" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:background="@drawable/card_header" android:gravity="center_vertical" android:minHeight="52dp"
+            android:paddingHorizontal="16dp" android:paddingVertical="12dp" android:textAppearance="?attr/textAppearanceTitleMedium"
+            android:textColor="?attr/colorOnSurface" />
         <LinearLayout android:id="@+id/offline_grades_list" android:layout_width="match_parent"
-            android:layout_height="wrap_content" android:orientation="vertical" />
-    </com.google.android.material.card.MaterialCardView>
+            android:layout_height="wrap_content" android:orientation="vertical" android:paddingVertical="4dp" />
+        <TextView android:id="@+id/offline_grades_empty" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:padding="16dp" android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant" />
+        <LinearLayout android:id="@+id/offline_bands" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:background="@drawable/card_rule" android:orientation="vertical" android:paddingHorizontal="16dp"
+            android:paddingTop="12dp" android:paddingBottom="12dp">
+            <!-- Read out as one line: OfflinePanel gives the block its description. -->
+            <TextView android:id="@+id/offline_bands_title" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:importantForAccessibility="no" android:textAppearance="?attr/textAppearanceLabelMedium"
+                android:textColor="?attr/colorOnSurface" />
+            <com.google.android.material.chip.ChipGroup android:id="@+id/offline_bands_list" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:layout_marginTop="4dp" android:importantForAccessibility="noHideDescendants"
+                app:chipSpacingHorizontal="16dp" app:chipSpacingVertical="4dp" />
+        </LinearLayout>
+    </com.univerflow.kaznu.ui.PlateLayout>
     <TextView android:id="@+id/offline_grades_note" android:layout_width="match_parent" android:layout_height="wrap_content"
         android:layout_marginTop="8dp" android:paddingHorizontal="4dp" android:textAppearance="?attr/textAppearanceBodySmall"
         android:textColor="?attr/colorOnSurfaceVariant" />
 
     <LinearLayout android:id="@+id/offline_day" android:layout_width="match_parent" android:layout_height="wrap_content"
         android:layout_marginTop="24dp" android:orientation="vertical">
-        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical"
-            android:orientation="horizontal">
-            <TextView android:id="@+id/offline_day_title" android:layout_width="0dp" android:layout_height="wrap_content"
-                android:layout_weight="1" android:paddingHorizontal="4dp" android:textAppearance="?attr/textAppearanceTitleSmall"
-                android:textColor="?attr/colorOnSurface" />
-            <com.google.android.material.button.MaterialButton android:id="@+id/offline_week"
-                style="@style/Widget.Material3.Button.TextButton" android:layout_width="wrap_content"
-                android:layout_height="wrap_content" android:minHeight="48dp" app:icon="@drawable/ic_calendar"
-                app:iconGravity="textStart" />
-        </LinearLayout>
-        <com.google.android.material.card.MaterialCardView android:id="@+id/offline_day_card" android:layout_width="match_parent"
-            android:layout_height="wrap_content" android:layout_marginTop="4dp" app:cardBackgroundColor="@color/card_surface"
-            app:cardCornerRadius="16dp" app:strokeColor="?attr/colorOutlineVariant" app:strokeWidth="1dp">
+        <com.univerflow.kaznu.ui.PlateLayout android:id="@+id/offline_day_card" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:orientation="vertical">
+            <LinearLayout android:id="@+id/offline_day_head" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:background="@drawable/card_header" android:gravity="center_vertical" android:minHeight="52dp"
+                android:orientation="horizontal" android:paddingStart="16dp" android:paddingEnd="4dp">
+                <TextView android:id="@+id/offline_day_title" android:layout_width="0dp" android:layout_height="wrap_content"
+                    android:layout_weight="1" android:paddingVertical="12dp" android:textAppearance="?attr/textAppearanceTitleMedium"
+                    android:textColor="?attr/colorOnSurface" />
+                <com.google.android.material.button.MaterialButton android:id="@+id/offline_week"
+                    style="@style/Widget.Material3.Button.TextButton" android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" android:minHeight="48dp" app:icon="@drawable/ic_calendar"
+                    app:iconGravity="textStart" />
+            </LinearLayout>
             <LinearLayout android:id="@+id/offline_lessons" android:layout_width="match_parent"
                 android:layout_height="wrap_content" android:orientation="vertical" />
-        </com.google.android.material.card.MaterialCardView>
+        </com.univerflow.kaznu.ui.PlateLayout>
         <TextView android:id="@+id/offline_day_note" android:layout_width="match_parent" android:layout_height="wrap_content"
             android:layout_marginTop="8dp" android:paddingHorizontal="4dp" android:textAppearance="?attr/textAppearanceBodySmall"
             android:textColor="?attr/colorOnSurfaceVariant" />
     </LinearLayout>
 
     <LinearLayout android:id="@+id/offline_exams" android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:layout_marginTop="24dp" android:orientation="vertical">
+        android:layout_marginTop="28dp" android:orientation="vertical">
         <TextView android:id="@+id/offline_exams_title" android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:paddingHorizontal="4dp" android:textAppearance="?attr/textAppearanceTitleSmall" android:textColor="?attr/colorOnSurface" />
-        <com.google.android.material.card.MaterialCardView android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:layout_marginTop="8dp" app:cardBackgroundColor="@color/card_surface" app:cardCornerRadius="16dp"
-            app:strokeColor="?attr/colorOutlineVariant" app:strokeWidth="1dp">
-            <LinearLayout android:id="@+id/offline_exams_list" android:layout_width="match_parent"
-                android:layout_height="wrap_content" android:orientation="vertical" />
-        </com.google.android.material.card.MaterialCardView>
+            android:paddingHorizontal="4dp" android:textAppearance="?attr/textAppearanceTitleMedium" android:textColor="?attr/colorOnSurface" />
+        <LinearLayout android:id="@+id/offline_exam_days" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:layout_marginTop="12dp" android:orientation="vertical" />
     </LinearLayout>
 </LinearLayout>

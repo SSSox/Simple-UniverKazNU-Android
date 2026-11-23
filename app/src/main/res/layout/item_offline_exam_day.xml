@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One exam day like the site's exam timetable: a date tile, the weekday, how far it is, then the day's exams. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
+    <LinearLayout android:id="@+id/exam_day_head" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:gravity="center_vertical" android:orientation="horizontal">
+        <com.univerflow.kaznu.ui.PlateLayout android:id="@+id/exam_date" android:layout_width="48dp" android:layout_height="48dp"
+            android:gravity="center" android:importantForAccessibility="noHideDescendants" android:orientation="vertical">
+            <TextView android:id="@+id/exam_date_number" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:fontFamily="sans-serif-medium" android:fontFeatureSettings="tnum" android:includeFontPadding="false"
+                android:textColor="?attr/colorOnSurface" android:textSize="18sp" />
+            <TextView android:id="@+id/exam_date_month" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:layout_marginTop="2dp" android:includeFontPadding="false" android:textColor="?attr/colorOnSurfaceVariant"
+                android:textSize="12sp" />
+        </com.univerflow.kaznu.ui.PlateLayout>
+        <TextView android:id="@+id/exam_weekday" android:layout_width="0dp" android:layout_height="wrap_content"
+            android:layout_marginStart="12dp" android:layout_weight="1" android:textAppearance="?attr/textAppearanceTitleMedium"
+            android:textColor="?attr/colorOnSurface" />
+        <TextView android:id="@+id/exam_relative" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_marginStart="8dp" android:textAppearance="?attr/textAppearanceBodyMedium"
+            android:textColor="?attr/colorOnSurfaceVariant" />
+    </LinearLayout>
+    <LinearLayout android:id="@+id/exam_slots" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginTop="8dp" android:orientation="vertical" />
+</LinearLayout>

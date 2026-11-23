@@ -397,6 +397,18 @@
     <string name="offline_grades_as_of">Оценки на %s</string>
     <string name="offline_week">Вся неделя</string>
     <string name="offline_exams">Ближайшие экзамены</string>
+    <string name="offline_bands">Цвета баллов</string>
+    <plurals name="offline_in_days">
+        <item quantity="one">через %d день</item>
+        <item quantity="few">через %d дня</item>
+        <item quantity="many">через %d дней</item>
+        <item quantity="other">через %d дня</item>
+    </plurals>
+    <!-- An exam day's tile, as on the site's exam timetable. -->
+    <string-array name="offline_months_short">
+        <item>янв</item><item>фев</item><item>мар</item><item>апр</item><item>мая</item><item>июн</item>
+        <item>июл</item><item>авг</item><item>сен</item><item>окт</item><item>ноя</item><item>дек</item>
+    </string-array>
     <string name="widget_name">Пары на сегодня</string>
     <string name="widget_description">Сегодняшние пары из сохранённого расписания</string>
     <string name="widget_today">Сегодня</string>

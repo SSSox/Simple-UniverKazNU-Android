@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A card's header, as on the site's panels: a tint one step off the card and a hairline under it. PlateLayout clips
+     the corners. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item><shape android:shape="rectangle"><solid android:color="@color/card_header" /></shape></item>
+    <item android:gravity="bottom" android:height="1dp">
+        <shape android:shape="rectangle"><solid android:color="?attr/colorOutlineVariant" /></shape>
+    </item>
+</layer-list>

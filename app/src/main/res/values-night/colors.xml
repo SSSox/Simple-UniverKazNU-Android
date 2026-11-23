@@ -40,6 +40,19 @@
     <color name="card_surface">#1D2630</color>
     <color name="app_bar">#161E27</color>
     <color name="app_bar_line">#2C3540</color>
+    <!-- The site layer's dark band and brand tokens; the header is one step above the dark card. -->
+    <color name="band_low">#B06F68</color>
+    <color name="band_low_soft">#2A2020</color>
+    <color name="band_pass">#A3824C</color>
+    <color name="band_pass_soft">#2A2519</color>
+    <color name="band_good">#558C6C</color>
+    <color name="band_good_soft">#1B2821</color>
+    <color name="band_top">#6487B2</color>
+    <color name="band_top_soft">#1C2531</color>
+    <color name="brand_soft">#1A2B40</color>
+    <color name="brand_line">#34507A</color>
+    <color name="brand_strong">#B5D3F6</color>
+    <color name="card_header">#232D39</color>
     <color name="warning_container">#4A3510</color>
     <color name="on_warning_container">#FFDDA6</color>
     <color name="kind_pdf">#FF8A80</color>

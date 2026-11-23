@@ -69,6 +69,18 @@ class OfflineDigestTest {
         assertFalse(digest.empty)
     }
 
+    @Test fun examsAreGroupedByDayWithHowFarEachDayIs() {
+        val items = listOf(exam(16, 13, "История"), exam(15, 14, "Физика"), exam(16, 9, "Право"), exam(20, 9, "Химия"))
+        val evening = OfflineDigest.of(null, null, ExamPlan(saved, items), at(15, 12, month = 12), almaty)
+        assertEquals(date(15, 12), evening.today)
+        assertEquals(listOf(0L to listOf("Физика"), 1L to listOf("Право", "История"), 5L to listOf("Химия")),
+            evening.examDays.map { day -> day.inDays to day.exams.map { it.subject } })
+        // The same saved data a day later is new data: the panel redraws «Сегодня» as it moves.
+        val next = OfflineDigest.of(null, null, ExamPlan(saved, items), at(16, 8, month = 12), almaty)
+        assertEquals(0L, next.examDays.first().inDays)
+        assertFalse(next == evening)
+    }
+
     @Test fun nothingKeptLeavesTheErrorScreenAsItWas() {
         val digest = OfflineDigest.of(null, null, ExamPlan(saved, listOf(exam(1, 9, "Прошло", month = 11))), at(20, 12), almaty)
         assertTrue(digest.empty)

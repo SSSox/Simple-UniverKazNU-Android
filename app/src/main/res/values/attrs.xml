@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- ui/PlateLayout: the corner radius (12dp when absent). -->
+    <declare-styleable name="PlateLayout">
+        <attr name="plateRadius" format="dimension" />
+    </declare-styleable>
+</resources>

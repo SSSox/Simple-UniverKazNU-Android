@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One exam like the site's exam slot: the time, then its kind, subject and room. An exam gets the brand's edge
+     (OfflinePanel), a midterm stays quiet. -->
+<com.univerflow.kaznu.ui.PlateLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto" android:layout_width="match_parent" android:layout_height="wrap_content"
+    android:baselineAligned="false" android:orientation="horizontal" android:paddingStart="12dp" android:paddingTop="12dp"
+    android:paddingEnd="16dp" android:paddingBottom="16dp" app:plateRadius="14dp">
+    <TextView android:id="@+id/exam_time" android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:layout_marginTop="2dp" android:fontFamily="sans-serif-medium" android:fontFeatureSettings="tnum"
+        android:minWidth="48dp" android:gravity="center_horizontal" android:textColor="?attr/colorOnSurface" android:textSize="16sp" />
+    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="12dp"
+        android:layout_weight="1" android:orientation="vertical">
+        <TextView android:id="@+id/exam_kind" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:gravity="center_vertical" android:minHeight="24dp" android:paddingHorizontal="8dp"
+            android:textAppearance="?attr/textAppearanceLabelMedium" />
+        <TextView android:id="@+id/exam_subject" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="4dp" android:fontFamily="sans-serif-medium" android:textColor="?attr/colorOnSurface"
+            android:textSize="16sp" />
+        <TextView android:id="@+id/exam_place" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="4dp" android:drawablePadding="6dp" android:gravity="center_vertical"
+            android:textAppearance="?attr/textAppearanceBodyMedium" android:textColor="?attr/colorOnSurfaceVariant" />
+            <!-- OfflinePanel puts the pin before the room. -->
+    </LinearLayout>
+</com.univerflow.kaznu.ui.PlateLayout>

@@ -389,6 +389,15 @@
     <string name="offline_grades_as_of">%s бойынша бағалар</string>
     <string name="offline_week">Бүкіл апта</string>
     <string name="offline_exams">Жақын емтихандар</string>
+    <string name="offline_bands">Балл түстері</string>
+    <plurals name="offline_in_days">
+        <item quantity="one">%d күннен кейін</item>
+        <item quantity="other">%d күннен кейін</item>
+    </plurals>
+    <string-array name="offline_months_short">
+        <item>қаң</item><item>ақп</item><item>нау</item><item>сәу</item><item>мам</item><item>мау</item>
+        <item>шіл</item><item>там</item><item>қыр</item><item>қаз</item><item>қар</item><item>жел</item>
+    </string-array>
     <string name="widget_name">Бүгінгі сабақтар</string>
     <string name="widget_description">Сақталған кестедегі бүгінгі сабақтар</string>
     <string name="widget_today">Бүгін</string>

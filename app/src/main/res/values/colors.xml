@@ -43,6 +43,21 @@
     <color name="card_surface">#FFFFFF</color>
     <color name="app_bar">#FFFFFF</color>
     <color name="app_bar_line">#DFE5EC</color>
+    <!-- The offline screen draws grades and exams as the site layer does (univer-style.js): band fills and soft grounds
+         (u-band tokens; the light values equal GradeReportDrawing's), the brand's tints for exams, the cards' header tint. -->
+    <color name="band_low">#D77A70</color>
+    <color name="band_low_soft">#FBF3F2</color>
+    <color name="band_pass">#CC9A4C</color>
+    <color name="band_pass_soft">#FAF5EC</color>
+    <color name="band_good">#5FA67F</color>
+    <color name="band_good_soft">#EEF6F1</color>
+    <color name="band_top">#6B97CC</color>
+    <color name="band_top_soft">#EEF3F9</color>
+    <color name="brand_soft">#E9F1FB</color>
+    <color name="brand_line">#BFD3EA</color>
+    <color name="brand_strong">#154D88</color>
+    <color name="brand_fill">#1B5FA6</color>
+    <color name="card_header">#F7F9FB</color>
     <color name="warning_container">#FFF1D6</color>
     <color name="on_warning_container">#3D2600</color>
     <color name="kind_pdf">#C8342C</color>
