@@ -26,6 +26,8 @@ class LockFlow(private val activity: AppCompatActivity, private val model: Unive
         val sessionChanging: Boolean
         /** A signed-in service (Moodle) is open: its pages are always kept out of screenshots. */
         val serviceOpen: Boolean
+        /** The offline screen shows saved grades, classes or exams: kept out of screenshots and recents, like the page under a lock. */
+        val savedDataShown: Boolean
         /** Hides the page from view and accessibility while the account is locked, and pauses automation; or shows it again. */
         fun coverPage(covered: Boolean)
         fun dismissDialogs()
@@ -50,7 +52,7 @@ class LockFlow(private val activity: AppCompatActivity, private val model: Unive
     fun save(outState: Bundle) { outState.putBoolean(OFFER_SHOWN, offerShown) }
 
     /** The window is secure (no screenshots, no recent-apps picture) wherever an account or a PIN could show. */
-    fun forceSecure() = lockUi.isShowing || (model.state.value.lock.enabled && !inForeground)
+    fun forceSecure() = lockUi.isShowing || (model.state.value.lock.enabled && !inForeground) || host.savedDataShown
 
     fun applyWindowSecurity() {
         val state = model.state.value

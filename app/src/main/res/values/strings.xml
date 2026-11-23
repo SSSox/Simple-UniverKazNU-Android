@@ -394,6 +394,9 @@
     <string name="last_grades">Последние оценки</string>
     <string name="last_grades_none">Оценки ещё не сохранены. Откройте журнал в приложении, когда будет сеть.</string>
     <string name="last_grades_note">Показаны итоги, которые вы видели последними. Они могли измениться.</string>
+    <string name="offline_grades_as_of">Оценки на %s</string>
+    <string name="offline_week">Вся неделя</string>
+    <string name="offline_exams">Ближайшие экзамены</string>
     <string name="widget_name">Пары на сегодня</string>
     <string name="widget_description">Сегодняшние пары из сохранённого расписания</string>
     <string name="widget_today">Сегодня</string>

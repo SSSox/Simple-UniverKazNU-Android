@@ -386,6 +386,9 @@
     <string name="last_grades">Соңғы бағалар</string>
     <string name="last_grades_none">Бағалар әлі сақталмаған. Желі болғанда журналды қолданбада ашыңыз.</string>
     <string name="last_grades_note">Сіз соңғы көрген қорытындылар көрсетілген. Олар өзгерген болуы мүмкін.</string>
+    <string name="offline_grades_as_of">%s бойынша бағалар</string>
+    <string name="offline_week">Бүкіл апта</string>
+    <string name="offline_exams">Жақын емтихандар</string>
     <string name="widget_name">Бүгінгі сабақтар</string>
     <string name="widget_description">Сақталған кестедегі бүгінгі сабақтар</string>
     <string name="widget_today">Бүгін</string>

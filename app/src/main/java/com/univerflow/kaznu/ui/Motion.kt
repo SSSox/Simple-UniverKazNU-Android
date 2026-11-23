@@ -39,16 +39,19 @@ object Motion {
         view.translationY = 0f
     }
 
-    /** [rise] slides a banner from the app bar it belongs to; full-screen surfaces only fade. */
-    fun show(view: View, visible: Boolean, rise: Boolean = false) {
+    /**
+     * [rise] slides a banner from the app bar it belongs to; full-screen surfaces only fade. [hidden] runs once the view
+     * is gone, after its fade (not when the fade is already under way, nor when a later show turns it back).
+     */
+    fun show(view: View, visible: Boolean, rise: Boolean = false, hidden: (() -> Unit)? = null) {
         val lift = if (rise) -dp(view, 8) else 0f
         if (!visible) {
             if (leaving(view)) return
             view.animate().cancel()
-            if (!view.isVisible || !active || !view.isAttachedToWindow) { settle(view); view.isVisible = false; return }
+            if (!view.isVisible || !active || !view.isAttachedToWindow) { settle(view); view.isVisible = false; hidden?.invoke(); return }
             view.setTag(R.id.motion_leaving, true)
             view.animate().alpha(0f).translationY(lift).setDuration(EXIT_MS).setInterpolator(easeOut)
-                .withEndAction { settle(view); view.isVisible = false }.start()
+                .withEndAction { settle(view); view.isVisible = false; hidden?.invoke() }.start()
             return
         }
         if (view.isVisible && !leaving(view)) return // Already shown or fading in: repeated renders must not restart it.

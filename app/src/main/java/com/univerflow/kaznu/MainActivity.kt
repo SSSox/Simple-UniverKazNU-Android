@@ -70,6 +70,7 @@ import com.univerflow.kaznu.domain.GradeTotals
 import com.univerflow.kaznu.domain.ExamItem
 import com.univerflow.kaznu.domain.ExamKind
 import com.univerflow.kaznu.domain.LastGrades
+import com.univerflow.kaznu.domain.OfflineDigest
 import com.univerflow.kaznu.domain.CalendarEvent
 import com.univerflow.kaznu.domain.Timetable
 import com.univerflow.kaznu.download.DownloadEvent
@@ -106,7 +107,7 @@ import com.univerflow.kaznu.ui.LockUi
 import com.univerflow.kaznu.ui.Motion
 import com.univerflow.kaznu.ui.NoticeLoadingOverlay
 import com.univerflow.kaznu.ui.ThemeMode
-import com.univerflow.kaznu.ui.LastGradesActivity
+import com.univerflow.kaznu.ui.OfflinePanel
 import com.univerflow.kaznu.ui.TimetableActivity
 import com.univerflow.kaznu.ui.attempt
 import com.univerflow.kaznu.ui.launchCatching
@@ -142,8 +143,10 @@ import com.univerflow.kaznu.web.webErrorText
 import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONTokener
+import java.util.TimeZone
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -175,6 +178,9 @@ class MainActivity : AppCompatActivity() {
     /** The reminder setting and language the widget and the alarm were last brought in step with. */
     private var todayKey: Pair<ReminderSettings, AppLanguage>? = null
     private var gradesKey: Boolean? = null
+    private lateinit var offline: OfflinePanel
+    /** The offline screen's read of the stores; a newer error, a lock or a sign-out cancels it. */
+    private var offlineJob: Job? = null
     private val linkWindow = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()) { result ->
         result.data?.getStringExtra(LinkViewerActivity.RESULT_URL)?.let(::linkReturned)
     }
@@ -269,6 +275,8 @@ class MainActivity : AppCompatActivity() {
         OneShotPreDrawListener.add(binding.root) { binding.root.post { MobilePageAdapter.preload(assets, lifecycleScope) } }
         AppLockSession.initialize(this)
         lockUi = LockUi(this, ::text)
+        offline = OfflinePanel(binding.errorSaved, shownChanged = { lock.applyWindowSecurity() },
+            openWeek = { startActivity(TimetableActivity.intent(this, model.state.value.language)) })
         chrome = MainChrome(this, binding)
         banner = StatusBanner(binding)
         lock = LockFlow(this, model, lockUi, hosts)
@@ -460,26 +468,40 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch(GradeAlerts.lane) { GradeAlerts.sync(context, enabled) }
     }
 
-    /** «Расписание без сети» under a network error, once a week is saved. */
-    private fun offerOfflineSchedule() {
-        binding.errorOffline.isVisible = false
-        if (errorMessageId != R.string.network_error && errorMessageId != R.string.tls_error) return
+    /**
+     * The offline screen under a network error: the grades, classes and exams the phone kept, read in one go. Never while
+     * locked or while the session changes; a read that ends after the error went away draws nothing.
+     */
+    private fun refreshOffline() {
+        offlineJob?.cancel()
+        if (!offlineError()) { offline.clear(); return }
         val context = applicationContext
-        lifecycleScope.launch {
-            val saved = withContext(Dispatchers.IO) { TimetableStore.read(context) != null }
-            binding.errorOffline.isVisible = saved && pageFailed && (errorMessageId == R.string.network_error || errorMessageId == R.string.tls_error)
+        offlineJob = lifecycleScope.launch {
+            val digest = withContext(Dispatchers.IO) {
+                OfflineDigest.of(LastGradesStore.of(context).read(), TimetableStore.read(context), ExamStore.read(context),
+                    System.currentTimeMillis(), TimeZone.getDefault())
+            }
+            val language = model.state.value.language
+            if (offlineError()) offline.show(digest, languages.of(language), language) else offline.clear()
         }
     }
 
-    /** «Последние оценки» under a network error, once totals are saved. */
-    private fun offerLastGrades() {
-        binding.errorGrades.isVisible = false
-        if (errorMessageId != R.string.network_error && errorMessageId != R.string.tls_error) return
-        val store = LastGradesStore.of(applicationContext)
-        lifecycleScope.launch {
-            val saved = withContext(Dispatchers.IO) { store.read() != null }
-            binding.errorGrades.isVisible = saved && pageFailed && (errorMessageId == R.string.network_error || errorMessageId == R.string.tls_error)
-        }
+    /**
+     * The error screen says a page failed for want of the network (or behind a captive portal), also during a quiet
+     * retry, while a signed-in, unlocked account browses.
+     */
+    private fun offlineError(): Boolean {
+        val state = model.state.value
+        return binding.errorOverlay.isVisible && errorHttpStatus == null &&
+            (errorMessageId == R.string.network_error || errorMessageId == R.string.tls_error) && state.canBrowse && !state.locked && !AppLockSession.locked && !lock.showing &&
+            !sessionChanging && !model.sessionClearPending
+    }
+
+    /** The error screen leaves (after its fade when [animated]), and the saved data with it. */
+    private fun hideError(animated: Boolean = false) {
+        offlineJob?.cancel()
+        if (animated) Motion.show(binding.errorOverlay, false, hidden = offline::clear)
+        else { binding.errorOverlay.isVisible = false; offline.clear() }
     }
 
     /** The widget and the class alarm follow the reminder setting and the app's language. */
@@ -494,8 +516,6 @@ class MainActivity : AppCompatActivity() {
     private fun bindControls() {
         chrome.configure(canOpenDrawer = { !documents.isOpen }, onToolbar = ::toolbarAction, onNavigation = ::navigationAction)
         binding.errorRetry.setOnClickListener { retryFailedPage() }
-        binding.errorOffline.setOnClickListener { startActivity(TimetableActivity.intent(this, model.state.value.language)) }
-        binding.errorGrades.setOnClickListener { startActivity(LastGradesActivity.intent(this, model.state.value.language)) }
         binding.errorBack.setOnClickListener {
             if (sessionChanging) return@setOnClickListener
             if (model.sessionClearPending) finishInterruptedSessionClear()
@@ -673,9 +693,8 @@ class MainActivity : AppCompatActivity() {
         renderPageSettings(state)
         binding.errorMessage.text = languages.of(state.language).webErrorText(errorMessageId, errorHttpStatus)
         binding.errorRetry.text = text(R.string.retry)
-        binding.errorOffline.text = text(R.string.offline_schedule)
-        binding.errorGrades.text = text(R.string.last_grades)
         binding.errorBack.text = text(R.string.return_to_site)
+        if (offline.language.let { it != null && it != state.language }) refreshOffline()
         val changedLanguage = rendered.language != null && rendered.language != state.language
         rendered = rendered.copy(language = state.language)
         localizeChrome(state)
@@ -718,7 +737,7 @@ class MainActivity : AppCompatActivity() {
         binding.mainColumn.isVisible = false
         binding.webView.isVisible = false
         Motion.progress(binding.loading, false)
-        binding.errorOverlay.isVisible = false
+        hideError()
         binding.statusBar.isVisible = false
         forms.showFirstRun(binding.setupContainer, state.storageError)
     }
@@ -836,7 +855,7 @@ class MainActivity : AppCompatActivity() {
         navigationGetUrl = url
         if (quietly) awaitPage()
         else {
-            binding.errorOverlay.isVisible = false
+            hideError()
             leavePage(url)
         }
         binding.webView.loadUrl(url)
@@ -1010,7 +1029,7 @@ class MainActivity : AppCompatActivity() {
                 model.save(login, password)
                 if (changed) clearSession()
                 forms.dismiss()
-                binding.errorOverlay.isVisible = false
+                hideError()
                 automationStatus = AutomationStatus.IDLE
                 lock.maybeOfferPin()
                 if (!first && !changed && wasPaused) {
@@ -1086,6 +1105,8 @@ class MainActivity : AppCompatActivity() {
         withContext(Dispatchers.IO) { TodaySync.erase(applicationContext) }
         withContext(GradeAlerts.lane) { GradeAlerts.erase(applicationContext) }
         withContext(Dispatchers.IO) { LastGradesStore.of(applicationContext).erase() }
+        offlineJob?.cancel()
+        offline.clear()
         gradesKey = null
         DownloadService.cancelAll(this)
         documents.close(false)
@@ -1112,7 +1133,7 @@ class MainActivity : AppCompatActivity() {
             if (model.state.value.hasCredentials) model.retrySignIn(signIn)
             if (rendererUnavailable) { recreate(); return@launchCatching }
             automationStatus = AutomationStatus.IDLE
-            binding.errorOverlay.isVisible = false
+            hideError()
             if (model.state.value.paused) configureNoticePresentation() else noticePresentation.setEnabled(true, retry = true)
             automation.resume(replacing = true)
             leavePage(startPageUrl())
@@ -1128,7 +1149,7 @@ class MainActivity : AppCompatActivity() {
         if (url == null || model.state.value.paused) { retry(); return }
         if (sessionChanging || !model.state.value.canBrowse) return
         pageFailed = false
-        binding.errorOverlay.isVisible = false
+        hideError()
         configureNoticePresentation()
         automation.resume(replacing = true)
         leavePage(url)
@@ -1206,8 +1227,7 @@ class MainActivity : AppCompatActivity() {
         binding.errorMessage.text = labels().webErrorText(id, httpStatus)
         binding.errorIcon.setImageResource(if (id == R.string.network_error || id == R.string.tls_error) R.drawable.ic_cloud_off else R.drawable.ic_warning)
         Motion.show(binding.errorOverlay, model.state.value.canBrowse)
-        offerOfflineSchedule()
-        offerLastGrades()
+        refreshOffline()
         Motion.progress(binding.loading, false)
         pageLoading = false
         renderHeading()
@@ -1283,7 +1303,7 @@ class MainActivity : AppCompatActivity() {
         override fun cancelPageAbandon() { binding.root.removeCallbacks(pageAbandoned) }
         override fun showPageSkeleton(url: String?) = binding.pageSkeleton.show(url)
         override fun showProgress(visible: Boolean) = Motion.progress(binding.loading, visible)
-        override fun hideErrorOverlay() = Motion.show(binding.errorOverlay, false)
+        override fun hideErrorOverlay() = hideError(animated = true)
         override fun renderHeading() = this@MainActivity.renderHeading()
         override fun updatePageTitle() = this@MainActivity.updatePageTitle()
         override fun showError(id: Int, httpStatus: Int?) = this@MainActivity.showError(id, httpStatus)
@@ -1516,6 +1536,7 @@ class MainActivity : AppCompatActivity() {
         override val inForeground get() = lock.inForeground
         override val documentOpen get() = documents.isOpen
         override val serviceOpen get() = documents.isService
+        override val savedDataShown get() = offline.shown
         override val pageUrl get() = documents.webView?.url ?: currentUrl()
         override val pageSource get() = when {
             documents.isService -> documents.webView?.title?.takeUnless { it.startsWith("http") }.orEmpty()
@@ -1599,10 +1620,14 @@ class MainActivity : AppCompatActivity() {
                 binding.drawer.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
                 automation.pause()
                 documents.pause()
+                // The saved grades leave the view tree while locked; unlocking reads them again.
+                offlineJob?.cancel()
+                offline.clear()
             } else {
                 binding.drawer.visibility = View.VISIBLE
                 binding.drawer.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
                 if (webOpened && !rendererUnavailable) { if (documents.isOpen) documents.resume() else automation.resume() }
+                refreshOffline()
             }
         }
         override fun dismissDialogs() { dismissTransientDialogs(); forms.dismiss(); notices.dismiss() }

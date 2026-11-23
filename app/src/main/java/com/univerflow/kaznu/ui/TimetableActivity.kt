@@ -99,18 +99,7 @@ class TimetableActivity : AppCompatActivity() {
         binding.timetableFree.isVisible = lessons.isEmpty()
         lessons.forEachIndexed { index, time ->
             val row = ItemTimetableLessonBinding.inflate(layoutInflater, binding.timetableLessons, false)
-            val lesson = time.lesson
-            row.lessonStart.text = Timetable.clock(lesson.start)
-            row.lessonEnd.text = Timetable.clock(lesson.end)
-            row.lessonSubject.text = lesson.subject
-            row.lessonFacts.text = listOf(lesson.type, lesson.room.takeIf { it.isNotEmpty() }?.let { words.getString(R.string.widget_room, it) }, lesson.faculty)
-                .filter { !it.isNullOrEmpty() }.joinToString(" · ")
-            row.lessonFacts.isVisible = row.lessonFacts.text.isNotEmpty()
-            row.lessonTeacher.text = lesson.teacher
-            row.lessonTeacher.isVisible = lesson.teacher.isNotEmpty()
-            val current = day == today && time.startAt <= now && now < time.endAt
-            row.lessonNow.text = words.getString(R.string.timetable_now)
-            row.lessonNow.isVisible = current
+            row.show(time, words, current = day == today && time.startAt <= now && now < time.endAt)
             if (index > 0) row.root.setBackgroundResource(R.drawable.timetable_divider)
             binding.timetableLessons.addView(row.root)
         }
