@@ -219,7 +219,8 @@ test('after the schedule page saved today\'s week another page does not read it 
   for (const [k, v] of Object.entries(marks)) q.sessionStorage.setItem(k, v);
   const real = q.setTimeout; q.setTimeout = (f, ms, ...a) => real(f, ms === 4000 ? 0 : ms, ...a);
   const fetch = q.fetch; q.fetch = (...a) => { asked.push(String(a[0])); return fetch(...a); };
-  q.__univerOverviewV1.apply('ru'); await settle();
+  // A real timer, not setImmediate rounds: the shortened 4 s delay must have run for the check to mean anything.
+  q.__univerOverviewV1.apply('ru'); await new Promise(r => setTimeout(r, 50)); await settle();
   assert.deepEqual(asked.filter(u => /\/student\/myschedule\/$/.test(u)), []);
   q.close();
 });
