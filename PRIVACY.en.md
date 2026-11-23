@@ -14,8 +14,8 @@ The app is an unofficial client of the [Univer KazNU](https://univer.kaznu.kz/) 
 | Cookies and site data (session, page settings; a copy of the Bachelor home: classes of this week and the start of the next, course totals, recent requests and this week's independent work, as text for your account and language; the numbers of UMKD files already seen on a course page, to mark new ones) | The app's WebView storage | Only to the Univer site and KazNU Moodle (`dl.kaznu.kz`, `dl.kaznu.edu.kz`) when you sign in through Univer |
 | Cookies and sign-ins of sites opened from links | A separate WebView profile of the app | Only to the sites whose links you tapped; Univer and Moodle do not get them |
 | Downloaded files | The phone's Downloads folder and the app's downloads list | Nowhere |
-| Grade report (PDF or PNG) | The app's temporary folder; deleted on sign-out, and once older than an hour at the next app start or new report | Only to the app you pick in the Share sheet, or to the print service |
-| The saved week of the schedule (courses, times, rooms, teachers) | A file in the app's folder, not backed up; deleted on sign-out | Nowhere. The "Offline schedule" screen, the "Today’s classes" widget and class reminders show it; with a PIN the widget and reminders do not name the course |
+| Grade report (PDF or PNG), the two-week schedule (.ics or PNG) | The app's temporary folder; deleted on sign-out, and once older than an hour at the next app start or new report | Only to the app you pick in the Share sheet, or to the print service |
+| The saved week of the schedule and its odd or even neighbour (courses, times, rooms, teachers) | A file in the app's folder, not backed up; deleted on sign-out | Nowhere. The "Offline schedule" screen, the "Today’s classes" widget and class reminders show it; with a PIN the widget and reminders do not name the course |
 | The latest journal totals (courses and scores you saw in the journal or Кабинет) | A file in the app's folder, not backed up; replaced each time you view the journal, deleted on sign-out | Nowhere. The "Latest grades" screen shows them; it opens from a button on the network error screen |
 | The exam and midterm schedule (course, time, room) | A file in the app's folder, not backed up; deleted on sign-out | Nowhere. It drives the reminders the evening before and before the start when reminders are on; with a PIN the reminder does not name the course |
 | The journal goal and the "new" marks | The app's WebView storage | Nowhere |
@@ -33,6 +33,7 @@ The app is an unofficial client of the [Univer KazNU](https://univer.kaznu.kz/) 
 ## Deleting data
 
 - "Sign out" deletes the WebView cookies, storage and cache, including the link window's data, grade reports, the saved schedule, the exam schedule and journal totals, the encrypted login and password and the PIN; reminders and background grade checks stop. Language and other settings stay.
+- "File for a fault report" in Settings saves to Downloads only the app, Android and WebView versions, the screen size and the app settings (yes/no for saved sign-in, PIN and pause). It holds no login, password, cookies, page addresses or grades; the file stays with you until you send it yourself.
 - "Delete data and sign in again" on the PIN screen (if the PIN is forgotten) deletes the same.
 - Uninstalling the app deletes all of its data; downloaded files stay in Downloads.
 
