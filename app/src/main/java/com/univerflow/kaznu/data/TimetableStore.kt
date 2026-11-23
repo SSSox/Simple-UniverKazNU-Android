@@ -34,10 +34,12 @@ object TimetableStore {
     /** False when [timetable] came before a later [erase], or the file could not be written. */
     @Synchronized fun write(context: Context, timetable: Timetable, since: Int): Boolean {
         if (since != generation) return false
+        // Read before startWrite: AtomicFile.openRead() during a write deletes (API 30+) or replaces the new file.
+        val kept = timetable.keepingAlternateOf(read(context))
         val file = file(context)
         val stream = runCatching { file.startWrite() }.getOrNull() ?: return false
         return try {
-            stream.write(json(timetable.keepingAlternateOf(read(context))).toString().toByteArray(Charsets.UTF_8))
+            stream.write(json(kept).toString().toByteArray(Charsets.UTF_8))
             file.finishWrite(stream)
             true
         } catch (_: Exception) {
