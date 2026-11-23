@@ -154,6 +154,20 @@ test('a page that cannot be read at all is reported to the app, not dropped', as
   p.w.close();
 });
 
+test('an export past the channel\'s limit is reported to the app as failed, not dropped without a word', async () => {
+  // Two weeks of 80 classes (the reader's cap) with names, teachers, rooms and faculties at the reader's lengths.
+  const long = (n, size) => (n + ' ' + 'П'.repeat(size)).slice(0, size);
+  const full = (n, type) => `<td class="field"><div class="groups"><div><p class="teacher">${long('Курс ' + n, 200)}(${type})</p><p class="teacher">${long('Учитель ' + n, 200)}</p>` +
+    `<p class="params"><span class="aud_faculty">${long('Факультет ' + n, 100)}</span><span>Ауд.: ${long('Ауд ' + n, 100)}</span></p></div></div></td>`;
+  const rows = Array.from({ length: 27 }, (_, i) => `<tr>${time(String(8 + i % 12).padStart(2, '0') + ':' + String(i).padStart(2, '0') + '-' + String(8 + i % 12).padStart(2, '0') + ':59')}${full(i, 'лекция')}${full(i + 100, 'семинар')}${full(i + 200, 'лекция')}</tr>`).join('');
+  const big = at => `<table><tr id="l4"><td><select id="weekSelect">${options(at)}</select><table class="schedule"><tr><th>&nbsp;</th><th>ПН</th><th>ВТ</th><th>СР</th></tr>${rows}</table></td></tr></table>`;
+  const p = page({ fetch: async url => ({ status: 200, url, text: async () => big(weeks.findIndex(x => url.includes(x.a))) }) });
+  p.d.querySelector('table.schedule').outerHTML = big(1).match(/<table class="schedule">[\s\S]*?<\/table>/)[0];
+  trusted(p.w, button(p)); await settle();
+  assert.deepEqual(sentExports(p), ['univer-export:{"v":0,"kind":"ics"}']);
+  p.w.close();
+});
+
 test('weeks the site does not number are numbered by their place in the list', async () => {
   const dom = page({ list: weeks.map(w => ({ ...w, n: '' })) });
   trusted(dom.w, button(dom)); await settle();

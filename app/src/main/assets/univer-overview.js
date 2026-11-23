@@ -71,7 +71,7 @@
     // language; without the mark nothing is read or written, and another account's or a damaged record is removed. Only
     // parsed text is kept, never the site's markup. Sign-out erases the site's storage (SiteData.erase), and the site's own
     // logout link forgets the record at once.
-    var KEY = 'univer.app.overview.v2', LIMIT = 200000, WEEK = 7 * 86400000, AGE = 14 * 86400000;
+    var KEY = 'univer.app.overview.v2', LIMIT = 200000, WEEK = 7 * 86400000, HOUR = 3600000, AGE = 14 * 86400000;
     function account() { try { return localStorage.getItem('univer.app.account.v1') || ''; } catch (_) { return ''; } }
     function forget() { try { localStorage.removeItem(KEY); } catch (_) { } }
     function kept() {
@@ -110,7 +110,7 @@
         });
     }
     function isWeek(part) {
-        return Number.isFinite(part.start) && Number.isFinite(part.end) && part.end > part.start && part.end - part.start <= WEEK && Array.isArray(part.days) && part.days.length <= 8 && part.days.every(isLessons) &&
+        return Number.isFinite(part.start) && Number.isFinite(part.end) && part.end > part.start && part.end - part.start <= WEEK + HOUR && Array.isArray(part.days) && part.days.length <= 8 && part.days.every(isLessons) &&
             (part.following == null || Number.isFinite(part.following.date) && isLessons(part.following.lessons));
     }
     function isCourses(part) {
@@ -124,7 +124,7 @@
     // field is bounded and the course address must be a UMKD course page.
     var COURSE = /^\/student\/umkd\/\d{1,12}\/\d{4}\/[12]$/;
     function isWork(part) {
-        return Number.isFinite(part.start) && Number.isFinite(part.end) && part.end > part.start && part.end - part.start <= WEEK &&
+        return Number.isFinite(part.start) && Number.isFinite(part.end) && part.end > part.start && part.end - part.start <= WEEK + HOUR &&
             Array.isArray(part.list) && part.list.length <= 40 && part.list.every(function (w) {
                 return w && words(w.course) && typeof w.href === 'string' && COURSE.test(w.href) && words(w.name, 80) && words(w.topic, 1200) &&
                     Number.isFinite(w.score) && w.score >= 0 && w.score <= 1000;
@@ -325,7 +325,7 @@
         return pair;
     }
     // One reading shared by the class cards' buttons for a minute; a failed one is not kept.
-    var pairCache = null;
+    var pairCache = null, EXPORT_LIMIT = 98304; // the keyed channel's limit for univer-export: (MobilePageAdapter NATIVE)
     function weekPair() {
         var select = document.getElementById('weekSelect'), key = location.pathname + '|' + (select ? select.selectedIndex : -1);
         if (!pairCache || pairCache.key !== key || Date.now() - pairCache.at > 60000) {
@@ -362,24 +362,33 @@
         var timer = setTimeout(function () { exportDone(token); }, 40000);
         // A page that cannot be read at all is sent as {v:0}: the app says so.
         readPair().then(function (pair) { pair.kind = kind; return pair; }, function () { return {v:0, kind:kind}; }).then(function (pair) {
-            if (token === exportToken) __univerNative('univer-export:' + JSON.stringify(pair));
+            // Past the channel's limit the message would be dropped without a word: the app is told it failed instead.
+            var message = 'univer-export:' + JSON.stringify(pair);
+            if (message.length > EXPORT_LIMIT) message = 'univer-export:' + JSON.stringify({v:0, kind:kind});
+            if (token === exportToken) __univerNative(message);
         }).then(function () { clearTimeout(timer); exportDone(token); }, function () { clearTimeout(timer); exportDone(token); });
     }, true);
     // Hands the week to the app once per page; the same week read again (another pass, the kept copy) is not sent twice.
     // The site alternates odd and even weeks, so the neighbouring week (one GET, read-only) goes along as `second` and the
     // widget and reminders follow the parity; with it unread (or none listed) the week goes alone and repeats as before.
-    var sentWeek = '', weekTicket = 0;
+    // The week goes at once; the neighbour is read once an app session for each week (the app keeps it when a later copy
+    // comes without it), so an ordinary visit costs no second request and the widget never waits for one.
+    var sentWeek = '', weekTicket = 0, PAIRED = 'univer.app.week-paired.v1';
     function saveWeek(doc) {
         if (typeof __univerNative !== 'function') return;
         var week = timetable(doc, new Date()); if (!week) return;
         var key = JSON.stringify(week);
         if (key === sentWeek) return;
         sentWeek = key; var ticket = ++weekTicket;
-        readPair(doc).then(function (pair) { return pair.weeks[1] ? {week:pair.weeks[1].monday, lessons:pair.weeks[1].lessons} : null; }, function () { return null; }).then(function (second) {
-            if (ticket !== weekTicket) return;
-            if (second) week.second = second;
-            __univerNative('univer-schedule:' + JSON.stringify(week));
-        });
+        __univerNative('univer-schedule:' + key);
+        var paired = account() + '|' + week.week;
+        try { if (sessionStorage.getItem(PAIRED) === paired) return; } catch (_) { return; }
+        readPair(doc).then(function (pair) {
+            if (ticket !== weekTicket || !pair.weeks[1]) return;
+            var both = Object.assign({}, week, {second:{week:pair.weeks[1].monday, lessons:pair.weeks[1].lessons}});
+            __univerNative('univer-schedule:' + JSON.stringify(both));
+            try { sessionStorage.setItem(PAIRED, paired); } catch (_) { }
+        }, function () { });
     }
 
     // The grades panel shows the journal's totals, so the app keeps them as seen: a background check does not announce

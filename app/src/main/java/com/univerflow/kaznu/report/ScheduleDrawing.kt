@@ -30,7 +30,7 @@ import kotlin.math.roundToInt
  * The schedule's two weeks side by side as one picture for a messenger: a column per week (its number and whether it is odd
  * or even, then its days with their classes), in the order of the week numbers. A week that could not be read is a column
  * that says so. Drawn in light colours at twice the size of the layout's units; a very long week is drawn smaller, never
- * under one. [words] is a context in the picture's language.
+ * under half, and what would pass the pixel limit is left out (SchedulePicture.canvas). [words] is a context in the picture's language.
  */
 class ScheduleDrawing(private val words: Context, private val language: AppLanguage, private val pair: SchedulePair) {
     private val locale = if (language == AppLanguage.ENGLISH) Locale.US else Locale.forLanguageTag(language.localeCode)
@@ -46,8 +46,8 @@ class ScheduleDrawing(private val words: Context, private val language: AppLangu
         val columns = weeks.map(::column)
         val height = (columns.maxOf { it.height } + 2 * MARGIN)
         val width = columns.size * COLUMN + (columns.size + 1) * MARGIN
-        val scale = (MAX_PIXELS / height).coerceIn(1f, SCALE)
-        val bitmap = createBitmap((width * scale).roundToInt(), (height * scale).roundToInt())
+        val (scale, pixels) = SchedulePicture.canvas(height, MAX_PIXELS, SCALE)
+        val bitmap = createBitmap((width * scale).roundToInt(), pixels)
         try {
             val canvas = Canvas(bitmap)
             canvas.drawColor(Color.WHITE)

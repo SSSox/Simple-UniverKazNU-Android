@@ -71,3 +71,18 @@ test('UMKD: the record stays small: ids only, bounded pages and files', () => {
   const many = visit(Array.from({length: 450}, (_, i) => 10000 + i)); many.folds.apply('ru');
   assert.equal(JSON.parse(many.stored()).pages['/student/umkd/321/2026/1'].cur.length, 400); many.w.close();
 });
+
+test('UMKD: repeated passes do not rewrite the record, and a page past the kept 400 files marks nothing', () => {
+  const first = visit([9001, 9002]); first.folds.apply('ru'); const s1 = first.stored(); first.w.close();
+  const p = visit([9001, 9002], {storage: s1});
+  let writes = 0; const set = p.w.localStorage.setItem.bind(p.w.localStorage);
+  p.w.Storage.prototype.setItem = function (key, value) { if (key === SEEN) writes++; return set(key, value); };
+  p.folds.apply('ru'); p.folds.apply('ru'); p.folds.apply('ru');
+  assert.equal(writes, 1, 'written once for the document, not on every pass');
+  p.w.close();
+  // 450 files: the record keeps the last 400, so the first 50 would read as new on every later visit.
+  const ids = Array.from({length: 450}, (_, i) => 10000 + i);
+  const big = visit(ids); big.folds.apply('ru'); const s2 = big.stored(); big.w.close();
+  const again = visit(ids.concat([20000]), {storage: s2}); again.folds.apply('ru');
+  assert.deepEqual(again.marked(), []); again.w.close();
+});

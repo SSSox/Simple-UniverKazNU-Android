@@ -22,8 +22,8 @@ class ScheduleExportTest {
     private fun lesson(day: Int, start: Int, subject: String, room: String = "309", from: String? = null, until: String? = null) =
         TimetableLesson(day, start, start + 50, subject, "лекция", room, "ФИТ", "Учителева А. П.", from?.let(::day), until?.let(::day))
 
-    private fun week(number: Int, monday: Long, vararg lessons: TimetableLesson, first: Long = monday) =
-        ExportWeek(number, true, monday, first, monday + 6, lessons.toList())
+    private fun week(number: Int, monday: Long, vararg lessons: TimetableLesson, first: Long = monday, last: Long = monday + 6) =
+        ExportWeek(number, true, monday, first, last, lessons.toList())
 
     private fun pair(vararg weeks: ExportWeek, missing: List<Int> = emptyList(), until: String = "2026-12-20") =
         SchedulePair("2026/1", day(until), weeks.toList(), missing)
@@ -164,6 +164,20 @@ class ScheduleExportTest {
         val before = SchedulePicture.weeks(pair(week(13, even, otherOnly), missing = listOf(12)))
         assertEquals(listOf(true, false), before.map { it.missing })
         assertEquals(12, before.first().number)
+    }
+
+    @Test fun aVeryLongPictureIsDrawnSmallerAndNeverPastThePixelLimit() {
+        assertEquals(2f to 2000, SchedulePicture.canvas(1000f, 12000f, 2f))
+        assertEquals(1.5f to 12000, SchedulePicture.canvas(8000f, 12000f, 2f))
+        assertEquals("never under half, the rest left out", 0.5f to 12000, SchedulePicture.canvas(100000f, 12000f, 2f))
+    }
+
+    @Test fun aWeekThatEndsMidweekLeavesOutTheClassesAfterItsLastDay() {
+        val monday = day("2026-12-14")
+        val column = SchedulePicture.weeks(pair(week(16, monday, lesson(0, 9 * 60, "Политология"), lesson(4, 9 * 60, "Культурология"), last = day("2026-12-16")),
+            week(15, monday - 7)))[1]
+        assertEquals(16, column.number)
+        assertEquals(listOf("Политология"), column.days.flatMap { it.lessons }.map { it.subject })
     }
 
     @Test fun aWeekThatStartsMidweekLeavesOutTheClassesOfWeekdaysItDoesNotReach() {

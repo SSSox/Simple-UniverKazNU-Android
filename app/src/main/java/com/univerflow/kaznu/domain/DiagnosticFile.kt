@@ -7,12 +7,12 @@ import java.util.Locale
 /**
  * The text file a student can attach to a fault report: the app's version, the phone, the settings as words and
  * numbers, and a few state flags. Every line goes through [clean], the one place that removes what could name the
- * student: the login and password (given as secrets), cookies, addresses' queries, ids and user info, e-mail
- * addresses, long numbers and long tokens. No page content is ever given to it.
+ * student: cookies, addresses' queries, ids and user info, e-mail addresses, long numbers and long tokens. No page
+ * content is ever given to it, nor the login or password: matching them in the text would itself show where they were
+ * (a password «yes» would turn a flag into a mark), so the facts are built from settings only.
  */
 object DiagnosticFile {
     const val MAX_LINE = 300
-    private const val MIN_SECRET = 3
 
     private val control = Regex("[\\u0000-\\u001F\\u007F-\\u009F\\u2028\\u2029]+")
     private val url = Regex("\\b(?:https?|file|ftp)://[^\\s\"'<>]+", RegexOption.IGNORE_CASE)
@@ -25,15 +25,12 @@ object DiagnosticFile {
     private val addressParts = Regex("^([a-z]+)://(?:[^/?#@]*@)?([^/?#]*)([^?#]*)", RegexOption.IGNORE_CASE)
     private val pathNumbers = Regex("[^/]*\\d[^/]*")
 
-    /** One line with nothing that could name the student. Secrets shorter than 3 characters are ignored (they would empty the file). */
-    fun clean(text: String, secrets: Collection<String> = emptyList()): String {
+    /** One line with nothing that could name the student. */
+    fun clean(text: String): String {
         var line = control.replace(text, " ")
         if (line.length > 4 * MAX_LINE) line = line.substring(0, 4 * MAX_LINE)
         line = url.replace(line) { address(it.value) }
         line = cookie.replace(line, "<hidden>")
-        secrets.map { it.trim() }.filter { it.length >= MIN_SECRET }.sortedByDescending { it.length }.forEach { secret ->
-            line = Regex("(?<![\\p{L}\\p{N}])" + Regex.escape(secret) + "(?![\\p{L}\\p{N}])", RegexOption.IGNORE_CASE).replace(line, "<hidden>")
-        }
         line = mail.replace(line, "<e-mail>")
         line = token.replace(line) { if (it.value.any(Char::isDigit) || it.value.length >= 32) "<token>" else it.value }
         line = phone.replace(line) { if (it.value.count(Char::isDigit) >= 10) "<number>" else it.value }
@@ -51,10 +48,10 @@ object DiagnosticFile {
     }
 
     /** The whole file: a heading, then «name: value» lines in the given order. */
-    fun build(facts: List<Pair<String, String>>, secrets: Collection<String>, now: Date): String = buildString {
+    fun build(facts: List<Pair<String, String>>, now: Date): String = buildString {
         append("Univer Android diagnostics ").append(stamp(now, "yyyy-MM-dd HH:mm:ss")).append('\n')
         append("No login, password, cookies, page contents or personal data are included.\n\n")
-        facts.forEach { (name, value) -> append(clean("$name: $value", secrets)).append('\n') }
+        facts.forEach { (name, value) -> append(clean("$name: $value")).append('\n') }
     }
 
     fun fileName(now: Date): String = "Univer-diagnostics-" + stamp(now, "yyyy-MM-dd-HHmm") + ".txt"

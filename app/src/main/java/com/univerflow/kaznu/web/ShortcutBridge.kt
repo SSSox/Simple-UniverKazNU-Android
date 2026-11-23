@@ -46,9 +46,9 @@ class ShortcutBridge(private val web: WebView, private val channel: ChannelGuard
                 data.startsWith(Timetable.MESSAGE_PREFIX) -> TimetableMessage.parse(data)?.let(onTimetable)
                 // The journal's totals, sent without a tap for the background check's base; one out of shape is dropped.
                 data.startsWith(GradeTotals.MESSAGE_PREFIX) -> GradesMessage.parse(data)?.let(onGrades)
-                // The exam or midterm schedule's coming items, sent without a tap; one out of shape is dropped.
                 // The schedule's «В календарь» or «Картинкой»; a page that could not be read, or one out of shape, is said.
                 data.startsWith(SchedulePair.MESSAGE_PREFIX) -> onSchedule(ScheduleExportMessage.parse(data))
+                // The exam or midterm schedule's coming items, sent without a tap; one out of shape is dropped.
                 data.startsWith(ExamPlan.MESSAGE_PREFIX) -> ExamMessage.parse(data)?.let { (kind, items) -> onExams(kind, items) }
                 else -> parse(data)?.let(onRequest)
             }

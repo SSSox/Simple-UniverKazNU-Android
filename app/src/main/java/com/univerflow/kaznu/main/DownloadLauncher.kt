@@ -74,20 +74,32 @@ class DownloadLauncher(private val activity: AppCompatActivity, private val mode
     private val sent = LinkedHashMap<String, Bundle>()
     private val loginAttempts = mutableMapOf<String, Long>()
     private val notificationPermission = activity.registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    // One answer serves everything that waited for it: a site download and a file the app writes may ask while the same
+    // dialog is open, and neither is dropped.
     private val storagePermission = activity.registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         val action = storageAction
-        storageAction = null
-        if (action != null) { if (granted) action() else host.message(R.string.download_permission); return@registerForActivityResult }
         val pending = legacyRequest
+        storageAction = null
         legacyRequest = null
-        if (granted) pending?.let { if (it.containsKey(URLS)) startAll(it) else start(it) } else host.message(R.string.download_permission)
+        if (!granted) { if (action != null || pending != null) host.message(R.string.download_permission); return@registerForActivityResult }
+        action?.invoke()
+        pending?.let { if (it.containsKey(URLS)) startAll(it) else start(it) }
+    }
+    private val asking get() = storageAction != null || legacyRequest != null
+    /** Waits [request] for the storage answer (the first one asked keeps its place); asks only when nothing asked yet. */
+    private fun awaitStorage(request: Bundle) {
+        val first = !asking
+        if (legacyRequest == null) legacyRequest = request
+        if (first) storagePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
     }
 
     /** A file the app itself writes to Downloads (not a site download): [action] runs now, or once Android 9 and older allow storage. */
     private var storageAction: (() -> Unit)? = null
     fun withStorage(action: () -> Unit) {
         if (Build.VERSION.SDK_INT <= 28 && ContextCompat.checkSelfPermission(activity, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
-            if (storageAction == null && legacyRequest == null) { storageAction = action; storagePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE) }
+            val first = !asking
+            storageAction = action
+            if (first) storagePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
         } else action()
     }
 
@@ -107,7 +119,7 @@ class DownloadLauncher(private val activity: AppCompatActivity, private val mode
         val request = request(url, userAgent, disposition, mime)
         if (Build.VERSION.SDK_INT <= 28 && ContextCompat.checkSelfPermission(activity,
                 Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
-            if (legacyRequest == null) { legacyRequest = request; storagePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE) }
+            awaitStorage(request)
         } else start(request)
     }
 
@@ -123,7 +135,7 @@ class DownloadLauncher(private val activity: AppCompatActivity, private val mode
         val request = request(urls.first(), host.userAgent, null, null).apply { putStringArrayList(URLS, ArrayList(urls)); putString(SECTION, section) }
         if (Build.VERSION.SDK_INT <= 28 && ContextCompat.checkSelfPermission(activity,
                 Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
-            if (legacyRequest == null) { legacyRequest = request; storagePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE) }
+            awaitStorage(request)
         } else startAll(request)
     }
 

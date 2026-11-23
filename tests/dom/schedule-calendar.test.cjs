@@ -116,6 +116,17 @@ test('with the neighbouring week unreadable the class goes in every second week 
   }
 });
 
+test('with no neighbouring week in the site\'s list the class repeats every week through its course dates', async () => {
+  const sent = [];
+  const lone = schedule([[POLITICS]]).replace(/<option[^>]*>Неделя 13[^<]*<\/option>/, '');
+  const p = page(lone, { native: m => sent.push(m) });
+  tap(p.w, card(p, 'Политология').querySelector('button.univer-app-calendar')); await settle();
+  const lecture = message(sent[0]);
+  assert.equal(lecture.interval, undefined, 'every week');
+  assert.equal(lecture.partial, undefined);
+  assert.ok(lecture.until, 'through the course dates');
+});
+
 test('the calendar button needs the app\'s sender and leaves with the Original layout', () => {
   const lone = page(schedule([[['Политология', 'лекция', 'Учителева А. П.']]]), { native: null });
   assert.ok(card(lone, 'Политология'), 'the card is drawn');

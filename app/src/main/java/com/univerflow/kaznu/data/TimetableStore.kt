@@ -15,7 +15,9 @@ import java.io.File
  */
 object TimetableStore {
     private const val NAME = "timetable.json"
-    private const val MAX_SIZE = 192 * 1024
+    // Bytes of the file: the page's message is up to 131072 characters, and a Cyrillic character takes two bytes in UTF-8
+    // (three for the rest of the BMP), so the limit is the worst case of a message at its own limit.
+    private const val MAX_SIZE = 3 * 131072 + 4096
 
     /** Grows with every [erase]: a write that began before it is not kept. */
     @Volatile var generation = 0
@@ -35,7 +37,7 @@ object TimetableStore {
         val file = file(context)
         val stream = runCatching { file.startWrite() }.getOrNull() ?: return false
         return try {
-            stream.write(json(timetable).toString().toByteArray(Charsets.UTF_8))
+            stream.write(json(timetable.keepingAlternateOf(read(context))).toString().toByteArray(Charsets.UTF_8))
             file.finishWrite(stream)
             true
         } catch (_: Exception) {

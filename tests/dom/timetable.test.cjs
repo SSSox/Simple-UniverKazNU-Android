@@ -114,18 +114,31 @@ const neighbourPage = '<html><body><select id="weekSelect"><option value="' + NE
   '<option value="/student/myschedule/2026/1/16.11.2026/22.11.2026/">Неделя 12. 16.11.2026 - 22.11.2026</option></select>' +
   '<table class="schedule"><tr><th>&nbsp;</th><th>ПН</th><th>ВТ</th></tr><tr>' + time('09:00-09:50') + '<td class="field"></td>' + cell('Физика', 'лекция', 'Физиков Ф. Ф.', '101') + '</tr></table></body></html>';
 
-test('the schedule page sends the week with its neighbour once that is read, and alone when it cannot be', async () => {
+test('the schedule page sends the week at once and its neighbour once a session; an unread neighbour is never guessed', async () => {
   const sent = [];
   const w = page('/student/myschedule/', week() + SCHEDULE, { native: m => sent.push(m), routes: { [NEIGHBOUR]: neighbourPage } });
   w.__univerOverviewV1.apply('ru');
+  assert.equal(sent.length, 1, 'the week goes before the neighbour is read');
+  assert.equal('second' in sentWeeks(sent)[0], false);
   await settle();
-  const [saved] = sentWeeks(sent);
-  assert.equal(sent.length, 1, 'one message, sent after the neighbour was read');
+  const saved = sentWeeks(sent)[1];
+  assert.equal(sent.length, 2, 'then once more with its neighbour');
   assert.equal(saved.week, '2026-11-16');
   assert.equal(saved.lessons.length, 4);
   assert.equal(saved.second.week, '2026-11-09', 'the week right before: nothing is listed after');
   assert.deepEqual(saved.second.lessons.map(l => [l.day, l.start, l.end, l.subject, l.room]), [[1, '09:00', '09:50', 'Физика', '101']]);
+  const paired = Object.fromEntries(Object.keys(w.sessionStorage).map(k => [k, w.sessionStorage.getItem(k)]));
   w.close();
+  // The next visit in the same app session sends the week alone and asks the site for nothing more.
+  const again = [], asked = [];
+  const q = page('/student/myschedule/', week() + SCHEDULE, { native: m => again.push(m), routes: { [NEIGHBOUR]: neighbourPage } });
+  for (const [k, v] of Object.entries(paired)) q.sessionStorage.setItem(k, v);
+  const fetch = q.fetch; q.fetch = (...args) => { asked.push(String(args[0])); return fetch(...args); };
+  q.__univerOverviewV1.apply('ru');
+  await settle();
+  assert.equal(again.length, 1); assert.equal('second' in sentWeeks(again)[0], false);
+  assert.deepEqual(asked.filter(u => u.includes('09.11.2026')), [], 'no second request');
+  q.close();
   for (const routes of [{}, { [NEIGHBOUR]: SCHEDULE }, { [NEIGHBOUR]: '<form id="login_frm"></form>' }]) {
     const alone = [];
     const p = page('/student/myschedule/', week() + SCHEDULE, { native: m => alone.push(m), routes });

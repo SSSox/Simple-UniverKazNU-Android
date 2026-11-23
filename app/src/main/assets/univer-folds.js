@@ -157,8 +157,11 @@
         try { store = JSON.parse(localStorage.getItem(SEEN_KEY) || 'null'); } catch (_) { store = null; }
         try { visited = sessionStorage.getItem(VISIT_KEY) === '1'; } catch (_) { }
         if (!store || typeof store !== 'object' || store.owner !== who || !store.pages || typeof store.pages !== 'object' || Array.isArray(store.pages)) store = {owner:who, at:0, pages:{}};
-        // Read once per document: later passes (and Original, then reading mode) mark from memory.
+        // Read once per document: later passes (and Original, then reading mode) mark from memory. The record is written
+        // then and when the list changes, not on every adapter pass.
+        var changed = false;
         if (baseline === undefined || baselinePath !== path) {
+            changed = true;
             if (!visited || !(now - store.at >= 0 && now - store.at < VISIT_AGE)) {
                 Object.keys(store.pages).forEach(function (name) { var page = store.pages[name]; if (page && Array.isArray(page.cur)) page.base = page.cur; });
                 store.at = now;
@@ -169,10 +172,17 @@
             baseline = known && Array.isArray(known.base) ? new Set(known.base.filter(function (id) { return typeof id === 'string'; })) : null;
         }
         var page = store.pages[path] && typeof store.pages[path] === 'object' ? store.pages[path] : (store.pages[path] = {});
-        page.cur = ids.slice(-SEEN_FILES); page.seen = now;
+        var cur = ids.slice(-SEEN_FILES);
+        if (!Array.isArray(page.cur) || page.cur.join(',') !== cur.join(',')) { page.cur = cur; changed = true; }
+        if (changed) page.seen = now;
+        if (!changed) return marks(ids);
         Object.keys(store.pages).sort(function (a, b) { return (store.pages[b].seen || 0) - (store.pages[a].seen || 0); }).slice(SEEN_PAGES).forEach(function (old) { delete store.pages[old]; });
         try { var raw = JSON.stringify(store); if (raw.length <= SEEN_SIZE && raw !== stored) { localStorage.setItem(SEEN_KEY, raw); stored = raw; } } catch (_) { }
-        return baseline ? new Set(ids.filter(function (id) { return !baseline.has(id); })) : new Set();
+        return marks(ids);
+    }
+    // A page with more files than the record keeps is not marked: its earliest files would read as new on every visit.
+    function marks(ids) {
+        return baseline && ids.length <= SEEN_FILES ? new Set(ids.filter(function (id) { return !baseline.has(id); })) : new Set();
     }
     function markFresh(rows) {
         var news = fresh(rows), t = text();

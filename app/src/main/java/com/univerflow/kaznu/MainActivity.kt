@@ -1565,7 +1565,7 @@ class MainActivity : AppCompatActivity() {
             downloads.withStorage {
                 lifecycleScope.launch {
                     val state = model.state.value
-                    val name = try { withContext(Dispatchers.IO) { DiagnosticsExport.save(applicationContext, state, model.credentials) } }
+                    val name = try { withContext(Dispatchers.IO) { DiagnosticsExport.save(applicationContext, state) } }
                     catch (cancelled: CancellationException) { throw cancelled }
                     catch (_: Exception) { null }
                     Snackbar.make(binding.content, name?.let { labels().getString(R.string.diagnostics_saved, it) } ?: text(R.string.diagnostics_failed), Snackbar.LENGTH_LONG).show()

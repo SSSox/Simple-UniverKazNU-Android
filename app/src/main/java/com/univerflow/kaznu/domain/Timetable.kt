@@ -33,6 +33,20 @@ data class Timetable(val owner: String, val week: Long, val saved: Long, val les
         return if (Math.floorMod((date - weekday(date) - week) / 7, 2L) == 0L) lessons else other.lessons
     }
 
+    /**
+     * This week with the neighbouring week of [old] when it came without one (the page sends the week at once and its
+     * neighbour only once a session, and a neighbour that could not be read must not undo one already saved): the same
+     * week keeps [old]'s neighbour, and [old]'s neighbour shown now gets [old]'s week back as its own neighbour.
+     */
+    fun keepingAlternateOf(old: Timetable?): Timetable {
+        if (alternate != null || old == null || old.owner != owner) return this
+        return when {
+            old.week == week && old.alternate != null -> copy(alternate = old.alternate)
+            old.alternate?.week == week -> copy(alternate = AlternateWeek(old.week, old.lessons))
+            else -> this
+        }
+    }
+
     /** The classes on [date] (an epoch day), by start time. */
     fun on(date: Long): List<TimetableLesson> = weekLessons(date).filter { lesson ->
         lesson.day == weekday(date) && (lesson.from == null || date >= lesson.from) &&

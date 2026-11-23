@@ -2,11 +2,12 @@ package com.univerflow.kaznu.main
 
 import android.content.Context
 import android.content.pm.ApplicationInfo
+import android.net.Uri
+import android.provider.OpenableColumns
 import android.os.Build
 import androidx.core.content.pm.PackageInfoCompat
 import androidx.webkit.WebViewCompat
 import com.univerflow.kaznu.AppState
-import com.univerflow.kaznu.domain.Credentials
 import com.univerflow.kaznu.domain.DiagnosticFile
 import com.univerflow.kaznu.download.PublicDownloadStore
 import com.univerflow.kaznu.web.LinkProfile
@@ -48,15 +49,21 @@ object DiagnosticsExport {
             "Storage error" to yesNo(state.storageError))
     }
 
-    /** Writes the file; returns its name as saved. Call on an IO dispatcher. No overwrite: a taken name gets a counter. */
-    fun save(context: Context, state: AppState, credentials: Credentials?, now: Date = Date()): String {
-        val secrets = listOfNotNull(credentials?.login, credentials?.password)
-        val text = DiagnosticFile.build(facts(context, state), secrets, now)
-        val pending = PublicDownloadStore(context).create(DiagnosticFile.fileName(now), "text/plain")
-        pending.use {
+    /** Writes the file; returns its name as saved (a taken name gets a counter). Call on an IO dispatcher. */
+    fun save(context: Context, state: AppState, now: Date = Date()): String {
+        val text = DiagnosticFile.build(facts(context, state), now)
+        val wanted = DiagnosticFile.fileName(now)
+        val uri = PublicDownloadStore(context).create(wanted, "text/plain").use {
             it.output.write(text.toByteArray(Charsets.UTF_8))
             it.publish()
         }
-        return DiagnosticFile.fileName(now)
+        return savedName(context, uri) ?: wanted
     }
+
+    private fun savedName(context: Context, uri: Uri): String? = runCatching {
+        if (uri.scheme == "file") return@runCatching uri.lastPathSegment
+        context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) cursor.getString(0) else null
+        }
+    }.getOrNull()?.takeIf { it.isNotBlank() }
 }

@@ -159,6 +159,14 @@ test('the current week\'s independent work is kept for the home page only from a
   const at = kept.work.at; apply(p, false); apply(p); await until(done(p));
   assert.equal(work(p).at, at, 'the same list is not written again');
   p.close();
+  // A topic longer than the kept limit with no space near its end (a pasted link) is cut within the limit, so the home
+  // page still accepts the list.
+  const long = routes(), link = 'https://example.com/' + 'x'.repeat(1300);
+  for (const key of Object.keys(long)) if (typeof long[key] === 'string') long[key] = long[key].replace('Контрольная работа. Письменно.', link);
+  const cut = page(schedule(lessons), { routes: long, local: mark, now: WEDNESDAY });
+  apply(cut); await until(done(cut));
+  const topic = work(cut).list.find(w => w.name === 'СРО 1').topic;
+  assert.ok(topic.length <= 1200 && topic.endsWith('…'), String(topic.length)); cut.close();
   // Another week on screen, a week read on another day, or no account mark: nothing is kept.
   for (const [content, now, local] of [[schedule(lessons, 5), WEDNESDAY, mark], [schedule(lessons), [2026, 8, 28, 9, 0], mark], [schedule(lessons), WEDNESDAY, {}]]) {
     const other = page(content, { routes: routes(), local, now });

@@ -93,7 +93,8 @@
     }
     function cut(value, limit) {
         if (value.length <= limit) return value;
-        var part = value.slice(0, limit), space = part.lastIndexOf(' ');
+        // The ellipsis counts: the result never passes the limit (the home page drops a list with a longer topic).
+        var part = value.slice(0, limit - 1), space = part.lastIndexOf(' ');
         return (space > limit * 0.6 ? part.slice(0, space) : part).replace(/[\s.,;:–—-]+$/, '') + '…';
     }
     function divisionOf(value) {
@@ -554,7 +555,7 @@
     // shows without notes.
     function keepWork(state, items) {
         var week = state.week, now = Date.now(), overview = window.__univerOverviewV1;
-        if (!overview || !overview.keepWork || !(week.start < week.end) || week.end - week.start > 7 * 86400000 || now < week.start || now >= week.end) return;
+        if (!overview || !overview.keepWork || !(week.start < week.end) || week.end - week.start > 7 * 86400000 + 3600000 || now < week.start || now >= week.end) return;
         var list = items.slice(0, 40).map(function (item) {
             return {course:item.job.name.slice(0, 400), href:item.job.href, name:(item.entry.name || '').slice(0, 80), topic:cut(item.entry.topic || '', LIMITS.topic), score:Number.isFinite(item.entry.score) && item.entry.score > 0 ? item.entry.score : 0};
         });
@@ -621,7 +622,7 @@
                 setText(topic, open ? entry.topic : cut(entry.topic, LIMITS.preview));
                 topic.classList.toggle('univer-app-syl-clamped', !open);
                 setText(more, open ? L.less : L.more); more.setAttribute('aria-expanded', String(open));
-                note.hidden = !(open && entry.topic.length >= LIMITS.topic && /…$/.test(entry.topic));
+                note.hidden = !(open && entry.topic.length > LIMITS.topic / 2 && /…$/.test(entry.topic));
             }, animate);
             if (animate && open) motion()?.reveal(topic, 'content');
         };

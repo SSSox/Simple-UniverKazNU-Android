@@ -131,6 +131,21 @@ class TimetableTest {
         assertEquals(day(23), alternating.next(at(22, 20), almaty)!!.date)
     }
 
+    @Test fun aCopyWithoutItsNeighbourKeepsTheOneAlreadySaved() {
+        // The same week sent alone (the page sends it at once, the neighbour once a session): the saved neighbour stays.
+        assertEquals(alternating.alternate, timetable.keepingAlternateOf(alternating).alternate)
+        // The neighbour week shown now takes the saved week as its own neighbour: the parity is the same.
+        val other = Timetable.of(message("week" to "2026-11-23", "lessons" to listOf(lesson(0, "09:00", "09:50", "Культурология"))), at(25, 12), almaty)!!
+        val kept = other.keepingAlternateOf(alternating)
+        assertEquals(timetable.week, kept.alternate!!.week)
+        assertEquals(listOf("Политология", "Культурология"), kept.on(day(30)).map { it.subject })
+        // Another account, an unrelated week or a copy that brings its own neighbour keep what they have.
+        assertNull(Timetable.of(message("owner" to "acc-2"), now, almaty)!!.keepingAlternateOf(alternating).alternate)
+        assertNull(Timetable.of(message("week" to "2026-11-30"), at(2, 12, month = 12), almaty)!!.keepingAlternateOf(alternating).alternate)
+        assertEquals(alternating, alternating.keepingAlternateOf(timetable))
+        assertEquals(timetable, timetable.keepingAlternateOf(null))
+    }
+
     @Test fun aNeighbourBeforeTheSavedWeekPairsTheSameWay() {
         val before = Timetable.of(message("second" to second(lesson(1, "09:00", "09:50", "Физика"), week = "2026-11-09")), now, almaty)!!
         assertEquals(listOf("Физика"), before.on(day(10)).map { it.subject })

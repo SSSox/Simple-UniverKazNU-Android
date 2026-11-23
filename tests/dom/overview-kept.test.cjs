@@ -208,6 +208,8 @@ test('the week\'s independent work kept by the schedule page is listed on Бак
   for (const bad of [{href: 'https://example.com/'}, {href: '/student/bachelor/'}, {score: -1}, {topic: 'x'.repeat(1201)}, {course: {}}])
     assert.equal(shows({storage: withWork([Object.assign({}, WORK, bad)])}), null, JSON.stringify(bad));
   assert.equal(shows({storage: withWork([WORK], {end: new Date(2026, 10, 30).getTime()})}), null, 'a "week" longer than seven days');
+  // A week across a clock change (a phone zone with summer time) is an hour longer and still a week.
+  assert.notEqual(shows({storage: withWork([WORK], {end: new Date(2026, 10, 16).getTime() + 3600000})}), null, 'a week with a clock change');
 });
 
 test('the schedule page writes the week\'s work beside the panels\' record, for its account and language only', async () => {
