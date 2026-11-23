@@ -8,6 +8,9 @@ import android.webkit.WebViewClient
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.webkit.ProfileStore
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
 import com.univerflow.kaznu.domain.AppLanguage
 import com.univerflow.kaznu.ui.DownloadsActivity
 import com.univerflow.kaznu.web.MobilePageAdapter
@@ -30,6 +33,7 @@ import java.util.concurrent.TimeUnit
 /** Real WebView layout, with every network request answered locally. No student account is used. */
 @RunWith(AndroidJUnit4::class)
 class SyllabusTasksQaTest {
+    private companion object { const val PROFILE = "qa-syllabus" }
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private lateinit var scenario: ActivityScenario<DownloadsActivity>
     private lateinit var web: WebView
@@ -41,6 +45,12 @@ class SyllabusTasksQaTest {
         scenario = ActivityScenario.launch(DownloadsActivity.intent(instrumentation.targetContext, AppLanguage.RUSSIAN))
         scenario.onActivity { activity ->
             web = WebView(activity)
+            // Its own profile: the account's real syllabus cache and account mark (localStorage on the Univer origin)
+            // would otherwise replace the fixture's courses.
+            if (WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE)) {
+                ProfileStore.getInstance().getOrCreateProfile(PROFILE)
+                WebViewCompat.setProfile(web, PROFILE)
+            }
             web.configureSecureSettings()
             activity.setContentView(web)
             adapter = MobilePageAdapter(web, allowDocumentStart = false, nativeChrome = true)
@@ -50,6 +60,8 @@ class SyllabusTasksQaTest {
     @After fun close() {
         instrumentation.runOnMainSync { adapter.close(); web.destroyFixture() }
         scenario.close()
+        // Deleted only once no WebView uses it, so the next test starts with empty storage.
+        instrumentation.runOnMainSync { if (WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE)) runCatching { ProfileStore.getInstance().deleteProfile(PROFILE) } }
     }
 
     private fun eval(source: String): String {

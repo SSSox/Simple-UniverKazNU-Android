@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One class in the widget's list. The outer frame's padding is the gap: a list row's own margins are not kept. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/widget_lesson" tools:ignore="UselessParent"
+    android:layout_width="match_parent" android:layout_height="wrap_content" android:paddingTop="4dp">
+    <LinearLayout android:id="@+id/widget_lesson_box" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:background="@drawable/widget_row" android:gravity="center_vertical" android:minHeight="40dp"
+        android:orientation="horizontal" android:baselineAligned="false" android:paddingHorizontal="8dp" android:paddingVertical="4dp">
+        <LinearLayout android:layout_width="48dp" android:layout_height="wrap_content" android:orientation="vertical">
+            <TextView android:id="@+id/widget_start" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:fontFeatureSettings="tnum" android:maxLines="1" android:textColor="@color/md_on_surface"
+                android:textSize="14sp" android:textStyle="bold" />
+            <TextView android:id="@+id/widget_end" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:fontFeatureSettings="tnum" android:maxLines="1" android:textColor="@color/md_on_surface_variant"
+                android:textSize="12sp" />
+        </LinearLayout>
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+            android:orientation="vertical">
+            <TextView android:id="@+id/widget_subject" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:ellipsize="end" android:maxLines="1" android:textColor="@color/md_on_surface" android:textSize="14sp" />
+            <TextView android:id="@+id/widget_detail" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:ellipsize="end" android:maxLines="1" android:textColor="@color/md_on_surface_variant" android:textSize="12sp" />
+        </LinearLayout>
+    </LinearLayout>
+</FrameLayout>

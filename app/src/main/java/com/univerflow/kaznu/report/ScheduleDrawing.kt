@@ -4,12 +4,15 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.LinearGradient
 import android.graphics.Paint
+import android.graphics.Shader
 import android.graphics.Typeface
 import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
 import androidx.core.graphics.createBitmap
+import androidx.core.graphics.withScale
 import androidx.core.graphics.withTranslation
 import com.univerflow.kaznu.R
 import com.univerflow.kaznu.domain.AppLanguage
@@ -46,23 +49,34 @@ class ScheduleDrawing(private val words: Context, private val language: AppLangu
         val columns = weeks.map(::column)
         val height = (columns.maxOf { it.height } + 2 * MARGIN)
         val width = columns.size * COLUMN + (columns.size + 1) * MARGIN
-        val (scale, pixels) = SchedulePicture.canvas(height, MAX_PIXELS, SCALE)
+        val (scale, pixels, cut) = SchedulePicture.canvas(height, MAX_PIXELS, SCALE)
         val bitmap = createBitmap((width * scale).roundToInt(), pixels)
         try {
             val canvas = Canvas(bitmap)
             canvas.drawColor(Color.WHITE)
-            canvas.scale(scale, scale)
-            val rule = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = LINE; strokeWidth = 1f }
-            columns.forEachIndexed { index, column ->
-                val x = MARGIN + index * (COLUMN + MARGIN)
-                if (index > 0) canvas.drawLine(x - MARGIN / 2, MARGIN, x - MARGIN / 2, height - MARGIN, rule)
-                canvas.withTranslation(x, MARGIN) { column.draw(this) }
+            canvas.withScale(scale, scale) {
+                val rule = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = LINE; strokeWidth = 1f }
+                columns.forEachIndexed { index, column ->
+                    val x = MARGIN + index * (COLUMN + MARGIN)
+                    if (index > 0) drawLine(x - MARGIN / 2, MARGIN, x - MARGIN / 2, height - MARGIN, rule)
+                    withTranslation(x, MARGIN) { column.draw(this) }
+                }
             }
+            if (cut) drawCut(canvas, bitmap.width.toFloat(), pixels.toFloat())
             file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         } finally {
             bitmap.recycle()
         }
         return file
+    }
+
+    /** The bottom that did not fit fades out under a «⋯»: no words, so the picture needs no translation for it. */
+    private fun drawCut(canvas: Canvas, width: Float, bottom: Float) {
+        val band = CUT_BAND
+        canvas.drawRect(0f, bottom - band, width, bottom, Paint().apply {
+            shader = LinearGradient(0f, bottom - band, 0f, bottom - band / 3, Color.TRANSPARENT, Color.WHITE, Shader.TileMode.CLAMP)
+        })
+        canvas.drawText("⋯", width / 2, bottom - band / 6, paint(28f, MUTED, bold = true).apply { textAlign = Paint.Align.CENTER })
     }
 
     private fun column(week: PictureWeek): Column {
@@ -130,6 +144,8 @@ class ScheduleDrawing(private val words: Context, private val language: AppLangu
         const val SCALE = 2f
         /** The most pixels of height: a longer week is drawn smaller (down to one pixel a unit). */
         private const val MAX_PIXELS = 12000f
+        /** Pixels of the fade over a cut picture's bottom. */
+        private const val CUT_BAND = 72f
         private const val DAY = 86_400_000L
         private const val INK = 0xFF16283B.toInt()
         private const val MUTED = 0xFF5B6B7C.toInt()

@@ -1,5 +1,8 @@
 package com.univerflow.kaznu.domain
 
+/** A picture's scale and pixel height; [cut]: the bottom did not fit and is left out. */
+data class PictureCanvas(val scale: Float, val pixels: Int, val cut: Boolean)
+
 /** One day of a picture's week: [date] (epoch day) and its classes by start time. */
 data class PictureDay(val date: Long, val lessons: List<TimetableLesson>)
 
@@ -19,11 +22,13 @@ data class PictureWeek(val number: Int, val labelled: Boolean, val first: Long, 
 object SchedulePicture {
     /**
      * The scale and pixel height of a picture [height] layout units tall: twice the units, smaller for a long week but never
-     * under half, and never taller than [maxPixels] (what is below that is left out rather than running out of memory).
+     * under half, and never taller than [maxPixels] (what is below that is left out rather than running out of memory;
+     * [PictureCanvas.cut] then says so, and the picture shows it).
      */
-    fun canvas(height: Float, maxPixels: Float, scale: Float): Pair<Float, Int> {
+    fun canvas(height: Float, maxPixels: Float, scale: Float): PictureCanvas {
         val fitted = (maxPixels / height).coerceIn(MIN_SCALE, scale)
-        return fitted to minOf(height * fitted, maxPixels).toInt().coerceAtLeast(1)
+        // Cut only when even half scale does not fit: height x fitted can round a hair past the limit.
+        return PictureCanvas(fitted, minOf(height * fitted, maxPixels).toInt().coerceAtLeast(1), maxPixels / height < MIN_SCALE)
     }
 
     private const val MIN_SCALE = 0.5f

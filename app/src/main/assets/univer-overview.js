@@ -373,10 +373,12 @@
     // widget and reminders follow the parity; with it unread (or none listed) the week goes alone and repeats as before.
     // The week goes at once; the neighbour is read once an app session for each week (the app keeps it when a later copy
     // comes without it), so an ordinary visit costs no second request and the widget never waits for one.
-    var sentWeek = '', weekTicket = 0, PAIRED = 'univer.app.week-paired.v1';
+    var sentWeek = '', weekTicket = 0, PAIRED = 'univer.app.week-paired.v1', WEEK_LIMIT = 131072; // univer-schedule: in MobilePageAdapter NATIVE
     function saveWeek(doc) {
         if (typeof __univerNative !== 'function') return;
         var week = timetable(doc, new Date()); if (!week) return;
+        // The schedule page and Бакалавр read today's week: other pages need not read it again (freshWeek).
+        try { sessionStorage.setItem(FRESH, account() + '|' + new Date().toDateString()); } catch (_) { }
         var key = JSON.stringify(week);
         if (key === sentWeek) return;
         sentWeek = key; var ticket = ++weekTicket;
@@ -384,11 +386,31 @@
         var paired = account() + '|' + week.week;
         try { if (sessionStorage.getItem(PAIRED) === paired) return; } catch (_) { return; }
         readPair(doc).then(function (pair) {
-            if (ticket !== weekTicket || !pair.weeks[1]) return;
-            var both = Object.assign({}, week, {second:{week:pair.weeks[1].monday, lessons:pair.weeks[1].lessons}});
-            __univerNative('univer-schedule:' + JSON.stringify(both));
+            if (ticket !== weekTicket) return;
+            var message;
+            if (pair.weeks[1]) message = 'univer-schedule:' + JSON.stringify(Object.assign({}, week, {second:{week:pair.weeks[1].monday, lessons:pair.weeks[1].lessons}}));
+            // The site lists no neighbour (a one-week schedule): the app drops the one it kept. An unread neighbour says nothing.
+            else if (!pair.missing.length) message = 'univer-schedule:' + JSON.stringify(Object.assign({}, week, {single:true}));
+            else return;
+            // Past the channel's limit both weeks would be dropped unseen: the week already sent stays alone, and is not read again.
+            if (message.length <= WEEK_LIMIT) __univerNative(message);
             try { sessionStorage.setItem(PAIRED, paired); } catch (_) { }
         }, function () { });
+    }
+
+    // The widget keeps the week of the student's last visit, but the start page (news) never shows the schedule: a few
+    // seconds after any other page shows, the schedule is read once a day an app session (one GET, read-only) and saved.
+    // The mark is set when the read starts, so a page left early does not use up the day.
+    var FRESH = 'univer.app.week-fresh.v1', FRESH_DELAY = 4000;
+    function freshWeek() {
+        if (typeof __univerNative !== 'function' || !account() || document.getElementById('login_frm')) return;
+        var at = generation, mark = function () { return account() + '|' + new Date().toDateString(); };
+        try { if (sessionStorage.getItem(FRESH) === mark()) return; } catch (_) { return; }
+        setTimeout(function () {
+            if (at !== generation || !active) return;
+            try { if (sessionStorage.getItem(FRESH) === mark()) return; sessionStorage.setItem(FRESH, mark()); } catch (_) { return; }
+            once('schedule-day:' + new Date().toDateString(), '/student/myschedule/').then(function (doc) { if (at === generation) saveWeek(doc); }, function () { });
+        }, FRESH_DELAY);
     }
 
     // The grades panel shows the journal's totals, so the app keeps them as seen: a background check does not announce
@@ -749,6 +771,7 @@
             if (/^\/student\/bachelor\/?$/i.test(location.pathname)) bachelor();
             else if (/^\/ssc\/?$/i.test(location.pathname)) desk();
             else if (/^\/student\/myschedule\//i.test(location.pathname)) { saveWeek(document); exportBox(); }
+            else freshWeek();
         },
         release: release,
         // The schedule page's list of this week's independent work, kept for the home page (univer-syllabus.js).

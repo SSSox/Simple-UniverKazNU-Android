@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A later day's heading in the widget's list: «Пятница, 20 ноября». -->
+<TextView xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/widget_day"
+    android:layout_width="match_parent" android:layout_height="wrap_content" android:ellipsize="end" android:maxLines="1"
+    android:paddingHorizontal="4dp" android:paddingTop="10dp" android:paddingBottom="2dp" android:textColor="@color/md_primary"
+    android:textSize="13sp" android:textStyle="bold" />

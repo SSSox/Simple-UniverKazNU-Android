@@ -398,6 +398,7 @@
     <string name="widget_free">No classes today</string>
     <string name="widget_empty">Open the schedule in the app and your classes will show here</string>
     <string name="widget_none_week">No classes in the week ahead</string>
+    <string name="widget_last_known">Last saved schedule</string>
     <string name="widget_from">Schedule saved %s</string>
     <string name="widget_class">Class</string>
     <string name="widget_room">Room %s</string>

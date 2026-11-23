@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- «Пары на сегодня»: the day's heading, up to four classes (time, name, room) and how old the saved week is.
-     RemoteViews: only framework layouts and TextViews; the widget's code fills and shows the rows. -->
+<!-- «Пары на сегодня»: the day's heading, a scrolling list of classes (time, name, room) and how old the saved week is.
+     RemoteViews: only framework layouts, TextViews and a ListView; widget_lesson.xml and widget_day.xml are its rows. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/widget_root"
     android:layout_width="match_parent" android:layout_height="match_parent" android:background="@drawable/widget_background"
     android:orientation="vertical" android:padding="12dp">
@@ -16,89 +16,10 @@
     <TextView android:id="@+id/widget_note" android:layout_width="match_parent" android:layout_height="wrap_content"
         android:layout_marginTop="2dp" android:maxLines="2" android:paddingHorizontal="4dp" android:textColor="@color/md_on_surface_variant"
         android:textSize="13sp" android:visibility="gone" />
-    <LinearLayout android:id="@+id/widget_rows" android:layout_width="match_parent" android:layout_height="0dp"
-        android:layout_weight="1" android:orientation="vertical">
-        <LinearLayout android:id="@+id/widget_row_1" android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:layout_marginTop="8dp" android:background="@drawable/widget_row" android:gravity="center_vertical"
-            android:minHeight="40dp" android:orientation="horizontal" android:baselineAligned="false" android:paddingHorizontal="8dp" android:paddingVertical="4dp"
-            android:visibility="gone">
-            <LinearLayout android:layout_width="48dp" android:layout_height="wrap_content" android:orientation="vertical">
-                <TextView android:id="@+id/widget_start_1" android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:fontFeatureSettings="tnum" android:maxLines="1" android:textColor="@color/md_on_surface"
-                    android:textSize="14sp" android:textStyle="bold" />
-                <TextView android:id="@+id/widget_end_1" android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:fontFeatureSettings="tnum" android:maxLines="1" android:textColor="@color/md_on_surface_variant"
-                    android:textSize="12sp" />
-            </LinearLayout>
-            <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
-                android:orientation="vertical">
-                <TextView android:id="@+id/widget_subject_1" android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:ellipsize="end" android:maxLines="1" android:textColor="@color/md_on_surface" android:textSize="14sp" />
-                <TextView android:id="@+id/widget_detail_1" android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:ellipsize="end" android:maxLines="1" android:textColor="@color/md_on_surface_variant" android:textSize="12sp" />
-            </LinearLayout>
-        </LinearLayout>
-        <LinearLayout android:id="@+id/widget_row_2" android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:layout_marginTop="4dp" android:background="@drawable/widget_row" android:gravity="center_vertical"
-            android:minHeight="40dp" android:orientation="horizontal" android:baselineAligned="false" android:paddingHorizontal="8dp" android:paddingVertical="4dp"
-            android:visibility="gone">
-            <LinearLayout android:layout_width="48dp" android:layout_height="wrap_content" android:orientation="vertical">
-                <TextView android:id="@+id/widget_start_2" android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:fontFeatureSettings="tnum" android:maxLines="1" android:textColor="@color/md_on_surface"
-                    android:textSize="14sp" android:textStyle="bold" />
-                <TextView android:id="@+id/widget_end_2" android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:fontFeatureSettings="tnum" android:maxLines="1" android:textColor="@color/md_on_surface_variant"
-                    android:textSize="12sp" />
-            </LinearLayout>
-            <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
-                android:orientation="vertical">
-                <TextView android:id="@+id/widget_subject_2" android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:ellipsize="end" android:maxLines="1" android:textColor="@color/md_on_surface" android:textSize="14sp" />
-                <TextView android:id="@+id/widget_detail_2" android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:ellipsize="end" android:maxLines="1" android:textColor="@color/md_on_surface_variant" android:textSize="12sp" />
-            </LinearLayout>
-        </LinearLayout>
-        <LinearLayout android:id="@+id/widget_row_3" android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:layout_marginTop="4dp" android:background="@drawable/widget_row" android:gravity="center_vertical"
-            android:minHeight="40dp" android:orientation="horizontal" android:baselineAligned="false" android:paddingHorizontal="8dp" android:paddingVertical="4dp"
-            android:visibility="gone">
-            <LinearLayout android:layout_width="48dp" android:layout_height="wrap_content" android:orientation="vertical">
-                <TextView android:id="@+id/widget_start_3" android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:fontFeatureSettings="tnum" android:maxLines="1" android:textColor="@color/md_on_surface"
-                    android:textSize="14sp" android:textStyle="bold" />
-                <TextView android:id="@+id/widget_end_3" android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:fontFeatureSettings="tnum" android:maxLines="1" android:textColor="@color/md_on_surface_variant"
-                    android:textSize="12sp" />
-            </LinearLayout>
-            <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
-                android:orientation="vertical">
-                <TextView android:id="@+id/widget_subject_3" android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:ellipsize="end" android:maxLines="1" android:textColor="@color/md_on_surface" android:textSize="14sp" />
-                <TextView android:id="@+id/widget_detail_3" android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:ellipsize="end" android:maxLines="1" android:textColor="@color/md_on_surface_variant" android:textSize="12sp" />
-            </LinearLayout>
-        </LinearLayout>
-        <LinearLayout android:id="@+id/widget_row_4" android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:layout_marginTop="4dp" android:background="@drawable/widget_row" android:gravity="center_vertical"
-            android:minHeight="40dp" android:orientation="horizontal" android:baselineAligned="false" android:paddingHorizontal="8dp" android:paddingVertical="4dp"
-            android:visibility="gone">
-            <LinearLayout android:layout_width="48dp" android:layout_height="wrap_content" android:orientation="vertical">
-                <TextView android:id="@+id/widget_start_4" android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:fontFeatureSettings="tnum" android:maxLines="1" android:textColor="@color/md_on_surface"
-                    android:textSize="14sp" android:textStyle="bold" />
-                <TextView android:id="@+id/widget_end_4" android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:fontFeatureSettings="tnum" android:maxLines="1" android:textColor="@color/md_on_surface_variant"
-                    android:textSize="12sp" />
-            </LinearLayout>
-            <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
-                android:orientation="vertical">
-                <TextView android:id="@+id/widget_subject_4" android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:ellipsize="end" android:maxLines="1" android:textColor="@color/md_on_surface" android:textSize="14sp" />
-                <TextView android:id="@+id/widget_detail_4" android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:ellipsize="end" android:maxLines="1" android:textColor="@color/md_on_surface_variant" android:textSize="12sp" />
-            </LinearLayout>
-        </LinearLayout>
-    </LinearLayout>
+    <!-- The classes scroll: the day's from the one under way, then the next days under their headings (TodayWidgetService). -->
+    <ListView android:id="@+id/widget_list" android:layout_width="match_parent" android:layout_height="0dp"
+        android:layout_weight="1" android:layout_marginTop="4dp" android:divider="@null" android:dividerHeight="0dp"
+        android:scrollbarStyle="outsideOverlay" android:clipToPadding="false" />
     <TextView android:id="@+id/widget_footer" android:layout_width="match_parent" android:layout_height="wrap_content"
         android:layout_marginTop="4dp" android:ellipsize="end" android:maxLines="1" android:paddingHorizontal="4dp"
         android:textColor="@color/md_on_surface_variant" android:textSize="11sp" />

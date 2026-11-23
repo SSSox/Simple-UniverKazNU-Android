@@ -405,6 +405,7 @@
     <string name="widget_free">Сегодня пар нет</string>
     <string name="widget_empty">Откройте расписание в приложении, и пары появятся здесь</string>
     <string name="widget_none_week">На неделю вперёд пар нет</string>
+    <string name="widget_last_known">Последнее сохранённое расписание</string>
     <string name="widget_from">По расписанию от %s</string>
     <string name="widget_class">Пара</string>
     <string name="widget_room">Ауд. %s</string>

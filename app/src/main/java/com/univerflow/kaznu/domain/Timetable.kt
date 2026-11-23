@@ -26,7 +26,9 @@ data class AlternateWeek(val week: Long, val lessons: List<TimetableLesson>)
  * and the alternate's in the weeks between; without it (an old copy, a neighbour that could not be read) the saved
  * week repeats every week.
  */
-data class Timetable(val owner: String, val week: Long, val saved: Long, val lessons: List<TimetableLesson>, val alternate: AlternateWeek? = null) {
+data class Timetable(val owner: String, val week: Long, val saved: Long, val lessons: List<TimetableLesson>, val alternate: AlternateWeek? = null,
+    /** The page read the site's list of weeks and it has no neighbour: a kept neighbour goes. Never saved. */
+    val single: Boolean = false) {
     /** The classes of the week that [date] falls in: the saved week's, or the alternate's in the weeks between. */
     private fun weekLessons(date: Long): List<TimetableLesson> {
         val other = alternate ?: return lessons
@@ -36,16 +38,24 @@ data class Timetable(val owner: String, val week: Long, val saved: Long, val les
     /**
      * This week with the neighbouring week of [old] when it came without one (the page sends the week at once and its
      * neighbour only once a session, and a neighbour that could not be read must not undo one already saved): the same
-     * week keeps [old]'s neighbour, and [old]'s neighbour shown now gets [old]'s week back as its own neighbour.
+     * week keeps [old]'s neighbour, and [old]'s neighbour shown now gets [old]'s week back as its own neighbour. A [single]
+     * week (the site lists no neighbour any more) keeps nothing.
      */
     fun keepingAlternateOf(old: Timetable?): Timetable {
-        if (alternate != null || old == null || old.owner != owner) return this
+        if (alternate != null || single || old == null || old.owner != owner) return this
         return when {
             old.week == week && old.alternate != null -> copy(alternate = old.alternate)
             old.alternate?.week == week -> copy(alternate = AlternateWeek(old.week, old.lessons))
             else -> this
         }
     }
+
+    /**
+     * The same classes past their course dates and the weeks an undated class is kept for: what the widget shows once the
+     * saved week has run out, so it keeps the schedule of the student's last visit. Reminders keep to the dates.
+     */
+    fun unbounded(): Timetable = copy(lessons = lessons.map { it.copy(until = Long.MAX_VALUE) },
+        alternate = alternate?.let { other -> other.copy(lessons = other.lessons.map { it.copy(until = Long.MAX_VALUE) }) })
 
     /** The classes on [date] (an epoch day), by start time. */
     fun on(date: Long): List<TimetableLesson> = weekLessons(date).filter { lesson ->
@@ -109,7 +119,7 @@ data class Timetable(val owner: String, val week: Long, val saved: Long, val les
          * student looks at never replaces the current one.
          */
         fun of(map: Map<String, Any?>, now: Long, zone: TimeZone = TimeZone.getDefault()): Timetable? {
-            val timetable = restore(map + ("saved" to now)) ?: return null
+            val timetable = restore(map + ("saved" to now))?.let { if (map["single"] == true && it.alternate == null) it.copy(single = true) else it } ?: return null
             val today = epochDay(now, zone)
             return timetable.takeIf { today >= it.week && today < it.week + 7 }
         }
@@ -195,6 +205,28 @@ data class TodayPlan(val date: Long, val today: Boolean, val lessons: List<Lesso
             return null
         }
 
+        /** The week the widget draws from: the saved one, or [Timetable.unbounded] once nothing is left within a week. */
+        fun source(timetable: Timetable, now: Long, zone: TimeZone): Timetable =
+            if (of(timetable, now, zone) != null) timetable else timetable.unbounded()
+
+        /**
+         * The widget's scrolling list: the shown day's classes from the one under way or next (finished ones are gone),
+         * then each later day up to [days] ahead under its heading. [WidgetList.lastKnown]: drawn from [Timetable.unbounded].
+         * Null when the week has no classes at all.
+         */
+        fun list(timetable: Timetable, now: Long, zone: TimeZone, days: Int = DAYS): WidgetList? {
+            val source = source(timetable, now, zone)
+            val plan = of(source, now, zone, Int.MAX_VALUE) ?: return null
+            val first = plan.lessons.filter { !plan.today || it.endAt > now }.map { WidgetRow.Lesson(it, it == plan.current) }
+            val later = (plan.date + 1..Timetable.epochDay(now, zone) + days).flatMap { date ->
+                val lessons = source.times(date, zone)
+                if (lessons.isEmpty()) emptyList() else listOf(WidgetRow.Day(date)) + lessons.map { WidgetRow.Lesson(it, false) }
+            }
+            return WidgetList(plan, first + later, lastKnown = source !== timetable)
+        }
+
+        const val DAYS = 7
+
         /** The next moment the widget changes on its own: a class beginning or ending today, or the next midnight. */
         fun nextChange(timetable: Timetable?, now: Long, zone: TimeZone): Long {
             val today = Timetable.epochDay(now, zone)
@@ -204,3 +236,12 @@ data class TodayPlan(val date: Long, val today: Boolean, val lessons: List<Lesso
         }
     }
 }
+
+/** One row of the widget's list: a later day's heading, or a class ([current]: under way now). */
+sealed interface WidgetRow {
+    data class Day(val date: Long) : WidgetRow
+    data class Lesson(val time: LessonTime, val current: Boolean) : WidgetRow
+}
+
+/** What the widget shows: the day in its heading ([plan]), the rows under it, and whether they repeat a past week. */
+data class WidgetList(val plan: TodayPlan, val rows: List<WidgetRow>, val lastKnown: Boolean)

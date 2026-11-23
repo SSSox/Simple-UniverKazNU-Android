@@ -43,6 +43,8 @@
             </intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_today_info" />
         </receiver>
+        <!-- The widget's scrolling rows: only the launcher binds it (BIND_REMOTEVIEWS). -->
+        <service android:name=".today.TodayWidgetService" android:exported="false" android:permission="android.permission.BIND_REMOTEVIEWS" />
         <receiver android:name=".today.ClassReminders$ReminderReceiver" android:exported="false" />
         <receiver android:name=".today.ExamReminders$ReminderReceiver" android:exported="false" />
         <service android:name=".grades.GradeCheckJob" android:exported="false"

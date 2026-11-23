@@ -6,13 +6,17 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.view.View
+import android.view.ViewGroup
+import android.widget.BaseAdapter
 import android.widget.FrameLayout
+import android.widget.ListView
 import android.widget.TextView
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.univerflow.kaznu.domain.AppLanguage
 import com.univerflow.kaznu.domain.Timetable
 import com.univerflow.kaznu.domain.TimetableLesson
+import com.univerflow.kaznu.domain.TodayPlan
 import com.univerflow.kaznu.today.TodayWidget
 import com.univerflow.kaznu.ui.context
 import org.junit.Assert.assertEquals
@@ -25,8 +29,9 @@ import java.util.TimeZone
 
 /**
  * The «Сегодня» widget drawn from a made-up week (never the saved one) into qa/widget-*.png, on a grey stand-in for the
- * wallpaper, in the light and dark theme, with a PIN, without a saved week and after the day's classes. [HOME] is the
- * height a 3×2 widget gets on the Pixel emulator; every row drawn must fit in it whole.
+ * wallpaper, in the light and dark theme, with a PIN, without a saved week, after the day's classes and once the week has
+ * run out. Its list gets the rows TodayWidgetService hands the launcher. [HOME] is the height a 3×2 widget gets on the
+ * Pixel emulator, where the list scrolls.
  */
 @RunWith(AndroidJUnit4::class)
 class WidgetQaTest {
@@ -58,18 +63,24 @@ class WidgetQaTest {
     }
 
     private fun render(name: String, timetable: Timetable?, now: Long, dark: Boolean = false, hidden: Boolean = false, heightDp: Int = TALL,
-        language: AppLanguage = AppLanguage.RUSSIAN, check: (View) -> Unit = {}) {
+        language: AppLanguage = AppLanguage.RUSSIAN, check: (View, List<View>) -> Unit = { _, _ -> }) {
         instrumentation.runOnMainSync {
             val context = themed(dark)
             val density = context.resources.displayMetrics.density
             val width = (300 * density).toInt()
             val height = (heightDp * density).toInt()
             val parent = FrameLayout(context)
-            val view = TodayWidget.draw(context, timetable, now, zone, language, hidden, heightDp).apply(context, parent)
+            val view = TodayWidget.draw(context, timetable, now, zone, language, 0).apply(context, parent)
+            // What the launcher does with TodayWidgetService's rows.
+            val rows = TodayWidget.rows(context, timetable?.let { TodayPlan.list(it, now, zone) }, hidden, language, zone).map { it.apply(context, parent) }
+            view.findViewById<ListView>(R.id.widget_list).adapter = object : BaseAdapter() {
+                override fun getCount() = rows.size
+                override fun getItem(position: Int) = rows[position]
+                override fun getItemId(position: Int) = position.toLong()
+                override fun getView(position: Int, convertView: View?, group: ViewGroup) = rows[position]
+            }
             parent.addView(view, FrameLayout.LayoutParams(width, height))
             val margin = (16 * density).toInt()
-            parent.measure(View.MeasureSpec.makeMeasureSpec(width + 2 * margin, View.MeasureSpec.EXACTLY),
-                View.MeasureSpec.makeMeasureSpec(height + 2 * margin, View.MeasureSpec.EXACTLY))
             parent.setPadding(margin, margin, margin, margin)
             parent.measure(View.MeasureSpec.makeMeasureSpec(width + 2 * margin, View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec(height + 2 * margin, View.MeasureSpec.EXACTLY))
@@ -78,78 +89,73 @@ class WidgetQaTest {
             val canvas = Canvas(bitmap)
             canvas.drawColor(if (dark) Color.rgb(48, 52, 58) else Color.rgb(196, 202, 210))
             parent.draw(canvas)
-            // No row is cut by the widget's bottom edge.
-            val bottom = view.findViewById<View>(R.id.widget_footer).top
-            listOf(R.id.widget_row_1, R.id.widget_row_2, R.id.widget_row_3, R.id.widget_row_4).map { view.findViewById<View>(it) }
-                .filter { it.visibility == View.VISIBLE }.forEach { row ->
-                    val rowBottom = (row.parent as View).top + row.bottom
-                    assertTrue("$name: a row ends at $rowBottom below the footer at $bottom", rowBottom <= bottom)
-                }
             val folder = File(context.getExternalFilesDir(null), "qa").apply { mkdirs() }
             File(folder, "widget-$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
-            check(view)
+            check(view, rows)
         }
     }
 
-    private fun View.rows() = listOf(R.id.widget_row_1, R.id.widget_row_2, R.id.widget_row_3, R.id.widget_row_4).count { shown(it) }
     private fun View.text(id: Int) = findViewById<TextView>(id).text.toString()
     private fun View.shown(id: Int) = findViewById<View>(id).visibility == View.VISIBLE
+    private fun List<View>.subjects() = mapNotNull { it.findViewById<TextView>(R.id.widget_subject)?.text?.toString() }
     private fun words() = AppLanguage.RUSSIAN.context(instrumentation.targetContext)
 
     @Test
-    fun drawsTheDayInBothThemesWithTheClassUnderWayMarked() {
+    fun drawsTheDayInBothThemesFromTheClassUnderWay() {
         val now = Timetable.at(wednesday, 10 * 60 + 20, zone)
         listOf(false, true).forEach { dark ->
-            render(if (dark) "dark" else "light", week, now, dark = dark) { view ->
-                // Five classes, four rows: the finished first one gives way.
-                assertEquals("Культурология", view.text(R.id.widget_subject_1))
-                assertTrue(view.findViewById<View>(R.id.widget_row_2).contentDescription.toString().startsWith(words().getString(R.string.timetable_now)))
-                assertTrue("the room comes first", view.text(R.id.widget_detail_2).startsWith(words().getString(R.string.widget_room, "416а")))
+            render(if (dark) "dark" else "light", week, now, dark = dark) { view, rows ->
+                // The two finished classes are gone; the one under way leads and is marked; Thursday follows under its heading.
+                assertEquals(listOf("Введение в информационную безопасность и защиту данных", "Алгоритмы и структуры данных", "Английский язык", "Философия"), rows.subjects().take(4))
+                assertEquals("a week ahead: next Wednesday ends the list", "Английский язык", rows.subjects().last())
+                assertTrue(rows[0].contentDescription.toString().startsWith(words().getString(R.string.timetable_now)))
+                assertTrue("the room comes first", rows[0].findViewById<TextView>(R.id.widget_detail).text.startsWith(words().getString(R.string.widget_room, "416а")))
+                assertTrue(rows.any { it.findViewById<TextView>(R.id.widget_day)?.text?.startsWith("Четверг") == true })
                 assertFalse(view.shown(R.id.widget_note))
             }
         }
         render("kazakh", week, now, language = AppLanguage.KAZAKH)
-        render("home", week, now, heightDp = HOME) { view -> assertEquals("a 3×2 widget holds three classes", 3, view.rows()) }
+        render("home", week, now, heightDp = HOME) { view, _ ->
+            assertTrue("a 3×2 widget scrolls to the rest", view.findViewById<ListView>(R.id.widget_list).canScrollVertically(1))
+        }
     }
 
     @Test
     fun aPinHidesEveryClassButItsTime() {
-        render("pin", week, Timetable.at(wednesday, 10 * 60 + 20, zone), hidden = true) { view ->
-            listOf(R.id.widget_subject_1, R.id.widget_subject_2, R.id.widget_subject_3, R.id.widget_subject_4).forEach {
-                assertEquals(words().getString(R.string.widget_class), view.text(it))
-            }
-            listOf(R.id.widget_detail_1, R.id.widget_detail_2, R.id.widget_detail_3, R.id.widget_detail_4).forEach { assertFalse(view.shown(it)) }
-            assertEquals("09:00", view.text(R.id.widget_start_1))
+        render("pin", week, Timetable.at(wednesday, 10 * 60 + 20, zone), hidden = true) { _, rows ->
+            assertTrue(rows.subjects().all { it == words().getString(R.string.widget_class) })
+            assertTrue(rows.mapNotNull { it.findViewById<View>(R.id.widget_detail) }.none { it.visibility == View.VISIBLE })
+            assertEquals("10:00", rows[0].findViewById<TextView>(R.id.widget_start).text.toString())
         }
     }
 
     @Test
     fun withoutASavedWeekItSaysWhereTheClassesComeFrom() {
-        render("empty", null, Timetable.at(wednesday, 9 * 60, zone), heightDp = HOME) { view ->
+        render("empty", null, Timetable.at(wednesday, 9 * 60, zone), heightDp = HOME) { view, rows ->
             assertEquals(words().getString(R.string.widget_empty), view.text(R.id.widget_note))
-            assertFalse(view.shown(R.id.widget_row_1))
+            assertTrue(rows.isEmpty())
+            assertFalse(view.shown(R.id.widget_list))
             assertEquals("", view.text(R.id.widget_footer))
         }
     }
 
     @Test
     fun afterTheLastClassItShowsTomorrow() {
-        render("tomorrow", week, Timetable.at(wednesday, 18 * 60, zone), heightDp = HOME) { view ->
+        render("tomorrow", week, Timetable.at(wednesday, 18 * 60, zone), heightDp = HOME) { view, rows ->
             assertEquals(words().getString(R.string.widget_tomorrow), view.text(R.id.widget_title))
-            assertEquals("Философия", view.text(R.id.widget_subject_1))
-            assertFalse(view.shown(R.id.widget_row_2))
+            assertEquals("Философия", rows.subjects().first())
         }
-        // Thursday has four classes here; with the note line two whole rows fit in a 3×2 widget.
-        val long = week.copy(lessons = week.lessons + (1..3).map { lesson(3, "0${8 + it}:00", "0${8 + it}:50", "Пара $it", "лекция", "10$it") })
-        render("tomorrow-full", long, Timetable.at(wednesday, 18 * 60, zone), heightDp = HOME) { view -> assertEquals(2, view.rows()) }
     }
 
     @Test
-    fun aLargerTextSizeShowsFewerRows() {
-        assertEquals(3, TodayWidget.rowsFor(HOME, note = false, fontScale = 1f))
-        assertEquals(2, TodayWidget.rowsFor(HOME, note = true, fontScale = 1f))
-        assertEquals(1, TodayWidget.rowsFor(HOME, note = true, fontScale = 2f))
-        assertEquals(4, TodayWidget.rowsFor(null, note = true, fontScale = 1f))
+    fun onceTheSavedWeekHasRunOutItKeepsShowingItsClasses() {
+        // Three months on: an undated class is kept three weeks, so only the last saved schedule is left to show.
+        val later = Timetable.at(wednesday + 91, 9 * 60, zone)
+        render("last-known", week, later, heightDp = HOME) { view, rows ->
+            assertEquals(words().getString(R.string.widget_last_known), view.text(R.id.widget_note))
+            assertTrue(rows.subjects().contains("Политология"))
+            assertTrue(view.text(R.id.widget_footer).isNotEmpty())
+        }
     }
 
     private companion object {

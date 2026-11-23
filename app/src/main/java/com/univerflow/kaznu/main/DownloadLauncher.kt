@@ -65,7 +65,6 @@ class DownloadLauncher(private val activity: AppCompatActivity, private val mode
         fun signInAgain(moodle: Boolean): Boolean
     }
 
-    private var legacyRequest: Bundle? = null
     /** Files and sections an ended session refused, fetched once the sign-in that serves them all has finished. */
     private val loginRequests = mutableListOf<Bundle>()
     /** Recent «Скачать все» runs by batch, so a run an ended session refused goes on after the sign-in. */
@@ -74,41 +73,37 @@ class DownloadLauncher(private val activity: AppCompatActivity, private val mode
     private val sent = LinkedHashMap<String, Bundle>()
     private val loginAttempts = mutableMapOf<String, Long>()
     private val notificationPermission = activity.registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
-    // One answer serves everything that waited for it: a site download and a file the app writes may ask while the same
-    // dialog is open, and neither is dropped.
+    // One answer serves everything that waited for it: site downloads tapped while the dialog is open and a file the app
+    // writes; none is dropped.
     private val storagePermission = activity.registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        val action = storageAction
-        val pending = legacyRequest
-        storageAction = null
-        legacyRequest = null
-        if (!granted) { if (action != null || pending != null) host.message(R.string.download_permission); return@registerForActivityResult }
+        val (action, pending) = waiting.take()
+        if (!granted) { if (action != null || pending.isNotEmpty()) host.message(R.string.download_permission); return@registerForActivityResult }
         action?.invoke()
-        pending?.let { if (it.containsKey(URLS)) startAll(it) else start(it) }
+        pending.forEach { if (it.containsKey(URLS)) startAll(it) else start(it) }
     }
-    private val asking get() = storageAction != null || legacyRequest != null
-    /** Waits [request] for the storage answer (the first one asked keeps its place); asks only when nothing asked yet. */
+    private val waiting = StorageWaiters<Bundle> { request -> request.getString(SECTION)?.let { "section:$it" } ?: request.getString("url") }
+    /** Waits [request] for the storage answer; asks only when nothing asked yet. */
     private fun awaitStorage(request: Bundle) {
-        val first = !asking
-        if (legacyRequest == null) legacyRequest = request
-        if (first) storagePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        if (waiting.add(request)) storagePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
     }
 
     /** A file the app itself writes to Downloads (not a site download): [action] runs now, or once Android 9 and older allow storage. */
-    private var storageAction: (() -> Unit)? = null
     fun withStorage(action: () -> Unit) {
         if (Build.VERSION.SDK_INT <= 28 && ContextCompat.checkSelfPermission(activity, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
-            val first = !asking
-            storageAction = action
-            if (first) storagePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            if (waiting.await(action)) storagePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
         } else action()
     }
 
-    fun restore(saved: Bundle?) { legacyRequest = saved?.getBundle(LEGACY) }
+    fun restore(saved: Bundle?) {
+        @Suppress("DEPRECATION")
+        val list = saved?.getParcelableArrayList<Bundle>(LEGACY_LIST) ?: listOfNotNull(saved?.getBundle(LEGACY))
+        waiting.restore(list)
+    }
 
-    fun save(outState: Bundle) { legacyRequest?.let { outState.putBundle(LEGACY, it) } }
+    fun save(outState: Bundle) { waiting.pending().takeIf { it.isNotEmpty() }?.let { outState.putParcelableArrayList(LEGACY_LIST, ArrayList(it)) } }
 
     /** Forgets pending requests: the session that asked for them is gone. */
-    fun reset() { legacyRequest = null; loginRequests.clear(); sections.clear(); sent.clear() }
+    fun reset() { waiting.clear(); loginRequests.clear(); sections.clear(); sent.clear() }
 
     fun download(url: String, userAgent: String, disposition: String?, mime: String?) {
         if (!SingleSignOnPolicy.downloadAllowed(url)) {
@@ -291,6 +286,7 @@ class DownloadLauncher(private val activity: AppCompatActivity, private val mode
 
     private companion object {
         const val LEGACY = "legacy_download"
+        const val LEGACY_LIST = "legacy_downloads"
         const val URLS = "urls"
         const val SECTION = "section"
         const val FOLDERS = "folders"

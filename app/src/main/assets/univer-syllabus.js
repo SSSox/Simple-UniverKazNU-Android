@@ -93,6 +93,7 @@
     }
     function cut(value, limit) {
         if (value.length <= limit) return value;
+        if (limit < 2) return limit > 0 ? '…' : '';
         // The ellipsis counts: the result never passes the limit (the home page drops a list with a longer topic).
         var part = value.slice(0, limit - 1), space = part.lastIndexOf(' ');
         return (space > limit * 0.6 ? part.slice(0, space) : part).replace(/[\s.,;:–—-]+$/, '') + '…';
@@ -137,7 +138,7 @@
                 if (!isFinite(score) || score < 0) score = 0;
                 // The combined name "СРО/СРОП 4" says nothing once the entry is known to be the work itself.
                 if (kind === 'sro') { kind = sroKind(name, topic, score); if (!marker(name)) name = ''; }
-                entries.push({week:week, kind:kind, name:name, topic:cut(topic, LIMITS.topic), score:score});
+                entries.push({week:week, kind:kind, name:name, topic:cut(topic, LIMITS.topic), cut:topic.length > LIMITS.topic, score:score});
             });
         });
         return {programs:programs, year:yearRow ? (yearRow.value.match(/\b(20\d{2})\b/) || ['', ''])[1] : '', people:fold(people), entries:entries};
@@ -170,7 +171,7 @@
     }
     function group(entries) {
         var weeks = {}, kinds = {};
-        entries.forEach(function (entry) { (weeks[entry.week] = weeks[entry.week] || []).push({week:entry.week, kind:entry.kind, name:entry.name, topic:entry.topic, score:entry.score}); kinds[entry.kind] = true; });
+        entries.forEach(function (entry) { (weeks[entry.week] = weeks[entry.week] || []).push({week:entry.week, kind:entry.kind, name:entry.name, topic:entry.topic, cut:entry.cut, score:entry.score}); kinds[entry.kind] = true; });
         return {weeks:weeks, kinds:kinds};
     }
     // The syllabus form has lectures and seminars only, so a practical or laboratory class reads the seminar rows
@@ -622,7 +623,8 @@
                 setText(topic, open ? entry.topic : cut(entry.topic, LIMITS.preview));
                 topic.classList.toggle('univer-app-syl-clamped', !open);
                 setText(more, open ? L.less : L.more); more.setAttribute('aria-expanded', String(open));
-                note.hidden = !(open && entry.topic.length > LIMITS.topic / 2 && /…$/.test(entry.topic));
+                // A plan kept before the mark existed has none: then a long topic ending in «…» is taken for a cut one.
+                note.hidden = !(open && (typeof entry.cut === 'boolean' ? entry.cut : entry.topic.length > LIMITS.topic / 2 && /…$/.test(entry.topic)));
             }, animate);
             if (animate && open) motion()?.reveal(topic, 'content');
         };
@@ -951,5 +953,5 @@
     }
     // state: what QA reads to tell a finished page from a waiting one; course names and statuses only.
     function summary() { return {model:model ? model.state : 'off', reason:model?.reason || '', weeks:model ? model.pattern.state : 'off', jobs:(model?.jobs || []).map(function (job) { return {name:job.name, status:job.status, reason:job.reason || ''}; })}; }
-    window.__univerSyllabusV1 = {apply:apply, release:release, state:summary, limits:LIMITS, parseSyllabus:parseSyllabus, parseProgram:parseProgram, sroKind:sroKind, kindOf:kindOf, rate:rate, leadOf:leadOf, tasksFor:tasksFor, parseWeek:parseWeek, align:align};
+    window.__univerSyllabusV1 = {apply:apply, release:release, state:summary, limits:LIMITS, parseSyllabus:parseSyllabus, parseProgram:parseProgram, sroKind:sroKind, kindOf:kindOf, rate:rate, leadOf:leadOf, tasksFor:tasksFor, parseWeek:parseWeek, align:align, cut:cut};
 })();

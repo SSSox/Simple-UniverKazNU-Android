@@ -668,3 +668,17 @@ test('a page without the schedule gets no syllabus style', () => {
   assert.equal(p.d.getElementById('univer-syllabus-style'), null);
   apply(p, false); p.close();
 });
+
+test('a long topic that itself ends in «…» is not called cut; cut() keeps within any limit', async () => {
+  const map = routes(), own = 'Слово '.repeat(130) + 'и так далее…';
+  map['/student/interactive/syllabus/print/9004/2'] = syllabus({ groups: [group(MINE)], people: 'Учителева Анна Петровна', weeks: [week(4, [entry('лекция', 'лекция 4', own, 1)])] });
+  const p = page(schedule(lessons), { routes: map });
+  apply(p); await until(done(p));
+  const lecture = lessonOf(p, 'Политология', 'лекция'); click(p, lecture.querySelector('.univer-app-syl-more'));
+  assert.ok(own.length > p.w.__univerSyllabusV1.limits.topic / 2);
+  assert.equal(lecture.querySelector('.univer-app-syl-topic').textContent, own);
+  assert.equal(lecture.querySelector('.univer-app-syl-cut').hidden, true, 'nothing was cut');
+  const cut = p.w.__univerSyllabusV1.cut;
+  for (const limit of [0, 1, 2, 5]) assert.ok(cut('длинная тема', limit).length <= limit, 'limit ' + limit);
+  apply(p, false); p.close();
+});

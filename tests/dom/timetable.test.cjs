@@ -149,3 +149,77 @@ test('the schedule page sends the week at once and its neighbour once a session;
     p.close();
   }
 });
+
+test('a schedule that lists no neighbouring week says so once, so the app drops the neighbour it kept', async () => {
+  const sent = [];
+  const lone = '<select id="weekSelect"><option value="/student/myschedule/2026/1/16.11.2026/22.11.2026/" selected>Неделя 12. 16.11.2026 - 22.11.2026</option></select>';
+  const w = page('/student/myschedule/', lone + SCHEDULE, { native: m => sent.push(m) });
+  w.__univerOverviewV1.apply('ru');
+  await settle();
+  const weeks = sentWeeks(sent);
+  assert.equal(weeks.length, 2);
+  assert.equal(weeks[0].single, undefined, 'the week at once, before the list is read');
+  assert.equal(weeks[1].single, true);
+  assert.equal('second' in weeks[1], false);
+  w.close();
+});
+
+test('both weeks past the channel\'s limit are not sent; the week already sent stays and is not read again', async () => {
+  // 80 classes a week, every field at its length cap and made of quotes, which double in JSON: one week fits, both do not.
+  const q = n => '"'.repeat(n), two = n => String(n).padStart(2, '0');
+  const rows = Array.from({ length: 40 }, (_, i) => { const m = 8 * 60 + i * 15, at = two(m / 60 | 0) + ':' + two(m % 60) + '-' + two((m + 10) / 60 | 0) + ':' + two((m + 10) % 60);
+    return '<tr>' + time(at) + cell(q(200), q(60), q(200), q(100)) + cell(q(200), q(60), q(200), q(100)) + '</tr>'; }).join('');
+  const table = '<table class="schedule"><tr><th>&nbsp;</th><th>ПН</th><th>ВТ</th></tr>' + rows + '</table>';
+  const huge = neighbourPage.replace(/<table class="schedule">[\s\S]*<\/table>/, table);
+  const sent = [];
+  const w = page('/student/myschedule/', week() + table, { native: m => sent.push(m), routes: { [NEIGHBOUR]: huge } });
+  w.__univerOverviewV1.apply('ru');
+  await settle();
+  assert.equal(sent.length, 1, 'only the week alone');
+  assert.ok(sent[0].length > 65536 && sent[0].length <= 131072, 'the week alone is near the limit: ' + sent[0].length);
+  assert.notEqual(w.sessionStorage.getItem('univer.app.week-paired.v1'), null, 'not read again this session');
+  w.close();
+});
+
+test('any other page reads the schedule once a day an app session, so the widget gets the week without a visit to it', async () => {
+  const routes = { '/student/myschedule/': '<html><body>' + week() + SCHEDULE + '</body></html>' };
+  const now = w => { const real = w.setTimeout; w.setTimeout = (f, ms, ...a) => real(f, ms === 4000 ? 0 : ms, ...a); };
+  const sent = [], asked = [];
+  const w = page('/news/', '<p>Новости</p>', { native: m => sent.push(m), routes });
+  now(w); const fetch = w.fetch; w.fetch = (...a) => { asked.push(String(a[0])); return fetch(...a); };
+  w.__univerOverviewV1.apply('ru');
+  for (let i = 0; i < 200 && !sent.length; i++) await new Promise(r => setTimeout(r, 5));
+  assert.equal(sentWeeks(sent)[0].week, '2026-11-16');
+  const marks = Object.fromEntries(Object.keys(w.sessionStorage).map(k => [k, w.sessionStorage.getItem(k)]));
+  w.close();
+  // Another page the same day and app session asks for nothing.
+  const again = [], asked2 = [];
+  const q = page('/student/umkd/', '<p>УМКД</p>', { native: m => again.push(m), routes });
+  for (const [k, v] of Object.entries(marks)) q.sessionStorage.setItem(k, v);
+  now(q); const fetch2 = q.fetch; q.fetch = (...a) => { asked2.push(String(a[0])); return fetch2(...a); };
+  q.__univerOverviewV1.apply('ru'); await settle();
+  assert.deepEqual([again.length, asked2.length], [0, 0]);
+  q.close();
+  // The login page, or a page left before the read starts, reads nothing and keeps the day for the next page.
+  const login = [], left = page('/news/', '<form id="login_frm"></form>', { native: m => login.push(m), routes });
+  now(left); left.__univerOverviewV1.apply('ru'); await settle();
+  assert.equal(login.length, 0); left.close();
+  const early = page('/news/', '<p>Новости</p>', { native: m => login.push(m), routes });
+  early.__univerOverviewV1.apply('ru'); early.__univerOverviewV1.release(); await new Promise(r => setTimeout(r, 4100));
+  assert.equal(login.length, 0); assert.equal(early.sessionStorage.getItem('univer.app.week-fresh.v1'), null);
+  early.close();
+});
+
+test('after the schedule page saved today\'s week another page does not read it again', async () => {
+  const s = page('/student/myschedule/', week() + SCHEDULE, { native: () => {} });
+  s.__univerOverviewV1.apply('ru');
+  const marks = Object.fromEntries(Object.keys(s.sessionStorage).map(k => [k, s.sessionStorage.getItem(k)]));
+  s.close();
+  const asked = [], q = page('/news/', '<p>Новости</p>', { native: () => {} });
+  for (const [k, v] of Object.entries(marks)) q.sessionStorage.setItem(k, v);
+  const real = q.setTimeout; q.setTimeout = (f, ms, ...a) => real(f, ms === 4000 ? 0 : ms, ...a);
+  const fetch = q.fetch; q.fetch = (...a) => { asked.push(String(a[0])); return fetch(...a); };
+  q.__univerOverviewV1.apply('ru'); await settle();
+  assert.deepEqual(asked.filter(u => /\/student\/myschedule\/$/.test(u)), []);
+  q.close();
+});

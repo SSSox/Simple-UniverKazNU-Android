@@ -4,6 +4,7 @@ import com.univerflow.kaznu.domain.ExportKind
 import com.univerflow.kaznu.domain.ExportWeek
 import com.univerflow.kaznu.domain.SchedulePair
 import com.univerflow.kaznu.domain.ScheduleCalendar
+import com.univerflow.kaznu.domain.PictureCanvas
 import com.univerflow.kaznu.domain.SchedulePicture
 import com.univerflow.kaznu.domain.Timetable
 import com.univerflow.kaznu.domain.TimetableLesson
@@ -167,9 +168,11 @@ class ScheduleExportTest {
     }
 
     @Test fun aVeryLongPictureIsDrawnSmallerAndNeverPastThePixelLimit() {
-        assertEquals(2f to 2000, SchedulePicture.canvas(1000f, 12000f, 2f))
-        assertEquals(1.5f to 12000, SchedulePicture.canvas(8000f, 12000f, 2f))
-        assertEquals("never under half, the rest left out", 0.5f to 12000, SchedulePicture.canvas(100000f, 12000f, 2f))
+        assertEquals(PictureCanvas(2f, 2000, cut = false), SchedulePicture.canvas(1000f, 12000f, 2f))
+        assertEquals(PictureCanvas(1.5f, 12000, cut = false), SchedulePicture.canvas(8000f, 12000f, 2f))
+        assertFalse("rounding past the limit is not a cut", SchedulePicture.canvas(8341f, 12000f, 2f).cut)
+        assertEquals("exactly at the limit is whole", PictureCanvas(0.5f, 12000, cut = false), SchedulePicture.canvas(24000f, 12000f, 2f))
+        assertEquals("never under half, the rest left out and said", PictureCanvas(0.5f, 12000, cut = true), SchedulePicture.canvas(100000f, 12000f, 2f))
     }
 
     @Test fun aWeekThatEndsMidweekLeavesOutTheClassesAfterItsLastDay() {

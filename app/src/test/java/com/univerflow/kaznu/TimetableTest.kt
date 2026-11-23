@@ -146,6 +146,43 @@ class TimetableTest {
         assertEquals(timetable, timetable.keepingAlternateOf(null))
     }
 
+    @Test fun theWidgetListStartsAtTheClassUnderWayAndRunsAWeekAheadUnderDayHeadings() {
+        val list = TodayPlan.list(timetable, at(16, 10, 30), almaty)!!
+        assertFalse(list.lastKnown)
+        val first = list.rows.first() as com.univerflow.kaznu.domain.WidgetRow.Lesson
+        assertEquals("Политология", first.time.lesson.subject)
+        assertTrue("the class under way is marked", first.current)
+        val headings = list.rows.filterIsInstance<com.univerflow.kaznu.domain.WidgetRow.Day>().map { it.date }
+        assertEquals("Wednesday, then next Monday: a week ahead, only days with classes", listOf(day(18), day(23)), headings)
+        // After Monday's classes the heading's day is Wednesday, and nothing finished is left in the list.
+        val evening = TodayPlan.list(timetable, at(16, 20), almaty)!!
+        assertEquals(day(18), evening.plan.date)
+        assertEquals("История", (evening.rows.first() as com.univerflow.kaznu.domain.WidgetRow.Lesson).time.lesson.subject)
+    }
+
+    @Test fun onceTheSavedWeekRunsOutTheWidgetKeepsItsClasses() {
+        // February: the course dates and the weeks an undated class is kept for are over, so the dated list is empty.
+        val february = at(10, 9, month = 2 + 12)
+        assertNull(TodayPlan.of(timetable, february, almaty))
+        val list = TodayPlan.list(timetable, february, almaty)!!
+        assertTrue(list.lastKnown)
+        val subjects = list.rows.filterIsInstance<com.univerflow.kaznu.domain.WidgetRow.Lesson>().map { it.time.lesson.subject }
+        assertTrue(subjects.containsAll(listOf("Политология", "Культурология", "История")))
+        assertNull("reminders keep to the dates", timetable.next(february, almaty))
+        assertNotNull(TodayPlan.source(timetable, february, almaty).next(february, almaty))
+    }
+
+    // The page's literal message: the flag must survive the JSON reader, or a one-week schedule would keep a stale neighbour.
+    @Test fun aWeekTheSiteListsAloneDropsTheKeptNeighbour() {
+        val text = Timetable.MESSAGE_PREFIX + """{"v":1,"week":"2026-11-16","owner":"acc-1","single":true,"lessons":[{"day":0,"start":"09:00","end":"10:50",""" +
+            """"subject":"Политология","type":"лекция","room":"309","faculty":"ФИТ","teacher":"Учителева А. П.","from":null,"until":null}]}"""
+        val single = com.univerflow.kaznu.web.TimetableMessage.parse(text, now)!!
+        assertTrue(single.single)
+        assertNull(single.keepingAlternateOf(alternating).alternate)
+        // Without the flag (the neighbour could not be read) the saved one stays.
+        assertNotNull(com.univerflow.kaznu.web.TimetableMessage.parse(text.replace("\"single\":true,", ""), now)!!.keepingAlternateOf(alternating).alternate)
+    }
+
     @Test fun aNeighbourBeforeTheSavedWeekPairsTheSameWay() {
         val before = Timetable.of(message("second" to second(lesson(1, "09:00", "09:50", "Физика"), week = "2026-11-09")), now, almaty)!!
         assertEquals(listOf("Физика"), before.on(day(10)).map { it.subject })

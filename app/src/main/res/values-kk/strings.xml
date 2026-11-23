@@ -397,6 +397,7 @@
     <string name="widget_free">Бүгін сабақ жоқ</string>
     <string name="widget_empty">Кестені қолданбада ашыңыз, сабақтар осында шығады</string>
     <string name="widget_none_week">Алдағы аптада сабақ жоқ</string>
+    <string name="widget_last_known">Соңғы сақталған кесте</string>
     <string name="widget_from">Кесте %s сақталған</string>
     <string name="widget_class">Сабақ</string>
     <string name="widget_room">Дәрісхана %s</string>
