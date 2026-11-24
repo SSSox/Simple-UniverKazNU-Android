@@ -214,6 +214,7 @@ test('an open survey row keeps the site\'s own Open link as its one button, the 
   const css = root.q('#univer-screens-style, style#univer-screens-style')?.textContent || '';
   assert.match(css, /tr\.univer-scr-opens \.up-open-row \{ display:none!important; \}/);
   assert.match(css, /tr\.univer-scr-opens a\.rt \{ display:flex!important; float:none!important;/);
+  assert.match(css, /a\.rt \{[^}]*background:var\(--u-brand-fill,var\(--u-brand\)\)!important; color:#fff!important/, 'white text sits on the fill colour, which stays dark in the dark theme');
   assert.match(css, /tr\.univer-scr-opens \.up-badge \{ display:inline-block!important; margin:8px 0 0!important; \}/);
   root.release();
   assert.ok(!root.q('tr[id="1"]').classList.contains('univer-scr-opens'), 'release removes the mark');

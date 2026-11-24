@@ -956,7 +956,7 @@ ${P} #l4 .univer-scr-progress-note { color:var(--u-text); font-size:var(--u-fs-m
 ${P} #l4 .univer-scr-progress[data-complete=true] .univer-scr-progress-note { color:var(--u-teal); }
 ${P} #l4 tr.univer-scr-opens .up-open-row { display:none!important; }
 ${P} #l4 tr.univer-scr-opens .up-badge { display:inline-block!important; margin:8px 0 0!important; }
-${P} #l4 tr.univer-scr-opens a.rt { display:flex!important; float:none!important; align-items:center; justify-content:center; box-sizing:border-box; width:100%!important; min-height:44px; margin:12px 0 0!important; padding:0 16px!important; border-radius:10px; background:var(--u-brand)!important; color:#fff!important; font:600 var(--u-fs-body)/1.2 var(--u-font); text-decoration:none!important; }
+${P} #l4 tr.univer-scr-opens a.rt { display:flex!important; float:none!important; align-items:center; justify-content:center; box-sizing:border-box; width:100%!important; min-height:44px; margin:12px 0 0!important; padding:0 16px!important; border-radius:10px; background:var(--u-brand-fill,var(--u-brand))!important; color:#fff!important; font:600 var(--u-fs-body)/1.2 var(--u-font); text-decoration:none!important; }
 ${P}.univer-scr-page-rating #l4 input[type=radio] { width:22px; height:22px; accent-color:var(--u-brand); vertical-align:middle; }
 
 /* Advisor contact card. */
