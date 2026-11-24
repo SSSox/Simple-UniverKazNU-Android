@@ -100,10 +100,16 @@ class DownloadsAdapter(
         if (view.downloadCard.shapeAppearanceModel !== shape) view.downloadCard.shapeAppearanceModel = shape
         view.downloadLine.isVisible = !row.last
         (view.root.layoutParams as ViewGroup.MarginLayoutParams).bottomMargin = if (row.last) (4 * density).toInt() else 0
-        val color = context.getColor(kindColor(record.kind))
-        view.downloadBadge.text = FileKinds.badge(record.kind)
-        view.downloadBadge.setTextColor(color)
-        view.downloadBadge.backgroundTintList = ColorStateList.valueOf(ColorUtils.setAlphaComponent(color, 0x24))
+        val kind = record.kind
+        val plateColor = context.getColor(kindColor(kind))
+        val textColor = when (kind) {
+            FileKind.PDF -> context.getColor(R.color.kind_pdf_text)
+            FileKind.POWERPOINT -> context.getColor(R.color.kind_powerpoint_text)
+            else -> plateColor
+        }
+        view.downloadBadge.text = FileKinds.badge(kind)
+        view.downloadBadge.setTextColor(textColor)
+        view.downloadBadge.backgroundTintList = ColorStateList.valueOf(ColorUtils.setAlphaComponent(plateColor, 0x24))
         view.downloadName.text = FileKinds.title(record.fileName).ifBlank { "…" }
         val meta = status(record)
         view.downloadMeta.text = meta
@@ -149,7 +155,7 @@ class DownloadsAdapter(
             DownloadState.FAILED -> labels.getString(R.string.state_failed) + ". " + labels.getString(DownloadService.failureMessage(record.failure))
             DownloadState.CANCELED -> labels.getString(R.string.state_canceled)
         }
-        return listOf(state, dateFormat.format(Date(record.finished ?: record.started))).filter { it.isNotBlank() }.joinToString(" · ")
+        return listOf(state, dateFormat.format(Date(record.displayTime))).filter { it.isNotBlank() }.joinToString(" · ")
     }
 
     private companion object {

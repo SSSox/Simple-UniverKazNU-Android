@@ -2,6 +2,7 @@ package com.univerflow.kaznu
 
 import androidx.lifecycle.ViewModelStore
 import com.univerflow.kaznu.domain.*
+import com.univerflow.kaznu.main.TextSizeDialog
 import kotlinx.coroutines.*
 import kotlinx.coroutines.test.*
 import org.junit.After
@@ -407,6 +408,107 @@ class UniverViewModelTest {
         assertTrue(model.state.value.hasCredentials)
     }
 
+    @Test fun rapidTextZoomBackToOriginalIsNotLostWhileFirstWriteIsInFlight() = runTest(dispatcher) {
+        val firstWriteGate = CompletableDeferred<Unit>()
+        val repository = FakeRepository().apply {
+            onTextZoom = { percent -> if (percent == 110) firstWriteGate.await() }
+        }
+        val model = model(repository)
+        advanceUntilIdle()
+        assertEquals(100, model.state.value.textZoom)
+
+        val failures = mutableListOf<Exception>()
+        val onSliderChange = TextSizeDialog.onZoomChange(this, model) { failures += it }
+
+        onSliderChange(110)
+        runCurrent()
+        // First write is blocked in flight; the published state is still 100%.
+        assertEquals(listOf(110), repository.textZoomWrites)
+        assertEquals(100, model.state.value.textZoom)
+
+        // Driving 100% through the production slider callback while 110% is blocked must not drop the revert.
+        onSliderChange(100)
+        runCurrent()
+
+        firstWriteGate.complete(Unit)
+        advanceUntilIdle()
+
+        assertTrue(failures.isEmpty())
+        assertEquals(listOf(110, 100), repository.textZoomWrites)
+        assertEquals(100, repository.saved.textZoom)
+        assertEquals(100, model.state.value.textZoom)
+    }
+
+    @Test fun unchangedOrDuplicateTextZoomSkipsRedundantWrites() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Unit>()
+        val repository = FakeRepository().apply {
+            onTextZoom = { if (textZoomWrites.size == 1) gate.await() }
+        }
+        val model = model(repository)
+        advanceUntilIdle()
+
+        val failures = mutableListOf<Exception>()
+        val onSliderChange = TextSizeDialog.onZoomChange(this, model) { failures += it }
+
+        // Same value (including clamped equivalent) performs no repository write.
+        onSliderChange(100)
+        onSliderChange(104)
+        advanceUntilIdle()
+        assertTrue(repository.textZoomWrites.isEmpty())
+
+        // Duplicate queued write while first 110% write is in flight writes only once.
+        onSliderChange(110)
+        runCurrent()
+        onSliderChange(110)
+        runCurrent()
+        gate.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals(110, model.state.value.textZoom)
+        assertEquals(listOf(110), repository.textZoomWrites)
+        assertTrue(failures.isEmpty())
+
+        // If a write fails before updating state, the callback reports the failure and a queued return to the previous value skips a redundant write.
+        val failGate = CompletableDeferred<Unit>()
+        repository.onTextZoom = { percent ->
+            if (percent == 120) { failGate.await(); throw IOException("Fixture write failure") }
+        }
+        onSliderChange(120)
+        runCurrent()
+        onSliderChange(110)
+        runCurrent()
+        failGate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(1, failures.size)
+        assertTrue(failures.single() is IOException)
+        assertEquals(110, model.state.value.textZoom)
+        assertEquals(listOf(110, 120), repository.textZoomWrites)
+    }
+
+    @Test fun cancellingSliderScopeDoesNotReportFailureOrDropInFlightTextZoom() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Unit>()
+        val repository = FakeRepository().apply {
+            onTextZoom = { gate.await() }
+        }
+        val model = model(repository)
+        advanceUntilIdle()
+
+        val activityScope = CoroutineScope(SupervisorJob() + dispatcher)
+        val failures = mutableListOf<Exception>()
+        val onSliderChange = TextSizeDialog.onZoomChange(activityScope, model) { failures += it }
+
+        onSliderChange(120)
+        runCurrent()
+        activityScope.cancel()
+        runCurrent()
+        gate.complete(Unit)
+        advanceUntilIdle()
+
+        assertTrue("Cancelling the Activity scope must not trigger storage_error", failures.isEmpty())
+        assertEquals(120, repository.saved.textZoom)
+        assertEquals(120, model.state.value.textZoom)
+    }
+
     private class FakeRepository : SessionRepository {
         var saved = StoredSession()
         var onLoad: suspend () -> StoredSession = { saved }
@@ -432,7 +534,13 @@ class UniverViewModelTest {
             saved = saved.copy(language = language)
         }
         override suspend fun setMobileLayout(enabled: Boolean) { saved = saved.copy(mobileLayout = enabled) }
-        override suspend fun setTextZoom(percent: Int) { saved = saved.copy(textZoom = percent) }
+        var onTextZoom: suspend (Int) -> Unit = { }
+        val textZoomWrites = mutableListOf<Int>()
+        override suspend fun setTextZoom(percent: Int) {
+            textZoomWrites.add(percent)
+            onTextZoom(percent)
+            saved = saved.copy(textZoom = percent)
+        }
         override suspend fun setAnimations(enabled: Boolean) { saved = saved.copy(animations = enabled) }
         override suspend fun setExternalLinks(enabled: Boolean) { saved = saved.copy(externalLinks = enabled) }
         override suspend fun setTheme(theme: AppTheme) { saved = saved.copy(theme = theme) }

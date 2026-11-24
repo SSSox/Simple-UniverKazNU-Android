@@ -22,10 +22,65 @@ const ask = w => w.eval(GUARD);
 
 test('a page as it came is loaded again', () => {
   const w = page('<form><input name="q" value="site"><select><option>1</option><option selected>2</option></select>' +
+    '<select id="plain"><option>1</option><option>2</option></select>' +
+    '<select id="lead-disabled"><option disabled>--</option><option>A</option><option>B</option></select>' +
+    '<select id="group-disabled"><optgroup disabled><option>x</option></optgroup><option>y</option></select>' +
     '<input type="checkbox" checked><input type="hidden" name="k" value="1"></form>');
   assert.equal(ask(w), 'ok');
   w.document.querySelector('[type=hidden]').value = 'changed by the site';
   assert.equal(ask(w), 'ok', 'a hidden field is the site\'s own');
+});
+
+test('single and multiple selects compare against the effective default of the original markup', () => {
+  // Single select without a selected attribute defaults to the first enabled option.
+  let w = page('<select><option>1</option><option>2</option></select>');
+  assert.equal(ask(w), 'ok', 'untouched single select without selected attribute is not edited');
+  w.document.querySelector('select').selectedIndex = 1;
+  assert.equal(ask(w), 'edited');
+  w.document.querySelector('select').selectedIndex = 0;
+  assert.equal(ask(w), 'ok', 'returning to the implicit default selection is ok again');
+
+  // Leading disabled option or disabled optgroup is skipped for the effective default.
+  w = page('<select><option disabled>Choose</option><option>A</option><option>B</option></select>');
+  assert.equal(ask(w), 'ok');
+  w.document.querySelector('select').selectedIndex = 2;
+  assert.equal(ask(w), 'edited');
+
+  w = page('<select><optgroup disabled><option>X</option></optgroup><option>Y</option><option>Z</option></select>');
+  assert.equal(ask(w), 'ok');
+  w.document.querySelector('select').selectedIndex = 2;
+  assert.equal(ask(w), 'edited');
+
+  // Empty select, all-disabled select, size > 1 without selected, disabled selected, multiple selected attributes.
+  assert.equal(ask(page('<select></select>')), 'ok');
+  assert.equal(ask(page('<select><option disabled>1</option><option disabled>2</option></select>')), 'ok');
+  w = page('<select size="3"><option>1</option><option>2</option></select>');
+  assert.equal(ask(w), 'ok', 'listbox single select without selected defaults to none');
+  w.document.querySelector('select').selectedIndex = 0;
+  assert.equal(ask(w), 'edited');
+
+  w = page('<select><option disabled selected>Choose</option><option>A</option></select>');
+  assert.equal(ask(w), 'ok', 'explicit selected on a disabled option is still the default');
+  w.document.querySelector('select').selectedIndex = 1;
+  assert.equal(ask(w), 'edited');
+
+  w = page('<select><option selected>1</option><option selected>2</option></select>');
+  assert.equal(ask(w), 'ok', 'last selected attribute is the effective default in single select');
+  w.document.querySelector('select').selectedIndex = 0;
+  assert.equal(ask(w), 'edited');
+
+  // Multi-select has no implicit default selection.
+  w = page('<select multiple><option>1</option><option selected>2</option></select>');
+  assert.equal(ask(w), 'ok');
+  w.document.querySelectorAll('option')[0].selected = true;
+  assert.equal(ask(w), 'edited');
+});
+
+test('a draft field still answers edited when evaluated after a delay', async () => {
+  const w = page('<form><textarea name="reply"></textarea></form>');
+  w.document.querySelector('textarea').value = 'черновик ответа';
+  const delayed = await new Promise(resolve => setTimeout(() => resolve(ask(w)), 10));
+  assert.equal(delayed, 'edited');
 });
 
 test('what the student typed or chose in a form of the site keeps the page', () => {

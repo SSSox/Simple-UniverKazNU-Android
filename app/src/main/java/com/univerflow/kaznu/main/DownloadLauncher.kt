@@ -24,6 +24,7 @@ import com.univerflow.kaznu.ui.AppLockSession
 import com.univerflow.kaznu.ui.FileActions
 import com.univerflow.kaznu.ui.FileViewerActivity
 import com.univerflow.kaznu.web.AppSection
+import com.univerflow.kaznu.web.DownloadBatch
 import com.univerflow.kaznu.web.SingleSignOnPolicy
 import com.univerflow.kaznu.web.SitePolicy
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -53,8 +54,14 @@ class DownloadLauncher(private val activity: AppCompatActivity, private val mode
         val pageSource: String
         val userAgent: String
         suspend fun materialFolder(url: String, page: String?): String? = null
-        /** Folders of UMKD files on the open course page, read in one pass; null when that page is no longer open. */
-        suspend fun materialFolders(urls: List<String>, page: String?): Map<String, String>? = null
+        /**
+         * Folders of the «Скачать все» files, which the open course page must all list under the heading row the [tap]
+         * marked, named [section], with as many headings as at the tap, read in one pass through the keyed channel (see
+         * [DownloadBatch.places]); empty when the page lists them elsewhere, null when that page is no longer open.
+         */
+        suspend fun sectionFolders(urls: List<String>, page: String?, tap: DownloadBatch.Tap, section: String): Map<String, String>? = null
+        /** Whether page messages that act by themselves («Скачать все») came through the keyed channel. */
+        val actionChannel: Boolean get() = false
         /** «Скачать все» handed [started] files of [section] to the service; [present] were already saved and in place. */
         fun sectionQueued(section: String, started: Int, present: Int) {}
         fun openExternal(url: String)
@@ -123,11 +130,14 @@ class DownloadLauncher(private val activity: AppCompatActivity, private val mode
      * read from the page for all files at once, before the first transfer; files already saved and in place are skipped
      * without the "already downloaded" question, and one message reports the result.
      */
-    fun downloadAll(section: String, urls: List<String>) {
+    fun downloadAll(section: String, tap: DownloadBatch.Tap, urls: List<String>) {
         if (host.sessionChanging || model.state.value.paused || model.state.value.locked || urls.isEmpty()) return
+        // Without the keyed channel the site itself could have sent the message: nothing is downloaded from it.
+        if (!host.actionChannel) return
         // Only a UMKD page has the button: a message from any other page asks for nothing, not even storage.
         if (SitePolicy.section(host.pageUrl) != AppSection.MATERIALS) return
-        val request = request(urls.first(), host.userAgent, null, null).apply { putStringArrayList(URLS, ArrayList(urls)); putString(SECTION, section) }
+        val request = request(urls.first(), host.userAgent, null, null).apply { putStringArrayList(URLS, ArrayList(urls)); putString(SECTION, section)
+            putInt(HEAD, tap.head); putInt(COUNT, tap.count); putInt(MARK, tap.mark) }
         if (Build.VERSION.SDK_INT <= 28 && ContextCompat.checkSelfPermission(activity,
                 Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
             awaitStorage(request)
@@ -137,15 +147,22 @@ class DownloadLauncher(private val activity: AppCompatActivity, private val mode
     private fun startAll(request: Bundle) {
         activity.lifecycleScope.launch {
             model.state.first { it.ready }
-            val urls = request.getStringArrayList(URLS)?.filter(SitePolicy::materialFile).orEmpty()
+            val asked = request.getStringArrayList(URLS)?.filter(SitePolicy::materialFile).orEmpty()
+            val section = request.getString(SECTION).orEmpty()
             fun current(): Boolean = !host.sessionChanging && !model.sessionClearPending && !model.state.value.paused &&
                 !model.state.value.locked && model.state.value.canBrowse && request.getInt("epoch", -1) == host.sessionEpoch
-            if (urls.isEmpty() || !current()) return@launch
-            // A run brought back after a sign-in keeps the folders it read at first: by then the app may show another
-            // page. A page that does not answer in time still gets its files, in the UMKD folder like a single file's.
+            if (asked.isEmpty() || !current()) return@launch
+            // A run brought back after a sign-in keeps the files and folders it checked at first: by then the app may show
+            // another page. Otherwise the open page is read once: the files are fetched only when it lists every one of them
+            // under the tapped heading, so a list or headings a page script changed after the tap fetch nothing. A page that does not answer
+            // in time cannot vouch for its files: nothing is fetched and the student is told.
             val stored = request.getBundle(FOLDERS)
             val folders = stored?.let { saved -> saved.keySet().associateWith { saved.getString(it).orEmpty() } }
-                ?: host.materialFolders(urls, request.getString("referer")).orEmpty()
+                ?: host.sectionFolders(asked, request.getString("referer"),
+                    DownloadBatch.Tap(request.getInt(HEAD, -1), request.getInt(COUNT, -1), request.getInt(MARK, -1)), section)
+            if (!current()) return@launch
+            val urls = asked.filter { folders != null && it in folders }
+            if (folders == null || urls.isEmpty()) { host.sectionQueued(section, 0, 0); return@launch }
             val history = DownloadRepository.get(activity)
             history.awaitLoaded()
             if (!current()) return@launch
@@ -155,7 +172,7 @@ class DownloadLauncher(private val activity: AppCompatActivity, private val mode
             }
             if (!current()) return@launch
             val batch = UUID.randomUUID().toString()
-            request.putBundle(FOLDERS, Bundle().apply { folders.forEach { (url, folder) -> putString(url, folder) } })
+            request.putBundle(FOLDERS, Bundle().apply { urls.forEach { url -> putString(url, folders[url]) } })
             sections[batch] = request
             while (sections.size > 4) sections.remove(sections.keys.first())
             var started = 0
@@ -289,6 +306,9 @@ class DownloadLauncher(private val activity: AppCompatActivity, private val mode
         const val LEGACY_LIST = "legacy_downloads"
         const val URLS = "urls"
         const val SECTION = "section"
+        const val HEAD = "head"
+        const val COUNT = "count"
+        const val MARK = "mark"
         const val FOLDERS = "folders"
         const val MOODLE = "moodle"
         const val LOGIN_RETRY_MS = 300_000L

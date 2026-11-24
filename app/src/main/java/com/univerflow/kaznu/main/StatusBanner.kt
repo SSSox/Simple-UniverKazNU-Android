@@ -22,16 +22,20 @@ class StatusBanner(private val binding: ActivityMainBinding) {
     fun render(paused: Boolean, status: AutomationStatus, language: AppLanguage, text: (Int) -> String) {
         val id = message(paused, status)
         Motion.show(binding.statusBar, id != null, rise = true)
-        val next = Shown(id, paused, status != AutomationStatus.SIGNING_IN || paused, language)
+        // Nothing to retry when the WebView cannot sign in by itself: the form below is the student's to fill.
+        val unavailable = !paused && status == AutomationStatus.SIGN_IN_UNAVAILABLE
+        val next = Shown(id, paused, (status != AutomationStatus.SIGNING_IN && !unavailable) || paused, language)
         if (next == shown) return
         shown = next
         if (id != null) binding.statusText.text = text(id)
         val context = binding.root.context
-        val container = if (paused) R.color.md_secondary_container else R.color.warning_container
-        val content = context.getColor(if (paused) R.color.md_on_secondary_container else R.color.on_warning_container)
+        // Information (a pause, sign-in left to the student) or a warning (a step that failed).
+        val info = paused || unavailable
+        val container = if (info) R.color.md_secondary_container else R.color.warning_container
+        val content = context.getColor(if (info) R.color.md_on_secondary_container else R.color.on_warning_container)
         binding.statusBar.backgroundTintList = ColorStateList.valueOf(context.getColor(container))
         binding.statusText.setTextColor(content)
-        binding.statusIcon.setImageResource(if (paused) R.drawable.ic_info else R.drawable.ic_warning)
+        binding.statusIcon.setImageResource(if (info) R.drawable.ic_info else R.drawable.ic_warning)
         binding.statusIcon.imageTintList = ColorStateList.valueOf(content)
         binding.statusAction.isVisible = next.action
         binding.statusAction.text = text(if (paused) R.string.sign_in else R.string.retry)
@@ -46,6 +50,7 @@ class StatusBanner(private val binding: ActivityMainBinding) {
             status == AutomationStatus.AGREEMENT_FAILED -> R.string.agreement_failed
             status == AutomationStatus.LANGUAGE_FAILED -> R.string.language_failed
             status == AutomationStatus.ELEMENTS_MISSING -> R.string.elements_missing
+            status == AutomationStatus.SIGN_IN_UNAVAILABLE -> R.string.sign_in_unavailable
             else -> null
         }
     }

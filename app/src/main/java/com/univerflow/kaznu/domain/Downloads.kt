@@ -61,6 +61,7 @@ data class DownloadRecord(
     val place: String? = null,
 ) {
     val kind get() = FileKinds.of(fileName, mime)
+    val displayTime get() = finished ?: started
     val progress: Int? get() = if (total > 0) (received * 100 / total).coerceIn(0, 100).toInt() else null
 }
 
@@ -152,6 +153,12 @@ object FileKinds {
 /** Newest first and bounded. A transfer cannot outlive the process that ran it. */
 object DownloadHistoryRules {
     const val LIMIT = 1000
+
+    /** A restored delete consent can arrive before the history is ready to look up its file. */
+    internal suspend fun findAfterLoad(id: String, awaitLoaded: suspend () -> Unit, find: (String) -> DownloadRecord?): DownloadRecord? {
+        awaitLoaded()
+        return find(id)
+    }
 
     fun restore(saved: List<DownloadRecord>, now: Long): List<DownloadRecord> = saved
         .distinctBy { it.id }

@@ -28,7 +28,7 @@ class DocumentPanel(context: Context, onBack: () -> Unit, onMode: () -> Unit, on
     private val mode: MaterialButton
     private val print: MaterialButton
     private val progress: LinearProgressIndicator
-    private val errorPanel: LinearLayout
+    private val errorPanel: View
     private val errorMessage: TextView
     private val retry: MaterialButton
 
@@ -46,10 +46,21 @@ class DocumentPanel(context: Context, onBack: () -> Unit, onMode: () -> Unit, on
             LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, hairline))
         progress = LinearProgressIndicator(context).apply { isIndeterminate = false; trackThickness = (3 * context.resources.displayMetrics.density).toInt() }
         root.addView(progress, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-        errorPanel = inflater.inflate(R.layout.view_document_error, root, false) as LinearLayout
+        errorPanel = inflater.inflate(R.layout.view_document_error, root, false)
         errorMessage = errorPanel.findViewById(R.id.document_error_message)
         retry = errorPanel.findViewById<MaterialButton>(R.id.document_retry).apply { setOnClickListener { onRetry() } }
         root.addView(errorPanel)
+    }
+
+    /**
+     * The window just opened over the screen: the keyboard focus ([keyboard]) and TalkBack ([accessibility]) start at
+     * its Back button, not on the control under the window that opened it.
+     */
+    fun focusEntry(keyboard: Boolean, accessibility: Boolean) {
+        if (keyboard) back.requestFocus()
+        if (accessibility) back.post {
+            if (back.isAttachedToWindow) back.performAccessibilityAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS, null)
+        }
     }
 
     /** The window's title as shown, the name a printed copy gets. */

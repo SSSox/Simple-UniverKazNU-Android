@@ -114,9 +114,12 @@ class SectionDownloadQaTest {
         assertEquals("Download/a.pdf", DownloadHistoryCodec.decode(DownloadHistoryCodec.encode(listOf(record))).single().place)
         assertNull(DownloadHistoryCodec.decode(DownloadHistoryCodec.encode(listOf(record.copy(place = null)))).single().place)
         val url = "https://univer.kaznu.kz/student/umkd/get/9002/321/2026/1"
-        val batch = DownloadBatch.parse(DownloadBatch.MESSAGE_PREFIX + JSONObject().put("section", " Лекции ").put("urls", JSONArray(listOf(url, url))))!!
+        val batch = DownloadBatch.parse(DownloadBatch.MESSAGE_PREFIX + JSONObject().put("section", " Лекции ").put("head", 2).put("count", 3).put("mark", 7).put("urls", JSONArray(listOf(url, url))))!!
         assertEquals("Лекции", batch.section)
         assertEquals(listOf(url), batch.urls)
+        assertEquals(DownloadBatch.Tap(2, 3, 7), batch.tap)
+        assertNull("a message without the heading count or the channel's mark", DownloadBatch.parse(DownloadBatch.MESSAGE_PREFIX + JSONObject().put("section", "Лекции").put("head", 2).put("urls", JSONArray(listOf(url)))))
+        assertNull("a message without its heading number", DownloadBatch.parse(DownloadBatch.MESSAGE_PREFIX + JSONObject().put("section", "Лекции").put("urls", JSONArray(listOf(url)))))
         assertNull(DownloadBatch.parse(DownloadBatch.MESSAGE_PREFIX + "{\"section\":\"Лекции\",\"urls\":\"$url\"}"))
         assertNull(DownloadBatch.parse(DownloadBatch.MESSAGE_PREFIX + JSONObject().put("section", "Лекции").put("urls", JSONArray(listOf(url, "https://univer.kaznu.kz/user/logout")))))
         assertNull(DownloadBatch.parse(DownloadBatch.MESSAGE_PREFIX + "not json"))

@@ -32,10 +32,17 @@ suspend fun <T> withDeadline(millis: Long, block: suspend CoroutineScope.() -> T
 }
 
 /**
+ * Runs [block] in this scope. A failure goes to [onFailure] (a message to the student, usually) instead of ending the
+ * app; cancellation ends it quietly.
+ */
+fun CoroutineScope.launchCatching(onFailure: (Exception) -> Unit = {}, block: suspend () -> Unit): Job =
+    launch {
+        try { block() } catch (cancelled: CancellationException) { throw cancelled } catch (failure: Exception) { onFailure(failure) }
+    }
+
+/**
  * Runs [block] for as long as this screen lives. A failure goes to [onFailure] (a message to the student, usually)
  * instead of ending the app; cancellation, when the screen closes, ends it quietly.
  */
 fun LifecycleOwner.launchCatching(onFailure: (Exception) -> Unit = {}, block: suspend () -> Unit): Job =
-    lifecycleScope.launch {
-        try { block() } catch (cancelled: CancellationException) { throw cancelled } catch (failure: Exception) { onFailure(failure) }
-    }
+    lifecycleScope.launchCatching(onFailure, block)

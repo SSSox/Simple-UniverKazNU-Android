@@ -27,6 +27,7 @@ import com.univerflow.kaznu.data.DownloadRepository
 import com.univerflow.kaznu.data.DownloadTextIndex
 import com.univerflow.kaznu.databinding.ActivityDownloadsBinding
 import com.univerflow.kaznu.download.DownloadService
+import com.univerflow.kaznu.domain.DownloadHistoryRules
 import com.univerflow.kaznu.domain.DownloadList
 import com.univerflow.kaznu.domain.DownloadRecord
 import com.univerflow.kaznu.domain.DownloadState
@@ -53,7 +54,6 @@ class DownloadsActivity : AppCompatActivity() {
     private lateinit var repository: DownloadRepository
     private lateinit var language: AppLanguage
     private lateinit var adapter: DownloadsAdapter
-    private var query = ""
     private var filter: FileKind? = null
     private var subject: String? = null
     private var sort = R.id.downloads_sort_date
@@ -66,7 +66,8 @@ class DownloadsActivity : AppCompatActivity() {
     private val textIndex by lazy { DownloadTextIndex(this) }
     // The text of files read so far (bounded, least recently used first out) and the words found in each shown file.
     private val texts = DownloadList.TextCache()
-    private val textScan = DownloadList.TextScan()
+    private var textScan = DownloadList.TextScan("")
+    private val query get() = textScan.query
     private var snippets: Map<String, TextSearch.Snippet> = emptyMap()
     private var indexJob: Job? = null
     private var indexProgress: Pair<Int, Int>? = null
@@ -74,9 +75,12 @@ class DownloadsActivity : AppCompatActivity() {
     /** The record whose file Android is asking the student about (a file saved by an earlier install). */
     private var consentFor: String? = null
     private val consent = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
-        val record = records.firstOrNull { it.id == consentFor }
+        val id = consentFor
         consentFor = null
-        if (result.resultCode == RESULT_OK && record != null) deleteFile(record, approved = true)
+        if (result.resultCode != RESULT_OK || id == null) return@registerForActivityResult
+        lifecycleScope.launch {
+            DownloadHistoryRules.findAfterLoad(id, repository::awaitLoaded, repository::find)?.let { deleteFile(it, approved = true) }
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -117,7 +121,7 @@ class DownloadsActivity : AppCompatActivity() {
 
     /** The query, filters, sort order and search options the screen had before a recreation. */
     private fun restoreChoices(savedInstanceState: Bundle?) {
-        query = savedInstanceState?.getString("query").orEmpty()
+        textScan = DownloadList.TextScan(savedInstanceState?.getString("query").orEmpty())
         filter = savedInstanceState?.getString("filter")?.let { runCatching { FileKind.valueOf(it) }.getOrNull() }
         subject = savedInstanceState?.getString("subject")
         textSearch = savedInstanceState?.getBoolean("text_search") ?: false
@@ -138,7 +142,10 @@ class DownloadsActivity : AppCompatActivity() {
     private fun bindSearch() {
         binding.downloadsSearch.setText(query)
         binding.downloadsSearch.doAfterTextChanged {
-            query = it?.toString().orEmpty()
+            val terms = it?.toString().orEmpty()
+            if (terms == query) return@doAfterTextChanged
+            textScan = DownloadList.TextScan(terms)
+            indexProgress = null
             showTextSearch(); render(); readTexts()
         }
         binding.downloadsTextSearch.isChecked = textSearch
@@ -210,21 +217,19 @@ class DownloadsActivity : AppCompatActivity() {
     private fun readTexts() {
         if (!textSearch || query.isBlank() || indexJob?.isActive == true) return
         fun searchable() = records.filter { it.id !in missing && textIndex.searchable(it) }
-        if (textScan.pending(query, searchable(), texts).isEmpty()) return
+        if (textScan.pending(searchable(), texts).isEmpty()) return
         indexJob = lifecycleScope.launch {
             // Files finished while reading, and a query changed meanwhile, are picked up by the next round.
             while (textSearch && query.isNotBlank()) {
-                val terms = query
-                val round = textScan.pending(terms, searchable(), texts).takeIf { it.isNotEmpty() } ?: break
-                round.forEachIndexed { index, record ->
-                    if (terms != query) return@forEachIndexed // Another query: this round's texts are stale.
+                val scan = textScan
+                val round = scan.pending(searchable(), texts).takeIf { it.isNotEmpty() } ?: break
+                for ((index, record) in round.withIndex()) {
                     indexProgress = index to round.size
-                    val entry = texts.put(record.id, DownloadList.FileText(textIndex.text(record) ?: ""))
-                    textScan.read(record.id)
-                    val matched = TextSearch.matches(entry.folded, terms)
-                    // Kept for this query even when the bounded cache later drops the text itself.
-                    if (matched) TextSearch.snippet(entry.text, entry.folded, terms)?.let { textScan.found(record.id, it) }
-                    if (matched || FileKinds.matchesQuery(record, terms)) render()
+                    val content = textIndex.text(record)
+                    if (scan !== textScan || !textSearch) break
+                    val entry = texts.put(record.id, DownloadList.FileText(content.orEmpty()))
+                    val matched = scan.read(record.id, entry)
+                    if (matched || FileKinds.matchesQuery(record, scan.query)) render()
                     else { texts.yieldTo(record.id); renderSubtitle() }
                 }
             }
@@ -263,7 +268,7 @@ class DownloadsActivity : AppCompatActivity() {
     /** Each chip says how many files it would show, in a quieter colour than its name. */
     private fun showCounts() {
         val inside = textSearch && query.isNotBlank()
-        val counts = DownloadList.kindCounts(records, query, subject, texts.takeIf { inside }?.snapshot(), textScan.found.takeIf { inside }.orEmpty())
+        val counts = DownloadList.kindCounts(records, query, subject, texts.takeIf { inside }?.snapshot(), textScan)
         // A running download renders the list every 250 ms: chips whose numbers stay are not re-laid out each time.
         if (counts == shownCounts) return
         shownCounts = counts
@@ -308,8 +313,7 @@ class DownloadsActivity : AppCompatActivity() {
         if (AppLockSession.locked) { finish(); return }
         val inside = textSearch && query.isNotBlank()
         val order = when (sort) { R.id.downloads_sort_name -> DownloadList.Order.NAME; R.id.downloads_sort_size -> DownloadList.Order.SIZE; else -> DownloadList.Order.DATE }
-        val view = DownloadList.view(records, query, filter, subject, texts.takeIf { inside }?.snapshot(), order,
-            textScan.found.takeIf { inside }.orEmpty())
+        val view = DownloadList.view(records, query, filter, subject, texts.takeIf { inside }?.snapshot(), order, textScan)
         val visible = view.records
         shown = visible.size
         snippets = view.snippets
@@ -326,7 +330,7 @@ class DownloadsActivity : AppCompatActivity() {
     /** Files by when they arrived, each group one sheet; a search or another order is one sheet of results. */
     private fun rows(files: List<DownloadRecord>, order: DownloadList.Order): List<DownloadRow> {
         val now = System.currentTimeMillis()
-        fun period(record: DownloadRecord) = if (order == DownloadList.Order.DATE && query.isBlank()) DownloadList.period(record.finished ?: record.started, now) else null
+        fun period(record: DownloadRecord) = if (order == DownloadList.Order.DATE && query.isBlank()) DownloadList.period(record.displayTime, now) else null
         val list = ArrayList<DownloadRow>(files.size + 5)
         files.forEachIndexed { index, record ->
             val group = period(record)

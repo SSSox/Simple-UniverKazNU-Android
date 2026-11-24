@@ -1,9 +1,31 @@
 /* Verified live login DOM and user-supplied notice / AJAX reauthentication / agreement HTML.
- * Only the site's own click/submit handlers send requests. No credentials in returned status. */
+ * Only the site's own click/submit handlers send requests. No credentials in returned status.
+ * AutomationController registers this file as a document-start script of the main frame, with a per-WebView seal in
+ * place of the placeholder: it then runs before any site script, defines __univerAutomationV1 so that it cannot be
+ * replaced, and takes here the built-ins that touch the saved login and password. The controller hands the password
+ * only to the object that carries its seal; a site script cannot install one (it never runs before this one). The copy
+ * the controller evaluates later (a WebView without document-start scripts) keeps the placeholder: it confirms notices
+ * and switches the language, but refuses to enter credentials. */
 (function () {
     'use strict';
     var origin = 'https://univer.kaznu.kz';
     if (location.origin !== origin || window.__univerAutomationV1) return;
+    var SEAL = '__UNIVER_AUTOMATION_SEAL__', sealed = /^[0-9a-f]{32}$/.test(SEAL);
+    if (sealed && window !== window.top) return;
+    // Taken before any site script when sealed: a later swap of these cannot see the values put into the forms.
+    var call = Reflect.apply, describe = Object.getOwnPropertyDescriptor, BaseEvent = Event, SiteURL = URL;
+    var holds = Node.prototype.contains, setAttribute = Element.prototype.setAttribute,
+        findInDocument = Document.prototype.querySelector,
+        dispatch = EventTarget.prototype.dispatchEvent, press = HTMLElement.prototype.click,
+        setInputValue = describe(HTMLInputElement.prototype, 'value').set,
+        inputType = describe(HTMLInputElement.prototype, 'type').get,
+        inputDisabled = describe(HTMLInputElement.prototype, 'disabled').get,
+        formAction = describe(HTMLFormElement.prototype, 'action').get,
+        connected = describe(Node.prototype, 'isConnected').get,
+        ownerOf = describe(Node.prototype, 'ownerDocument').get,
+        documentUrl = describe(Document.prototype, 'URL').get,
+        urlOrigin = describe(URL.prototype, 'origin').get,
+        matches = RegExp.prototype.test, startDocument = document, LOGIN_PAGE = /^\/user\/login(?:moodle)?\/?$/i;
     var token = Date.now().toString(36) + Math.random().toString(36).slice(2);
     var loginClicked = false, sequence = 0, interactiveSince = 0;
     var episodes = {notice: {}, agreement: {}, reauth: {}};
@@ -69,12 +91,45 @@
         for (var text = walker.nextNode(); text; text = walker.nextNode()) if (/\S/.test(text.data)) return true;
         return false;
     }
-    function setValue(input, value) {
-        var win = input.ownerDocument.defaultView;
-        Object.getOwnPropertyDescriptor(win.HTMLInputElement.prototype, 'value').set.call(input, value);
-        input.setAttribute('value', value); // Legacy jQuery reads attr('value'). Readonly is preserved.
-        input.dispatchEvent(new win.Event('input', {bubbles: true}));
-        input.dispatchEvent(new win.Event('change', {bubbles: true}));
+    /** Puts the saved login into [input] through the built-ins taken at document start, as typing would leave it. */
+    function setLogin(input, value) {
+        call(setInputValue, input, [value]);
+        call(setAttribute, input, ['value', value]); // Legacy jQuery reads attr('value'). Readonly is preserved.
+        call(dispatch, input, [new BaseEvent('input', {bubbles: true})]);
+        call(dispatch, input, [new BaseEvent('change', {bubbles: true})]);
+    }
+    /**
+     * Sends [target]'s form with the saved password in it for as short a time as the site's own handler needs: the
+     * password goes only into the field's value, through the setter taken at document start (never into its value
+     * attribute, which the page's markup, serializers and observers read, and with no input or change event for page
+     * listeners to catch), the site's button runs its submit handler (jQuery 1.2's attr('value') and serialize() read the
+     * value as it is then, and the browser builds a posted form's data at that moment), and the field is emptied again
+     * right after, whatever the handler did.
+     */
+    function sendWithPassword(target, password) {
+        try {
+            call(setInputValue, target.password, [password]);
+            call(press, target.button, []);
+        } finally {
+            call(setInputValue, target.password, ['']);
+        }
+    }
+    function siteOrigin(href) { return call(urlOrigin, new SiteURL(href), []); }
+    /**
+     * Whether [target] is the real form a credential may go into, checked with the built-ins taken at document start:
+     * the first [selector] of its own document (this page or a same-origin frame), connected and posting to the site,
+     * its login a text field and its password a password field inside it, both enabled, and its button inside it too.
+     * A page script that swapped querySelector, closest or the like cannot pass off a form of its own.
+     */
+    function genuine(target, selector) {
+        try {
+            var form = target.form, doc = call(ownerOf, form, []);
+            if (!call(connected, form, []) || call(findInDocument, doc, [selector]) !== form) return false;
+            if (siteOrigin(call(documentUrl, doc, [])) !== origin || siteOrigin(call(formAction, form, [])) !== origin) return false;
+            return call(holds, form, [target.login]) && call(holds, form, [target.password]) && call(holds, form, [target.button]) &&
+                call(inputType, target.login, []) === 'text' && call(inputType, target.password, []) === 'password' &&
+                !call(inputDisabled, target.login, []) && !call(inputDisabled, target.password, []);
+        } catch (_) { return false; }
     }
 
     /* The page and its same-origin frames, each with the site's AJAX results that settle a pending submission. */
@@ -307,25 +362,41 @@
         found.target.button.click();
         return 'submitted';
     }
+    // Only the sealed copy enters the saved account: it alone ran before the site's scripts.
     function submitLogin(expected, login, password) {
+        if (!sealed) return 'unprotected';
         if (!valid(expected) || loginClicked || !probe().loginReady) return 'wait';
-        var target = loginForm(); loginClicked = true;
-        setValue(target.login, login); setValue(target.password, password);
-        target.button.click(); // Dynamic encryption/key handler remains intact.
+        var target = loginForm();
+        // The saved account goes only into the login page's own document, never a frame's or another page's form.
+        function own() {
+            return genuine(target, 'form#login_frm') && call(ownerOf, target.form, []) === startDocument &&
+                call(matches, LOGIN_PAGE, [location.pathname]);
+        }
+        if (!target || !own()) return 'wait';
+        setLogin(target.login, login);
+        // The login's input and change events run page listeners: one may have turned the password field into another
+        // kind of input or moved the form. Checked again right before the password goes in; nothing is armed until then.
+        if (loginClicked || !own()) return 'wait';
+        loginClicked = true;
+        sendWithPassword(target, password); // Dynamic encryption/key handler remains intact.
         return 'submitted';
     }
     function reauthenticate(expected, challenge, login, password) {
+        if (!sealed) return 'unprotected';
         if (!valid(expected)) return 'wait';
         var target = reauthForm(documents()), e = episode('reauth', target);
         if (!target || !target.ready || target.attempt !== 1 || e.id !== challenge || e.clicked || ajax.reauth.state === 'pending') return 'wait';
+        if (!genuine(target, '#auth_modal form#modal_auth_frm')) return 'wait';
         // Do not replace the account bound by the site's readonly reauthentication field.
         // An empty readonly field names no account yet and receives the saved login.
         var bound = target.login.readOnly ? target.login.value.trim() : '';
         if (bound && bound.toLowerCase() !== String(login).trim().toLowerCase()) return 'account-mismatch';
+        if (!bound) setLogin(target.login, login);
+        // As for the login page: the login's events may have changed the form, so it is checked again before the
+        // password goes in, and the episode counts as submitted only then.
+        if (e.clicked || ajax.reauth.state === 'pending' || !genuine(target, '#auth_modal form#modal_auth_frm')) return 'wait';
         e.clicked = true; ajax.reauth = {state: 'pending', challenge: e.id, doc: target.form.ownerDocument};
-        if (!bound) setValue(target.login, login);
-        setValue(target.password, password);
-        target.button.click(); // Official ajl() serializes nonce/cheat and performs AJAX.
+        sendWithPassword(target, password); // Official ajl() serializes nonce/cheat and performs AJAX.
         return 'submitted';
     }
     function switchLanguage(code) {
@@ -337,7 +408,10 @@
         link.click(); return 'clicked';
     }
 
-    window.__univerAutomationV1 = {
+    var api = Object.freeze({
+        // The controller compares it before it sends the saved account. Reading it gives a site script nothing: every
+        // document of the WebView that knows it gets this object before any site script runs.
+        seal: sealed ? SEAL : '',
         probe: probe,
         login: submitLogin,
         reauthenticate: reauthenticate,
@@ -347,5 +421,7 @@
         checkAgreement: function (expected, appearance) { return checkConfirmation('agreement', expected, appearance); },
         submitAgreement: function (expected, appearance) { return submitConfirmation('agreement', expected, appearance); },
         switchLanguage: switchLanguage
-    };
+    });
+    // Neither writable nor configurable: no later script replaces it or hides it behind a getter.
+    Object.defineProperty(window, '__univerAutomationV1', {value: api, enumerable: false, configurable: false, writable: false});
 })();

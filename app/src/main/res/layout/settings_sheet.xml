@@ -229,6 +229,9 @@
                     android:text="@string/class_reminders" android:textAppearance="?attr/textAppearanceBodyLarge" />
                 <TextView android:id="@+id/class_reminders_hint" style="@style/Univer.RowHint" android:layout_width="match_parent"
                     android:layout_height="wrap_content" android:accessibilityLiveRegion="polite" android:text="@string/class_reminders_hint" />
+                <TextView android:id="@+id/class_reminders_feedback" android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp" android:textAppearance="?attr/textAppearanceBodyMedium"
+                    android:textColor="?attr/colorError" android:visibility="gone" android:accessibilityLiveRegion="polite" />
                 <com.google.android.material.button.MaterialButtonToggleGroup android:id="@+id/reminder_lead"
                     android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp"
                     app:selectionRequired="true" app:singleSelection="true">
@@ -260,6 +263,9 @@
                     android:text="@string/grade_alerts" android:textAppearance="?attr/textAppearanceBodyLarge" />
                 <TextView android:id="@+id/grade_alerts_hint" style="@style/Univer.RowHint" android:layout_width="match_parent"
                     android:layout_height="wrap_content" android:accessibilityLiveRegion="polite" android:text="@string/grade_alerts_hint" />
+                <TextView android:id="@+id/grade_alerts_feedback" android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp" android:textAppearance="?attr/textAppearanceBodyMedium"
+                    android:textColor="?attr/colorError" android:visibility="gone" android:accessibilityLiveRegion="polite" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 

@@ -188,16 +188,19 @@ class DownloadSearchTest {
     @Test fun aLibraryLargerThanTheTextCacheIsReadOncePerQuery() {
         val library = (1..5).map { DownloadRecord("id$it", fileName = "file$it.txt", started = it.toLong()) }
         val cache = DownloadList.TextCache(maxFiles = 2, maxCharacters = 1_000)
-        val scan = DownloadList.TextScan()
+        val scan = DownloadList.TextScan("query")
         var reads = 0
         while (true) {
-            val round = scan.pending("query", library, cache)
+            val round = scan.pending(library, cache)
             if (round.isEmpty()) break
-            round.forEach { record -> reads++; cache.put(record.id, DownloadList.FileText("text")); scan.read(record.id) }
+            round.forEach { record ->
+                reads++
+                scan.read(record.id, cache.put(record.id, DownloadList.FileText("text")))
+            }
             assertTrue("The scan must end", reads <= library.size)
         }
         assertEquals(library.size, reads)
-        assertEquals("A new query reads what the cache no longer holds", 3, scan.pending("other", library, cache).size)
+        assertEquals("A new query reads what the cache no longer holds", 3, DownloadList.TextScan("other").pending(library, cache).size)
     }
 
     // Review finding: three matching textbooks overflowed the cache, the first one left it, and since the scan had read
@@ -205,22 +208,41 @@ class DownloadSearchTest {
     @Test fun aTextMatchStaysInTheResultsAfterTheCacheDropsItsText() {
         val books = (1..3).map { DownloadRecord("book$it", fileName = "Учебник $it.pdf", state = DownloadState.COMPLETED, started = it.toLong()) }
         val cache = DownloadList.TextCache(maxFiles = 2, maxCharacters = 10_000)
-        val scan = DownloadList.TextScan()
-        scan.pending("энтропия", books, cache).forEach { record ->
+        val scan = DownloadList.TextScan("энтропия")
+        scan.pending(books, cache).forEach { record ->
             val entry = cache.put(record.id, DownloadList.FileText("Глава о том, что такое энтропия."))
-            scan.read(record.id)
-            if (TextSearch.matches(entry.folded, "энтропия")) scan.found(record.id, TextSearch.snippet(entry.text, entry.folded, "энтропия")!!)
+            assertTrue(scan.read(record.id, entry))
         }
         assertFalse("The first book's text left the cache", "book1" in cache)
-        assertEquals("Nothing is read again for the same query", emptyList<DownloadRecord>(), scan.pending("энтропия", books, cache))
-        val view = DownloadList.view(books, "энтропия", null, null, cache.snapshot(), DownloadList.Order.NAME, scan.found)
+        assertEquals("Nothing is read again for the same query", emptyList<DownloadRecord>(), scan.pending(books, cache))
+        val view = DownloadList.view(books, "энтропия", null, null, cache.snapshot(), DownloadList.Order.NAME, scan)
         assertEquals(listOf("book1", "book2", "book3"), view.records.map { it.id })
         assertEquals("энтропия", view.snippets.getValue("book1").let { it.text.substring(it.start, it.end) })
         // A new query starts over: what the last one found is not carried into it.
-        scan.pending("другое", books, cache)
-        assertTrue(scan.found.isEmpty())
-        scan.found("book2", TextSearch.Snippet("x", 0, 1)); scan.forget("book2")
-        assertTrue("A file removed from the list is forgotten", scan.found.isEmpty())
+        val next = DownloadList.TextScan("другое")
+        assertTrue(next.found("другое").isEmpty())
+        next.read("book2", DownloadList.FileText("другое")); next.forget("book2")
+        assertTrue("A file removed from the list is forgotten", next.found("другое").isEmpty())
+    }
+
+    @Test fun changingTheQueryImmediatelyDropsOldTextMatchesAndTheirCounts() {
+        val files = listOf(record("a"), record("b"), record("c").copy(fileName = "gravity.pdf"))
+        val old = DownloadList.TextScan("entropy")
+        val cache = DownloadList.TextCache(maxFiles = 1)
+        old.read("a", cache.put("a", DownloadList.FileText("entropy")))
+        cache.put("b", DownloadList.FileText("gravity"))
+        assertFalse("The old match is retained only by its scan", "a" in cache)
+        assertEquals(listOf("a"), DownloadList.view(files, "entropy", null, null, cache.snapshot(), DownloadList.Order.DATE, old).records.map { it.id })
+
+        fun currentResults() = DownloadList.view(files, "gravity", null, null, cache.snapshot(), DownloadList.Order.DATE, old)
+        assertEquals(listOf("b", "c"), currentResults().records.map { it.id })
+        // A late result from the old scan must not supply a snippet for a new name match.
+        old.read("c", DownloadList.FileText("entropy"))
+        val current = currentResults()
+        assertEquals(listOf("b", "c"), current.records.map { it.id })
+        assertEquals(setOf("b"), current.snippets.keys)
+        assertEquals(mapOf(FileKind.PDF to 2), DownloadList.kindCounts(files, "gravity", null, cache.snapshot(), old))
+        assertEquals(listOf("a", "c"), DownloadList.TextScan("gravity").pending(files, cache).map { it.id })
     }
 
     // Review finding: the chips counted only name and course matches, so they read "PDF 0" over a card found by its text.
@@ -229,9 +251,9 @@ class DownloadSearchTest {
         val texts = mapOf("p" to DownloadList.FileText("Термодинамика и энтропия"))
         assertEquals(mapOf(FileKind.PDF to 1), DownloadList.kindCounts(files, "энтропия", null, texts))
         assertEquals("Without the inside-files search only names count", emptyMap<FileKind, Int>(), DownloadList.kindCounts(files, "энтропия", null))
-        val dropped = mapOf("p" to TextSearch.Snippet("энтропия", 0, 8))
+        val scan = DownloadList.TextScan("энтропия").apply { read("p", DownloadList.FileText("энтропия")) }
         assertEquals("A match whose text left the cache still counts", mapOf(FileKind.PDF to 1),
-            DownloadList.kindCounts(files, "энтропия", null, emptyMap(), dropped))
+            DownloadList.kindCounts(files, "энтропия", null, emptyMap(), scan))
         assertEquals(mapOf(FileKind.WORD to 1), DownloadList.kindCounts(files, "задание", null, texts))
     }
 
@@ -276,5 +298,19 @@ class DownloadSearchTest {
         assertEquals(DownloadList.Period.MONTH, DownloadList.period(now - 30 * 24 * hour, now, zone))
         assertEquals(DownloadList.Period.EARLIER, DownloadList.period(now - 31 * 24 * hour, now, zone))
         assertEquals("A file from the future counts as today", DownloadList.Period.TODAY, DownloadList.period(now + hour, now, zone))
+    }
+
+    @Test fun dateOrderKeepsTodayTogetherWhenAnEarlierDownloadFinishesToday() {
+        val zone = java.util.TimeZone.getTimeZone("UTC")
+        val now = java.util.GregorianCalendar(zone).apply { set(2026, 10, 6, 12, 0, 0) }.timeInMillis
+        val hour = 3_600_000L
+        val running = record("running", state = DownloadState.RUNNING, finished = null).copy(started = now - hour)
+        val yesterday = record("yesterday", finished = now - 23 * hour).copy(started = now - 24 * hour)
+        val overnight = record("overnight", finished = now - 2 * hour).copy(started = now - 30 * hour)
+
+        val sorted = DownloadList.view(listOf(yesterday, overnight, running), "", null, null, null, DownloadList.Order.DATE).records
+        assertEquals(listOf(running, overnight, yesterday), sorted)
+        assertEquals(listOf(DownloadList.Period.TODAY, DownloadList.Period.TODAY, DownloadList.Period.YESTERDAY),
+            sorted.map { DownloadList.period(it.displayTime, now, zone) })
     }
 }

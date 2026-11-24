@@ -3,6 +3,9 @@ package com.univerflow.kaznu.web
 import android.os.SystemClock
 import android.webkit.CookieManager
 import android.webkit.WebView
+import androidx.webkit.ScriptHandler
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
 import com.univerflow.kaznu.UniverViewModel
 import com.univerflow.kaznu.domain.AppLanguage
 import kotlinx.coroutines.CancellationException
@@ -19,9 +22,16 @@ import org.json.JSONTokener
 /** The page the site redirected to its login form; kept by the ViewModel so a rotation cannot lose it. */
 class ResumeTarget { var url: String? = null; var pending = false }
 
-enum class AutomationStatus { IDLE, SIGNING_IN, NOTICE_CONFIRMING, LOGIN_FAILED, NOTICE_FAILED, AGREEMENT_FAILED, LANGUAGE_FAILED, ELEMENTS_MISSING }
+/** [SIGN_IN_UNAVAILABLE]: this WebView cannot keep the saved account from the site's scripts, so the student signs in. */
+enum class AutomationStatus { IDLE, SIGNING_IN, NOTICE_CONFIRMING, LOGIN_FAILED, NOTICE_FAILED, AGREEMENT_FAILED, LANGUAGE_FAILED, ELEMENTS_MISSING, SIGN_IN_UNAVAILABLE }
 
-/** No JavascriptInterface: the only data coming back from the DOM is a non-secret status object. */
+/**
+ * No JavascriptInterface: the only data coming back from the DOM is a non-secret status object.
+ * The saved login and password go only to the automation registered at document start with this WebView's seal (see
+ * univer-automation.js): a site script can neither replace it nor stand in for it. A WebView without document-start
+ * scripts gets the library late, after the site's scripts, so there the saved account is never entered: the student
+ * signs in, and notices, the agreement and the language are still handled.
+ */
 class AutomationController(private val web: WebView, private val model: UniverViewModel,
     private val scope: CoroutineScope, private val guard: SessionGuard = model.guard,
     private val synchronizeLanguage: Boolean = true,
@@ -33,8 +43,23 @@ class AutomationController(private val web: WebView, private val model: UniverVi
      * window's own retry. Never a POST: a credential or notice form is only ever sent by the site's own handler.
      */
     private val recover: ((String) -> Unit)? = null,
+    /**
+     * Whether the account's session is over, by the app's own request rather than by the page (see [SessionCheck]).
+     * The site shows its reauthentication dialog only to a session that is over; a script on any page of the site could
+     * draw a lookalike of it, so the saved password goes into such a dialog only after this says so.
+     */
+    private val sessionOver: suspend () -> Boolean? = SessionCheck.journal(web),
     private val status: (AutomationStatus) -> Unit) {
     private val library = web.context.assets.open("univer-automation.js").bufferedReader().use { it.readText() }
+    private val seal = ChannelGuard.newSecret()
+    private var startScript: ScriptHandler? = if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) null
+        else runCatching { WebViewCompat.addDocumentStartJavaScript(web, sealed(library, seal), setOf(SitePolicy.ORIGIN)) }.getOrNull()
+    /** Whether the saved account may be entered here: the sealed automation runs at the start of every document. */
+    private val sealedHere get() = startScript != null
+    /** A document that answered without the sealed automation (it began before the registration): never asked again. */
+    private var unsealedDocument: String? = null
+    /** The last [sessionOver] answer, the dialog it was asked about and when it came (see [SessionCheck.Answers]). */
+    private val checked = SessionCheck.Answers()
     private var watch: Job? = null
     private var generation = 0
     private var switchingUntil = 0L
@@ -76,13 +101,15 @@ class AutomationController(private val web: WebView, private val model: UniverVi
     fun pause() { running = false; generation++; watch?.cancel(); presentation.setEnabled(false) }
     fun close() {
         running = false; generation++; watch?.cancel(); presentation.close()
+        startScript?.remove(); startScript = null
         // An attempt in flight in this WebView is abandoned with it; a replacement must not read its
         // fresh form as the site's rejection.
         guard.detach()
     }
     fun pageFinished() { presentation.apply(); if (running && watch?.isActive != true) observe() }
 
-    private fun canRecover() = running && model.state.value.hasCredentials && !model.state.value.paused && !guard.blocked
+    // Without the sealed automation nothing signs in by itself: no cover hides the login form from the student.
+    private fun canRecover() = running && sealedHere && model.state.value.hasCredentials && !model.state.value.paused && !guard.blocked
 
     private fun report(value: AutomationStatus) {
         presentation.setEnabled(canRecover() && value in setOf(
@@ -277,13 +304,34 @@ class AutomationController(private val web: WebView, private val model: UniverVi
             }
             guard.blocked -> report(AutomationStatus.LOGIN_FAILED)
             guard.pendingReauthentication != null -> report(AutomationStatus.SIGNING_IN)
+            !sealedHere || document == unsealedDocument -> report(AutomationStatus.SIGN_IN_UNAVAILABLE)
             probe.optBoolean("reauthReady") -> {
                 val credentials = model.credentials
                 val challenge = probe.getString("reauthChallenge")
-                if (credentials != null && guard.tryReauthenticate(challenge, now, document)) {
+                var at = now
+                if (credentials != null && !guard.blocked) {
+                    if (!checked.stands(challenge, now)) {
+                        val asked = generation
+                        val over = sessionOver()
+                        if (asked != generation || !running) return
+                        // The answer stands from when it came: a request that took long does not shorten it.
+                        at = SystemClock.elapsedRealtime()
+                        checked.record(challenge, over, at)
+                    }
+                    when (checked.over) {
+                        // Still signed in: the dialog is not the site's own. Nothing goes into it; the student decides.
+                        false -> { report(AutomationStatus.IDLE); return }
+                        // No answer (no network): nothing is reported, since no sign-in is under way, and the dialog
+                        // stays as it is. Asked again after 15 s, then less often while the answers stay away.
+                        null -> return
+                        true -> Unit
+                    }
+                }
+                if (credentials != null && guard.tryReauthenticate(challenge, at, document)) {
                     report(AutomationStatus.SIGNING_IN)
-                    val result = evaluate(onSite("window.__univerAutomationV1.reauthenticate(${quote(document)},${quote(challenge)},${quote(credentials.login)},${quote(credentials.password)})"))
-                    if (result == "wait") guard.releaseReauthentication(challenge)
+                    val result = evaluate(onSite(seal, "reauthenticate(${quote(document)},${quote(challenge)},${quote(credentials.login)},${quote(credentials.password)})"))
+                    if (result == "wait" || result == UNPROTECTED) guard.releaseReauthentication(challenge)
+                    if (result == UNPROTECTED) { unsealedDocument = document; report(AutomationStatus.SIGN_IN_UNAVAILABLE) }
                     // The dialog's readonly login belongs to another account: never replace it.
                     if (result?.contains("account-mismatch") == true) { guard.stop(); report(AutomationStatus.LOGIN_FAILED) }
                 } else if (guard.blocked) report(AutomationStatus.LOGIN_FAILED)
@@ -313,6 +361,11 @@ class AutomationController(private val web: WebView, private val model: UniverVi
             // A stalled submit: a fresh form may try again within the budget. A rejected password stays stopped.
             return recoverLater(round, now, Step.NEXT)
         }
+        if (!sealedHere || document == unsealedDocument) {
+            // The student signs in on the visible form; the strip says why the app does not.
+            if (probe.optBoolean("loginReady")) report(AutomationStatus.SIGN_IN_UNAVAILABLE)
+            return Step.NEXT
+        }
         if (probe.optBoolean("loginReady") && guard.pendingDocument == null) {
             val credentials = model.credentials
             // A form left open for long (behind other apps, or waiting for the budget) carries an expired key that the
@@ -326,8 +379,18 @@ class AutomationController(private val web: WebView, private val model: UniverVi
             }
             if (credentials != null && guard.tryLogin(document, now)) {
                 report(AutomationStatus.SIGNING_IN)
-                val result = evaluate(onSite("window.__univerAutomationV1.login(${quote(document)},${quote(credentials.login)},${quote(credentials.password)})"))
-                if (result == "wait") guard.releaseLogin(document)
+                val result = evaluate(onSite(seal, "login(${quote(document)},${quote(credentials.login)},${quote(credentials.password)})"))
+                if (result == "wait" || result == UNPROTECTED) guard.releaseLogin(document)
+                if (result == UNPROTECTED) {
+                    unsealedDocument = document
+                    // A form loaded before the sealed automation was registered: a fresh copy of it gets that automation.
+                    if (recover != null && now - freshFormAt >= STALE_FORM && SitePolicy.loginPage(url)) {
+                        freshFormAt = now
+                        recover(url!!)
+                        return Step.STOP
+                    }
+                    report(AutomationStatus.SIGN_IN_UNAVAILABLE)
+                }
             } else if (guard.blocked || guard.loginBudgetExhausted(now)) report(AutomationStatus.LOGIN_FAILED)
             // The next login waits a minute after the previous one, then continues by itself.
             else if (credentials != null) report(AutomationStatus.SIGNING_IN)
@@ -433,14 +496,30 @@ class AutomationController(private val web: WebView, private val model: UniverVi
 
     private fun quote(value: String) = jsString(value)
 
-    /**
-     * [call] carries the password, so the script itself checks where it runs: the page may have changed between the
-     * address check in Kotlin and the evaluation.
-     */
-    private fun onSite(call: String) = "(function(){return location.origin===${quote(SitePolicy.ORIGIN)}?$call:null})()"
-
-    private companion object {
+    companion object {
         /** A login form older than this is reloaded before the saved account is submitted to it. */
-        const val STALE_FORM = 600_000L
+        private const val STALE_FORM = 600_000L
+        private const val PLACEHOLDER = "__UNIVER_AUTOMATION_SEAL__"
+        private val HEX = Regex("[0-9a-f]{32}")
+        /** What a credential call answers when the automation in the page is not the sealed one. */
+        const val UNPROTECTED = "unprotected"
+
+        /** The library with [seal] (32 hex digits, safe inside its quotes) in place of the placeholder. */
+        fun sealed(library: String, seal: String): String {
+            require(HEX.matches(seal) && library.contains(PLACEHOLDER))
+            return library.replace(PLACEHOLDER, seal)
+        }
+
+        /**
+         * [call] (a method of the automation) carries the password, so the script itself checks where it runs, since the
+         * page may have changed after the address check in Kotlin, and that the automation is the sealed one: its seal
+         * is compared before anything is called, and the call goes to the object that was compared. A site function
+         * standing in for it is never called, so it never sees the login, the password or the seal.
+         */
+        fun onSite(seal: String, call: String): String {
+            require(HEX.matches(seal))
+            return "(function(){var a=window.__univerAutomationV1;if(location.origin!==${jsString(SitePolicy.ORIGIN)})return null;" +
+                "if(!a||a.seal!=='$seal')return '$UNPROTECTED';return a.$call;})()"
+        }
     }
 }

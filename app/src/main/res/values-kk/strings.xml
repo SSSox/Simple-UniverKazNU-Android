@@ -35,6 +35,7 @@
     <string name="notice_failed">Хабарлама әлі ашық. Оны қолмен растаңыз немесе қайталаңыз.</string>
     <string name="language_failed">Univer тіл ауысуын растамады. Тілді қайта таңдаңыз.</string>
     <string name="elements_missing">Кіру пішіні әлі дайын емес немесе өзгерген. Қолмен кіріңіз немесе қайталаңыз.</string>
+    <string name="sign_in_unavailable">Автоматты кіру үшін Android System WebView жаңартылуы керек. Әзірге қолмен кіріңіз.</string>
     <string name="download_started">Файл телефонның «Жүктеулер» қалтасына жүктелуде.</string>
     <string name="download_failed">Файл жүктелмеді. Байланысты тексеріп, қайталаңыз.</string>
     <string name="download_too_large">Файл 1 ГБ шегінен асады. Оны жүктеу үшін сілтемені браузерде ашыңыз.</string>

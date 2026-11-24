@@ -735,9 +735,16 @@
             return {top: view ? view.offsetTop : 0, height: view ? view.height : window.innerHeight};
         }, function (size) {
             var root = document.documentElement;
-            var values = {'--univer-dialog-top': (size.top + 12) + 'px',
-                '--univer-dialog-height': Math.max(120, size.height - 24) + 'px',
-                '--univer-frame-height': Math.max(100, size.height - 100) + 'px'};
+            // The dialog stays inside what is visible: its 12 px margins shrink first when the keyboard or a landscape
+            // screen leaves less than 144 px, so its bottom (and the buttons there) never goes below the screen. A frame
+            // inside takes the rest of the dialog after its 64 px bar, 12 px padding and border, not a taller box that
+            // would scroll inside a scrolling dialog.
+            var visible = Math.max(0, Math.floor(size.height));
+            var margin = Math.max(0, Math.min(12, Math.floor((visible - 120) / 2)));
+            var dialog = visible - 2 * margin;
+            var values = {'--univer-dialog-top': (size.top + margin) + 'px',
+                '--univer-dialog-height': dialog + 'px',
+                '--univer-frame-height': Math.max(0, dialog - 78) + 'px'};
             Object.keys(values).forEach(function (key) { if (root.style.getPropertyValue(key) !== values[key]) root.style.setProperty(key, values[key]); });
         });
     }

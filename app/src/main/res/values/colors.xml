@@ -66,4 +66,6 @@
     <color name="kind_powerpoint">#C45224</color>
     <color name="kind_image">#7C4DAF</color>
     <color name="kind_other">#5B6B7C</color>
+    <color name="kind_pdf_text">#B72B24</color>
+    <color name="kind_powerpoint_text">#AD411A</color>
 </resources>

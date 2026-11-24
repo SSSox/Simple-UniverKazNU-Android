@@ -204,6 +204,22 @@ test('the survey shows its answer scale and how many questionnaires are answered
   subjects.close();
 });
 
+test('an open survey row keeps the site\'s own Open link as its one button, the proxy button stays out', () => {
+  const rows = '<table class="mt"><tr class="link" id="1"><td>A<a class="rt" href="/student/rating/1" style="float:right">Открыть </a><button class="up-open-row" type="button">Открыть</button></td></tr>' +
+    '<tr class="link done" id="2"><td>B</td></tr></table>';
+  const root = page('/student/rating/', rows);
+  root.apply();
+  assert.ok(root.q('tr[id="1"]').classList.contains('univer-scr-opens'), 'a row with the site link is marked');
+  assert.ok(!root.q('tr[id="2"]').classList.contains('univer-scr-opens'), 'an answered row has no link and is left alone');
+  const css = root.q('#univer-screens-style, style#univer-screens-style')?.textContent || '';
+  assert.match(css, /tr\.univer-scr-opens \.up-open-row \{ display:none!important; \}/);
+  assert.match(css, /tr\.univer-scr-opens a\.rt \{ display:flex!important; float:none!important;/);
+  assert.match(css, /tr\.univer-scr-opens \.up-badge \{ display:inline-block!important; margin:8px 0 0!important; \}/);
+  root.release();
+  assert.ok(!root.q('tr[id="1"]').classList.contains('univer-scr-opens'), 'release removes the mark');
+  root.close();
+});
+
 function advisor(email, phone, more = '') {
   return '<table class="mt"><tr id="group_list"><td class="tt" id="host"><div class="inner"><table class="inner">' +
     // As on the site: two label/value pairs per row, the last pair left blank.

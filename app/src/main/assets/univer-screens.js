@@ -495,6 +495,15 @@
         else forget('scale');
         if (/^\/student\/rating\/\d+(\/|$)/i.test(path)) ratingProgress();
         else forget('progress');
+        ratingOpen();
+    }
+    // On a phone the site draws its own Open link in each open row and binds no double click, so the proxy button the
+    // shared polish adds (it sends a double click, as the desktop site expects) does nothing here. The row keeps one
+    // button: the site's own link, drawn as the main action under the dates.
+    function ratingOpen() {
+        document.querySelectorAll('#l4 tr.link[id]').forEach(function (row) {
+            if (row.querySelector('a.rt')) mark(row, 'univer-scr-opens');
+        });
     }
     function ratingIntro() {
         var cell = Array.from(document.querySelectorAll('#l4 table.mt td.ct')).find(function (c) {
@@ -945,6 +954,9 @@ ${P} #l4 .univer-scr-progress-fill { position:absolute; inset:0; border-radius:4
 ${P} #l4 .univer-scr-progress[data-complete=true] .univer-scr-progress-fill { background:var(--u-teal); }
 ${P} #l4 .univer-scr-progress-note { color:var(--u-text); font-size:var(--u-fs-meta); line-height:1.4; }
 ${P} #l4 .univer-scr-progress[data-complete=true] .univer-scr-progress-note { color:var(--u-teal); }
+${P} #l4 tr.univer-scr-opens .up-open-row { display:none!important; }
+${P} #l4 tr.univer-scr-opens .up-badge { display:inline-block!important; margin:8px 0 0!important; }
+${P} #l4 tr.univer-scr-opens a.rt { display:flex!important; float:none!important; align-items:center; justify-content:center; box-sizing:border-box; width:100%!important; min-height:44px; margin:12px 0 0!important; padding:0 16px!important; border-radius:10px; background:var(--u-brand)!important; color:#fff!important; font:600 var(--u-fs-body)/1.2 var(--u-font); text-decoration:none!important; }
 ${P}.univer-scr-page-rating #l4 input[type=radio] { width:22px; height:22px; accent-color:var(--u-brand); vertical-align:middle; }
 
 /* Advisor contact card. */

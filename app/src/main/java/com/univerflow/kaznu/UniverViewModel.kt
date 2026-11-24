@@ -200,6 +200,7 @@ class UniverViewModel(private val repository: SessionRepository) : ViewModel() {
     suspend fun setTextZoom(percent: Int) = retained {
         val value = TextZoom.clamp(percent)
         changes.withLock {
+            if (value == mutableState.value.textZoom) return@withLock
             repository.setTextZoom(value)
             mutableState.update { it.copy(textZoom = value) }
         }

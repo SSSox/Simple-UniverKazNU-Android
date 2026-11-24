@@ -24,7 +24,7 @@ import kotlinx.coroutines.launch
 class LockFlow(private val activity: AppCompatActivity, private val model: UniverViewModel, private val lockUi: LockUi, private val host: Host) {
     interface Host : ScreenFeedback {
         val sessionChanging: Boolean
-        /** A signed-in service (Moodle) is open: its pages are always kept out of screenshots. */
+        /** A signed-in service (Moodle) is open, or its closed window still shows while it fades: always kept out of screenshots. */
         val serviceOpen: Boolean
         /** The offline screen shows saved grades, classes or exams: kept out of screenshots and recents, like the page under a lock. */
         val savedDataShown: Boolean

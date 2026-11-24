@@ -101,7 +101,7 @@ class AutomaticChallengeFlowTest {
                 web = WebView(activity)
                 activity.setContentView(web)
                 web.settings.javaScriptEnabled = true
-                controller = AutomationController(web, model, activity.lifecycleScope) { status = it }
+                controller = AutomationController(web, model, activity.lifecycleScope, sessionOver = { true }) { status = it }
                 web.webViewClient = object : WebViewClient() {
                     override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse {
                         var mime = "text/html"

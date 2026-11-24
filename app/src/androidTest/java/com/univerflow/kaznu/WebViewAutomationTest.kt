@@ -8,6 +8,7 @@ import android.webkit.WebResourceResponse
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.univerflow.kaznu.web.AutomationController
 import org.json.JSONObject
 import org.json.JSONTokener
 import org.junit.After
@@ -25,7 +26,9 @@ class WebViewAutomationTest {
     private lateinit var scenario: ActivityScenario<MainActivity>
     private lateinit var web: WebView
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
-    private val library get() = instrumentation.targetContext.assets.open("univer-automation.js").bufferedReader().use { it.readText() }
+    // The copy AutomationController registers at document start: only a sealed copy enters the saved account.
+    private val library get() = AutomationController.sealed(instrumentation.targetContext.assets.open("univer-automation.js")
+        .bufferedReader().use { it.readText() }, "0123456789abcdef0123456789abcdef")
     private val jquery get() = instrumentation.context.assets.open("site-jquery.js").bufferedReader().use { it.readText() }
 
     @SuppressLint("SetJavaScriptEnabled")

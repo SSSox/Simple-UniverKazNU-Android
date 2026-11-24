@@ -35,6 +35,7 @@
     <string name="notice_failed">The notice is still open. Confirm it manually or retry.</string>
     <string name="language_failed">Univer did not confirm the language change. Select the language again.</string>
     <string name="elements_missing">The login form is not ready or has changed. Sign in manually or retry.</string>
+    <string name="sign_in_unavailable">Automatic sign-in needs a newer Android System WebView. Sign in manually for now.</string>
     <string name="download_started">Saving the file to your phone’s Downloads folder.</string>
     <string name="download_failed">Could not download the file. Check your connection and try again.</string>
     <string name="download_too_large">The file exceeds the 1 GB limit. Open the link in your browser to download it.</string>

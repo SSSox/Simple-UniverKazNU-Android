@@ -5,7 +5,9 @@ import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.ContentResolver
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Process
 import android.provider.MediaStore
 import android.webkit.MimeTypeMap
 import android.webkit.ValueCallback
@@ -33,6 +35,58 @@ object FileChooserTypes {
 
     /** A photo is offered when the page accepts any file or an image. */
     fun acceptsPhotos(types: List<String>) = types.isEmpty() || types.any { it == "image/*" || it == "image/jpeg" }
+}
+
+/**
+ * Filters URIs returned by a file chooser or camera intent. Pure: tested without Android.
+ *
+ * A third-party picker can return a content: URI of this app's own FileProvider (such as a cached grade report or an
+ * earlier photo), which WebView would read with the app's own UID access, or set FLAG_GRANT_READ_URI_PERMISSION on a
+ * URI that was never actually granted to this app. Only the non-empty snapshot created for the current request may
+ * come from an own provider; every other URI must come from another provider with both the read-grant flag on the
+ * result Intent and an active Android URI read permission grant for this process.
+ */
+object FileChooserResults {
+    data class PickedUri(val value: String, val scheme: String?, val authority: String?)
+
+    fun bareAuthority(authority: String?): String? {
+        val raw = authority?.substringAfterLast('@')?.trim() ?: return null
+        if (raw.isEmpty() || raw.any { it.isWhitespace() || it.isISOControl() || it == '/' || it == '\\' }) return null
+        return raw
+    }
+
+    fun isOwnAuthority(authority: String?, ownAuthority: String, resolvesToSelf: (String) -> Boolean = { false }): Boolean {
+        val bare = bareAuthority(authority) ?: return false
+        val host = bare.substringBefore(':')
+        val normalized = bare.removeSuffix(".")
+        val normalizedHost = host.removeSuffix(".")
+        if (normalized.equals(ownAuthority, ignoreCase = true) || normalizedHost.equals(ownAuthority, ignoreCase = true)) return true
+        return resolvesToSelf(bare) || (host != bare && resolvesToSelf(host))
+    }
+
+    fun <T> select(
+        resultOk: Boolean,
+        fromResult: List<T>,
+        readFlag: Boolean,
+        snapshot: T?,
+        ownAuthority: String,
+        describe: (T) -> PickedUri,
+        resolvesToSelf: (String) -> Boolean = { false },
+        hasUriReadGrant: (T) -> Boolean,
+    ): List<T> {
+        if (!resultOk) return emptyList()
+        val candidates = if (fromResult.isNotEmpty()) fromResult else listOfNotNull(snapshot)
+        val snapshotValue = snapshot?.let { describe(it).value }
+        return candidates.filter { item ->
+            val uri = describe(item)
+            if (snapshotValue != null && uri.value == snapshotValue) true
+            else readFlag &&
+                uri.scheme == ContentResolver.SCHEME_CONTENT &&
+                bareAuthority(uri.authority) != null &&
+                !isOwnAuthority(uri.authority, ownAuthority, resolvesToSelf) &&
+                hasUriReadGrant(item)
+        }
+    }
 }
 
 /**
@@ -80,11 +134,31 @@ class FileChooser(private val activity: ComponentActivity, private val title: ()
         val pending = callback ?: return
         callback = null
         val taken = photo?.takeIf { it.first.length() > 0 }
-        val picked = (if (resultCode != Activity.RESULT_OK) null else data?.clipData?.let { clip ->
+        val fromResult = data?.clipData?.let { clip ->
             (0 until clip.itemCount).mapNotNull { clip.getItemAt(it).uri }.takeIf { it.isNotEmpty() }
-        } ?: data?.data?.let { listOf(it) } ?: taken?.let { listOf(it.second) })
-            // Only what a provider shares: a picker answering with a path could name this app's own files for upload.
-            ?.filter { it.scheme == ContentResolver.SCHEME_CONTENT }?.takeIf { it.isNotEmpty() }?.toTypedArray()
+        } ?: data?.data?.let { listOf(it) }.orEmpty()
+        val readFlag = data != null && (data.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION) != 0
+        val ownAuthority = "${activity.packageName}.downloads"
+        val pid = Process.myPid()
+        val uid = Process.myUid()
+        val picked = FileChooserResults.select(
+            resultOk = resultCode == Activity.RESULT_OK,
+            fromResult = fromResult,
+            readFlag = readFlag,
+            snapshot = taken?.second,
+            ownAuthority = ownAuthority,
+            describe = { FileChooserResults.PickedUri(it.toString(), it.scheme, it.authority) },
+            resolvesToSelf = { authority ->
+                runCatching { activity.packageManager.resolveContentProvider(authority, 0)?.packageName == activity.packageName }
+                    .getOrDefault(false)
+            },
+            hasUriReadGrant = { uri ->
+                runCatching {
+                    activity.checkUriPermission(uri, pid, uid, Intent.FLAG_GRANT_READ_URI_PERMISSION) ==
+                        PackageManager.PERMISSION_GRANTED
+                }.getOrDefault(false)
+            },
+        ).takeIf { it.isNotEmpty() }?.toTypedArray()
         if (picked == null || taken == null || picked.none { it == taken.second }) photo?.first?.delete()
         photo = null
         pending.onReceiveValue(picked)

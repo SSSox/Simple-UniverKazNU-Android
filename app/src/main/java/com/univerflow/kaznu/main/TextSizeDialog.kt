@@ -7,12 +7,23 @@ import android.view.Gravity
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.univerflow.kaznu.R
+import com.univerflow.kaznu.UniverViewModel
 import com.univerflow.kaznu.domain.TextZoom
+import com.univerflow.kaznu.ui.launchCatching
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.slider.Slider
+import kotlinx.coroutines.CoroutineScope
 
 /** The text size of the website and the viewers: a slider applied while it moves, with Reset to the default. */
 object TextSizeDialog {
+    /**
+     * Slider callback shared by this dialog and the settings sheet: forwards every user step to
+     * [UniverViewModel.setTextZoom] so equality is checked inside the ViewModel's serialized write lock instead of
+     * against an outdated snapshot while an earlier write is still running.
+     */
+    fun onZoomChange(scope: CoroutineScope, model: UniverViewModel, onFailure: (Exception) -> Unit = {}): (Int) -> Unit =
+        { percent -> scope.launchCatching(onFailure) { model.setTextZoom(percent) } }
+
     /** [labels] gives the app-language strings; the dialog itself needs the activity's window. */
     fun show(activity: Activity, labels: Context, current: Int, onChange: (Int) -> Unit): Dialog {
         val density = activity.resources.displayMetrics.density

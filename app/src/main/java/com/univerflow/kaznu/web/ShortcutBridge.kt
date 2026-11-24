@@ -23,7 +23,7 @@ import org.json.JSONTokener
  * Receives home-tile pin and order taps, a UMKD section's «Скачать все», the journal's «Поделиться успеваемостью» and
  * «В календарь», the schedule's week and the journal's totals from the site's main frame. Only data crosses: a listener limited to the exact Univer origin, no callable host
  * objects, and only messages carrying [channel]'s key: the site's own scripts cannot pin a tile, start downloads or
- * open the share sheet.
+ * open the share sheet. A WebView without the keyed channel takes no pin and no «Скачать все» at all.
  */
 class ShortcutBridge(private val web: WebView, private val channel: ChannelGuard, private val onDownloadAll: (DownloadBatch) -> Unit = {},
     private val onReport: (GradeReport?) -> Unit = {}, private val onCalendar: (CalendarEvent?) -> Unit = {},
@@ -37,6 +37,8 @@ class ShortcutBridge(private val web: WebView, private val channel: ChannelGuard
             if (closed || !mainFrame || origin.toString() != SitePolicy.ORIGIN) return@addWebMessageListener
             val data = channel.unwrap(runCatching { message.data }.getOrNull()) ?: return@addWebMessageListener
             when {
+                // Without the keyed channel the site could send these itself: no download and no home-tile change.
+                !channel.actions && (data.startsWith(DownloadBatch.MESSAGE_PREFIX) || data.startsWith(Shortcuts.MESSAGE_PREFIX)) -> Unit
                 data.startsWith(DownloadBatch.MESSAGE_PREFIX) -> DownloadBatch.parse(data)?.let(onDownloadAll)
                 // Our own journal sent it, so a report out of shape is said, not dropped in silence.
                 data.startsWith(GradeReport.MESSAGE_PREFIX) -> onReport(ReportMessage.parse(data))

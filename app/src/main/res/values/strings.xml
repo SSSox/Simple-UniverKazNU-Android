@@ -36,6 +36,7 @@
     <string name="notice_failed">Уведомление осталось на странице. Можно подтвердить его вручную или повторить.</string>
     <string name="language_failed">Univer не подтвердил смену языка. Попробуйте выбрать язык ещё раз.</string>
     <string name="elements_missing">Форма входа ещё не готова или изменилась. Можно войти вручную или повторить.</string>
+    <string name="sign_in_unavailable">Автовход недоступен: обновите Android System WebView. Пока войдите вручную.</string>
     <string name="download_started">Файл скачивается в папку «Загрузки» телефона.</string>
     <string name="download_failed">Не удалось скачать файл. Проверьте соединение и повторите.</string>
     <string name="download_too_large">Файл больше допустимого размера 1 ГБ. Откройте ссылку в браузере, чтобы скачать его.</string>

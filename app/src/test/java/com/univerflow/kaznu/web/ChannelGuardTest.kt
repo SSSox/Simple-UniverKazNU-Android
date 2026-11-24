@@ -21,6 +21,8 @@ class ChannelGuardTest {
     fun withoutDocumentStartScriptsTheOldUnkeyedChannelStays() {
         assertEquals("univer-pin:{}", ChannelGuard.unwrap("univer-pin:{}", secret, active = false))
         assertFalse(ChannelGuard.senders(secret, active = false).contains(secret))
+        // The modules' sender lets no pin or «Скачать все» through an unkeyed channel (MobilePageAdapter's NATIVE).
+        assertTrue(ChannelGuard.senders(secret, active = false).contains("keyed:false"))
     }
 
     @Test

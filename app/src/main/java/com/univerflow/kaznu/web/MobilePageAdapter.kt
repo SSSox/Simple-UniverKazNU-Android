@@ -227,13 +227,22 @@ class MobilePageAdapter(
          * «Скачать все», the journal's grade report, «В календарь», the saved timetable and the grades snapshot go through
          * the keyed app sender, each within its own length, nothing else. Strict, so a
          * function the page swapped in for a built-in cannot reach the sender through .caller; the prefix checks use no
-         * prototype method.
+         * prototype method. Pins and «Скачать все» act without a further question, so they pass only through the keyed
+         * channel: on a WebView without it the site could send the same text itself. __univerJson is the channel's
+         * serializer taken at document start (null without it), which a module sending an action must use; __univerListen
+         * its listener registration (null without it), through which such a module takes the tap that sends the action;
+         * __univerMark notes the heading row a «Скачать все» tap came from (null without it), which the app's lookup
+         * then requires to hold every file of the batch.
          */
         private const val NATIVE = "var __univerNative=__univerSend&&typeof __univerSend.app==='function'?function(v){'use strict';" +
             "if(typeof v!=='string'||v.length<11)return;" +
             "var k=['univer-pin:',8192,'univer-download-all:',65536,'univer-report:',65536,'univer-calendar:',4096,'univer-schedule:',131072,'univer-export:',98304,'univer-grades:',65536,'univer-exams:',32768],i,j,p,m=false;" +
             "for(j=0;j<k.length&&!m;j+=2){p=k[j];m=v.length<=k[j+1];for(i=0;m&&i<p.length;i++)if(v[i]!==p[i])m=false;}" +
-            "if(window===window.top&&m)__univerSend.app(v);}:null;"
+            "if(m&&__univerSend.keyed!==true&&(p==='univer-pin:'||p==='univer-download-all:'))m=false;" +
+            "if(window===window.top&&m)__univerSend.app(v);}:null;" +
+            "var __univerJson=__univerSend&&__univerSend.keyed===true&&typeof __univerSend.json==='function'?__univerSend.json:null;" +
+            "var __univerListen=__univerSend&&__univerSend.keyed===true&&typeof __univerSend.listen==='function'?__univerSend.listen:null;" +
+            "var __univerMark=__univerSend&&__univerSend.keyed===true&&typeof __univerSend.mark==='function'?__univerSend.mark:null;"
 
         /**
          * [body] (the modules) run with [senders] (a JS expression, see [ChannelGuard.senders]) as their only sender.

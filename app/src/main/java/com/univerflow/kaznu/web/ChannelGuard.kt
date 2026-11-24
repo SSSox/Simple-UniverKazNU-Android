@@ -12,14 +12,19 @@ import java.security.SecureRandom
  * per-WebView secret in a closure. The app's modules get senders that put the secret in front of each message only by
  * naming the secret, which reaches them inside the injected source and never the page. Messages without it are dropped.
  * The senders and the modules' wrapper are strict, so a built-in the site swaps cannot hand them over through .caller;
- * such a swap (JSON.stringify) can still change what an app message says.
- * A WebView without document-start scripts keeps the unkeyed channel: there the site can still forge these messages.
+ * A swapped JSON.stringify or an inherited toJSON cannot change what «Скачать все» says: it is serialized with the
+ * channel's own copy taken at document start (see univer-channel.js).
+ * A WebView without document-start scripts keeps the unkeyed channel for what the pages report (the week, the totals);
+ * the site could forge those messages there, so nothing that acts by itself (pins, «Скачать все») is taken from it.
  */
 class ChannelGuard(web: WebView, val secret: String = newSecret()) {
     val active = WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT) &&
         WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)
     private var script: ScriptHandler? = if (!active) null else WebViewCompat.addDocumentStartJavaScript(web,
         source(web.context.assets.open("univer-channel.js").bufferedReader().use { it.readText() }, secret), setOf(SitePolicy.ORIGIN))
+
+    /** Whether a message may start an action (a pin, «Скачать все»): only when it came through the keyed channel. */
+    val actions get() = active
 
     /** A message from the app's modules without its key, or null for anything the site sent itself. */
     fun unwrap(message: String?): String? = unwrap(message, secret, active)
@@ -53,8 +58,9 @@ class ChannelGuard(web: WebView, val secret: String = newSecret()) {
             require(HEX.matches(secret))
             // The origin is checked before the secret is handed over: a document of another origin never sees it.
             return if (active) "(location.origin==='${SitePolicy.ORIGIN}'&&window.__univerClaim?window.__univerClaim('$secret'):null)"
+            // Unkeyed: the modules may still report what they read, but no action (see MobilePageAdapter's NATIVE).
             else "(function(a,n){function s(c){return c&&typeof c.postMessage==='function'?function(v){c.postMessage(v);}:null;}" +
-                "return {app:s(a),notice:s(n)};})(window.${ShortcutBridge.CHANNEL},window.${NoticeBridge.CHANNEL})"
+                "return {app:s(a),notice:s(n),keyed:false};})(window.${ShortcutBridge.CHANNEL},window.${NoticeBridge.CHANNEL})"
         }
     }
 }

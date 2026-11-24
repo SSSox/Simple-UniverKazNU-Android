@@ -25,8 +25,8 @@ object DownloadList {
      * files found by their text included, so a chip never says 0 over a card it would show.
      */
     fun kindCounts(records: List<DownloadRecord>, query: String, subject: String?, texts: Map<String, FileText>? = null,
-        found: Map<String, TextSearch.Snippet> = emptyMap()): Map<FileKind, Int> =
-        select(records, query, null, subject, texts, found).first.groupingBy { FileKinds.filterKind(it.kind) }.eachCount()
+        scan: TextScan? = null): Map<FileKind, Int> =
+        select(records, query, null, subject, texts, scan).first.groupingBy { FileKinds.filterKind(it.kind) }.eachCount()
 
     /**
      * Text read from a file. The folded copy used for matching is built on the first comparison and then kept:
@@ -80,8 +80,7 @@ object DownloadList {
      * Which files one query still has to read. The bounded cache forgets texts, so "not cached" cannot mean "not read":
      * a library larger than the cache would otherwise be read over and over for as long as the query stands.
      */
-    class TextScan {
-        private var terms = ""
+    class TextScan(val query: String) {
         private val done = HashSet<String>()
         private val matches = HashMap<String, TextSearch.Snippet>()
 
@@ -89,17 +88,18 @@ object DownloadList {
          * What this query found inside files, kept apart from the bounded cache: a matching text that the cache drops
          * to make room is not read again for the same query, and its file must not leave the results.
          */
-        val found: Map<String, TextSearch.Snippet> get() = matches
+        fun found(query: String): Map<String, TextSearch.Snippet> = if (query == this.query) matches else emptyMap()
 
-        fun pending(query: String, candidates: List<DownloadRecord>, cached: TextCache): List<DownloadRecord> {
-            if (query != terms) { terms = query; done.clear(); matches.clear() }
-            return candidates.filter { it.id !in done && it.id !in cached }
+        fun pending(candidates: List<DownloadRecord>, cached: TextCache): List<DownloadRecord> =
+            candidates.filter { it.id !in done && it.id !in cached }
+
+        /** Records a completed read and returns whether the text matched this query. */
+        fun read(id: String, text: FileText): Boolean {
+            done += id
+            val snippet = TextSearch.snippet(text.text, text.folded, query) ?: return false
+            matches[id] = snippet
+            return true
         }
-
-        fun read(id: String) { done += id }
-
-        /** [id]'s text matched the current query; [snippet] is the fragment the list shows. */
-        fun found(id: String, snippet: TextSearch.Snippet) { matches[id] = snippet }
 
         /** The file left the list. */
         fun forget(id: String) { done -= id; matches.remove(id) }
@@ -113,33 +113,33 @@ object DownloadList {
     class View(val records: List<DownloadRecord>, val snippets: Map<String, TextSearch.Snippet>)
 
     /**
-     * [texts] are the files read so far when the search also looks inside files (null when it does not), [found] what
-     * the current query found in files whose text has since left the cache. A file matches by name or course, or by its
+     * [texts] are the files read so far when the search also looks inside files (null when it does not), [scan] retains
+     * matches for its query whose text has since left the cache. A file matches by name or course, or by its
      * text; a file found by its text gets a snippet even if its name matches too.
      */
     fun view(records: List<DownloadRecord>, query: String, kind: FileKind?, subject: String?, texts: Map<String, FileText>?, order: Order,
-        found: Map<String, TextSearch.Snippet> = emptyMap()): View {
-        val (matching, snippets) = select(records, query, kind, subject, texts, found)
+        scan: TextScan? = null): View {
+        val (matching, snippets) = select(records, query, kind, subject, texts, scan)
         val sorted = when (order) {
             Order.NAME -> matching.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.fileName })
             Order.SIZE -> matching.sortedByDescending { it.total.takeIf { size -> size >= 0 } ?: it.received }
-            Order.DATE -> matching.sortedByDescending { it.started }
+            Order.DATE -> matching.sortedByDescending { it.displayTime }
         }
         return View(sorted, snippets)
     }
 
     /** The files that match, in their stored order, with the snippets of those found by their text. */
     private fun select(records: List<DownloadRecord>, query: String, kind: FileKind?, subject: String?, texts: Map<String, FileText>?,
-        found: Map<String, TextSearch.Snippet>): Pair<List<DownloadRecord>, Map<String, TextSearch.Snippet>> {
+        scan: TextScan?): Pair<List<DownloadRecord>, Map<String, TextSearch.Snippet>> {
         val inside = texts != null && query.isNotBlank()
+        val found = scan?.found(query).orEmpty()
         val snippets = mutableMapOf<String, TextSearch.Snippet>()
         val matching = records.filter { record ->
             if (!FileKinds.matchesFilter(record, kind) || !FileKinds.matchesSubject(record, subject)) return@filter false
             if (inside) {
-                val text = texts?.get(record.id)
-                if (text != null) {
-                    if (TextSearch.matches(text.folded, query)) TextSearch.snippet(text.text, text.folded, query)?.let { snippets[record.id] = it }
-                } else found[record.id]?.let { snippets[record.id] = it }
+                val text = texts[record.id]
+                val snippet = if (text != null) TextSearch.snippet(text.text, text.folded, query) else found[record.id]
+                if (snippet != null) snippets[record.id] = snippet
             }
             FileKinds.matchesQuery(record, query) || record.id in snippets
         }

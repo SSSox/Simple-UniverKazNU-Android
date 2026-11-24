@@ -7,6 +7,7 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.widget.FrameLayout
+import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -144,9 +145,13 @@ class SettingsForms(private val activity: AppCompatActivity, private val model: 
 
     fun feedback(form: SettingsSheetBinding, id: Int) {
         form.credentials.isVisible = true
-        form.feedback.tag = id
-        form.feedback.text = host.text(id)
-        form.feedback.isVisible = true
+        feedback(form.feedback, id)
+    }
+
+    private fun feedback(view: TextView, id: Int) {
+        view.tag = id
+        view.text = host.text(id)
+        view.isVisible = true
     }
 
     private fun make(first: Boolean): SettingsSheetBinding {
@@ -284,18 +289,25 @@ class SettingsForms(private val activity: AppCompatActivity, private val model: 
         val current = model.state.value.reminders
         val next = current.copy(enabled = enabled ?: current.enabled, lead = lead ?: current.lead)
         if (next == current || host.sessionChanging) return
-        val save = { activity.launchCatching({ feedback(form, R.string.storage_error); update(form, isFirst(form)) }) { model.setReminders(next) } }
-        if (next.enabled && !current.enabled) host.requestNotifications { granted ->
-            if (granted) save() else { feedback(form, R.string.notifications_denied); update(form, isFirst(form)) }
-        } else save()
+        saveNotificationPreference(form, form.classRemindersFeedback, next.enabled && !current.enabled) { model.setReminders(next) }
     }
 
     /** Like reminders: turning it on asks for notifications first, and a refusal leaves it off. */
     private fun setGradeAlerts(enabled: Boolean, form: SettingsSheetBinding) {
         if (enabled == model.state.value.gradeAlerts || host.sessionChanging) return
-        val save = { activity.launchCatching({ feedback(form, R.string.storage_error); update(form, isFirst(form)) }) { model.setGradeAlerts(enabled) } }
-        if (enabled) host.requestNotifications { granted ->
-            if (granted) save() else { feedback(form, R.string.notifications_denied); update(form, isFirst(form)) }
+        saveNotificationPreference(form, form.gradeAlertsFeedback, enabled) { model.setGradeAlerts(enabled) }
+    }
+
+    private fun saveNotificationPreference(form: SettingsSheetBinding, status: TextView, needsPermission: Boolean, change: suspend () -> Unit) {
+        status.tag = null
+        status.isVisible = false
+        fun showError(id: Int) {
+            update(form, isFirst(form))
+            feedback(status, id)
+        }
+        fun save() { activity.launchCatching({ showError(R.string.storage_error) }, change) }
+        if (needsPermission) host.requestNotifications { granted ->
+            if (granted) save() else showError(R.string.notifications_denied)
         } else save()
     }
 
@@ -424,7 +436,9 @@ class SettingsForms(private val activity: AppCompatActivity, private val model: 
         updateStartPage(form, state)
         updateReminders(form, state)
         updateGradeAlerts(form, state)
-        (form.feedback.tag as? Int)?.let { form.feedback.text = text(it) }
+        listOf(form.feedback, form.classRemindersFeedback, form.gradeAlertsFeedback).forEach { view ->
+            (view.tag as? Int)?.let { view.text = text(it) }
+        }
         form.accountActions.isVisible = !first
         val selected = when (state.language) {
             AppLanguage.RUSSIAN -> R.id.russian

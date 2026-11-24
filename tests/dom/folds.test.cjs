@@ -87,7 +87,12 @@ const FILES = '<div id="l4"><table class="mt univer-app-materials"><tbody>' +
 test('«Скачать все» stands in the heading row of a section with two or more files and sends only its files', () => {
   const dom = new JSDOM('<!doctype html><html><body>' + FILES + '</body></html>', {url: 'https://univer.kaznu.kz/student/umkd/321/2026/1', runScripts: 'outside-only'});
   const w = dom.window, d = w.document, sent = [];
-  w.__univerNative = message => sent.push(message);
+  // The app's keyed sender, its serializer, its listener registration and its note of the tapped heading, as
+  // MobilePageAdapter gives them to the modules (the channel's own are in download-all-channel.test.cjs).
+  w.__univerNative = message => sent.push(message); w.__univerJson = w.JSON.stringify;
+  w.__univerListen = (target, type, handler) => { target.addEventListener(type, handler); return () => target.removeEventListener(type, handler); };
+  const marked = [];
+  w.__univerMark = cell => { marked.push(cell); return {mark: 7, head: 0, count: 2}; };
   w.eval(read('univer-dom.js')); w.eval(read('univer-folds.js'));
   const before = d.body.innerHTML;
   w.__univerFoldsV1.apply('ru'); w.__univerFoldsV1.apply('ru');
@@ -102,7 +107,8 @@ test('«Скачать все» stands in the heading row of a section with two 
   trustedClick(w, button);
   assert.equal(head.getAttribute('aria-expanded'), 'true', 'the tap does not fold the section');
   assert.equal(sent.length, 1); assert.ok(sent[0].startsWith('univer-download-all:'));
-  assert.deepEqual(JSON.parse(sent[0].slice('univer-download-all:'.length)), {section: 'Конспекты лекций',
+  assert.deepEqual(marked, [head], 'the channel notes the tapped heading cell itself');
+  assert.deepEqual(JSON.parse(sent[0].slice('univer-download-all:'.length)), {section: 'Конспекты лекций', head: 0, count: 2, mark: 7,
     urls: ['https://univer.kaznu.kz/student/umkd/get/9102/321/2026/1', 'https://univer.kaznu.kz/student/umkd/get/9103/321/2026/1']},
     'a zero-size file with its type is a file; the teacher\'s link without a type is left out');
   trustedClick(w, button);
@@ -122,6 +128,8 @@ test('a section with more files than the app takes in one message has no «Ск�
     const rows = Array.from({length: count}, (_, i) => file(20000 + i, 'Файл ' + i + '.pdf', '12 Кб')).join('');
     const dom = new JSDOM('<!doctype html><html><body><div id="l4"><table class="mt univer-app-materials"><tbody><tr><th>Лекции</th></tr>' + rows + '</tbody></table></div></body></html>',
       {url: 'https://univer.kaznu.kz/student/umkd/321/2026/1', runScripts: 'outside-only'});
+    dom.window.__univerNative = () => {}; dom.window.__univerJson = dom.window.JSON.stringify; dom.window.__univerListen = (target, type, handler) => target.addEventListener(type, handler);
+    dom.window.__univerMark = () => ({mark: 1, head: 0, count: 1});
     dom.window.eval(read('univer-dom.js')); dom.window.eval(read('univer-folds.js'));
     dom.window.__univerFoldsV1.apply('ru');
     assert.equal(dom.window.document.querySelectorAll('button.univer-app-fold-all').length, shown, count + ' files');

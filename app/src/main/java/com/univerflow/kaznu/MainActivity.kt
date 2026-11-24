@@ -65,7 +65,6 @@ import com.univerflow.kaznu.domain.Notices
 import com.univerflow.kaznu.domain.ReminderSettings
 import com.univerflow.kaznu.domain.Shortcuts
 import com.univerflow.kaznu.domain.StudyFolders
-import com.univerflow.kaznu.domain.TextZoom
 import com.univerflow.kaznu.domain.GradeTotals
 import com.univerflow.kaznu.domain.ExamItem
 import com.univerflow.kaznu.domain.ExamKind
@@ -118,6 +117,7 @@ import com.univerflow.kaznu.web.AutomationController
 import com.univerflow.kaznu.web.BviStub
 import com.univerflow.kaznu.web.AutomationStatus
 import com.univerflow.kaznu.web.ChannelGuard
+import com.univerflow.kaznu.web.DownloadBatch
 import com.univerflow.kaznu.web.LinkOpening
 import com.univerflow.kaznu.web.LinkPolicy
 import com.univerflow.kaznu.web.LinkProfile
@@ -126,6 +126,7 @@ import com.univerflow.kaznu.web.MobilePageAdapter
 import com.univerflow.kaznu.web.NoticePresentation
 import com.univerflow.kaznu.web.PageCover
 import com.univerflow.kaznu.web.PageScripts
+import com.univerflow.kaznu.web.PullRefreshGuard
 import com.univerflow.kaznu.web.RetiredWebViewClient
 import com.univerflow.kaznu.web.ShortcutBridge
 import com.univerflow.kaznu.web.SingleSignOnPolicy
@@ -133,6 +134,7 @@ import com.univerflow.kaznu.web.GradesMessage
 import com.univerflow.kaznu.web.SitePolicy
 import com.univerflow.kaznu.web.Trackers
 import com.univerflow.kaznu.web.WebsiteLanguageSync
+import com.univerflow.kaznu.web.WindowCapturePolicy
 import com.univerflow.kaznu.web.captureNewWindow
 import com.univerflow.kaznu.web.configureSecureSettings
 import com.univerflow.kaznu.web.enableBackForwardCache
@@ -367,7 +369,8 @@ class MainActivity : AppCompatActivity() {
         // Home tile pins and order arrive from page taps; the validated, stored list is sent back to the page.
         // «Скачать все» and the grade report only from the page in view: never from a viewer over it or a changing or locked session.
         shortcutBridge = ShortcutBridge(binding.webView, channel, onDownloadAll = { batch ->
-            if (pageInView()) downloads.downloadAll(batch.section, batch.urls)
+            // Only through the keyed channel (ShortcutBridge drops it otherwise too): a tap the site cannot fake.
+            if (pageInView() && channel.actions) downloads.downloadAll(batch.section, batch.tap, batch.urls)
         }, onReport = { report -> if (pageInView()) report?.let(reports::offer) ?: message(R.string.report_error) },
             onCalendar = { event ->
                 if (pageInView()) when {
@@ -406,7 +409,8 @@ class MainActivity : AppCompatActivity() {
                 documents.automationStatus(it)
             }
         }, serviceRetry = { model.singleSignOnGuard.renewal() }, chooseFiles = fileChooser::show,
-        serviceSignedIn = downloads::signedIn, serviceSignedOut = { message(R.string.service_logged_out) })
+        serviceSignedIn = downloads::signedIn, serviceSignedOut = { message(R.string.service_logged_out) },
+        onLayerGone = ::documentLayerGone, returnFocus = { binding.webView })
 
     /**
      * The week the schedule page or Бакалавр read, kept for the widget, reminders and the offline schedule. Not while the
@@ -660,13 +664,23 @@ class MainActivity : AppCompatActivity() {
         bar.show()
     }
 
+    /**
+     * The closed window's layer is gone and a frame without it was drawn: only now may the protection kept for its page
+     * (Moodle, a window opened before sign-in) be lifted. A window opened since set its own, kept on while an older
+     * Moodle layer still showed under it: with that layer gone, the flag follows the open window alone.
+     */
+    private fun documentLayerGone() {
+        if (sessionChanging) return
+        if (documents.isOpen) { if (!documents.isService) lock.applyWindowSecurity(); return }
+        if (model.state.value.hasCredentials && !lock.forceSecure()) window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+    }
+
     /** The document viewer closed: back to the page where it was opened, at the same scroll position. */
     private fun documentClosed() {
         val position = documentSourcePosition
         documentSourcePosition = null
         val source = binding.webView.url
         updateDrawerLock()
-        if (model.state.value.hasCredentials && !lock.forceSecure()) window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
         if (!sessionChanging) {
             automation.resume()
             binding.webView.postDelayed({
@@ -918,33 +932,38 @@ class MainActivity : AppCompatActivity() {
             automationStatus == AutomationStatus.IDLE && !binding.noticeLoadingOverlay.isVisible
     }
 
+    private val pullGuard by lazy(LazyThreadSafetyMode.NONE) {
+        PullRefreshGuard(
+            scheduleTimeout = { binding.root.postDelayed(it, PULL_GUARD_MS) },
+            cancelTimeout = { binding.root.removeCallbacks(it) },
+            evaluate = { script, callback -> binding.webView.evaluateJavascript(script, callback) },
+            allowed = { !isDestroyed && pullAllowed() },
+            epoch = { pageEpoch },
+            currentUrl = ::currentUrl,
+            onReload = {
+                binding.root.removeCallbacks(endPullLater)
+                binding.root.postDelayed(endPullLater, PULL_TIMEOUT_MS)
+                refreshPage()
+            },
+            onStop = { if (!isDestroyed) endPull() },
+            onKept = { kept ->
+                if (!isDestroyed) message(when (kept) {
+                    PullRefreshGuard.Kept.INPUT -> R.string.refresh_kept_input
+                    PullRefreshGuard.Kept.DIALOG -> R.string.refresh_kept_dialog
+                })
+            },
+        )
+    }
+
     /** Typed text and an open window of the site stay: the page is not loaded again under them. */
     private fun pullToRefresh() {
-        val url = binding.webView.url
-        if (!pullAllowed() || !SitePolicy.trusted(url) || SitePolicy.loginPage(url)) { endPull(); return }
-        binding.root.postDelayed(endPullLater, PULL_TIMEOUT_MS)
-        val epoch = pageEpoch
-        var answered = false
-        val refresh = Runnable {
-            if (answered || isDestroyed) return@Runnable
-            answered = true
-            if (epoch == pageEpoch && pullAllowed()) refreshPage() else endPull()
-        }
-        // A page too busy to answer is the one most worth loading again.
-        binding.root.postDelayed(refresh, PULL_GUARD_MS)
-        binding.webView.evaluateJavascript(PageScripts.REFRESH_GUARD) { answer ->
-            if (answered || isDestroyed) return@evaluateJavascript
-            when (answer?.trim('"')) {
-                "edited" -> { answered = true; binding.root.removeCallbacks(refresh); endPull(); message(R.string.refresh_kept_input) }
-                "dialog" -> { answered = true; binding.root.removeCallbacks(refresh); endPull(); message(R.string.refresh_kept_dialog) }
-                else -> { binding.root.removeCallbacks(refresh); refresh.run() }
-            }
-        }
+        if (!isDestroyed) pullGuard.start()
     }
 
     private val endPullLater = Runnable { if (!isDestroyed) endPull() }
 
     private fun endPull() {
+        pullGuard.cancel()
         binding.root.removeCallbacks(endPullLater)
         if (binding.pullRefresh.isRefreshing) binding.pullRefresh.isRefreshing = false
     }
@@ -966,13 +985,12 @@ class MainActivity : AppCompatActivity() {
         }) { model.setMobileLayout(enabled) }
     }
 
-    private fun setTextZoom(percent: Int) {
-        if (TextZoom.clamp(percent) == model.state.value.textZoom) return
-        launchCatching({ message(R.string.storage_error) }) { model.setTextZoom(percent) }
+    private val setTextZoom by lazy(LazyThreadSafetyMode.NONE) {
+        TextSizeDialog.onZoomChange(lifecycleScope, model) { message(R.string.storage_error) }
     }
 
     private fun showTextSize() {
-        track(TextSizeDialog.show(this, labels(), model.state.value.textZoom, ::setTextZoom))
+        track(TextSizeDialog.show(this, labels(), model.state.value.textZoom, setTextZoom))
     }
 
     private fun printPage() {
@@ -1254,10 +1272,11 @@ class MainActivity : AppCompatActivity() {
                 if (!isUserGesture) return false
                 // A page's new window only tells where it wanted to go; that address is routed like a link.
                 captureNewWindow(this@MainActivity, resultMsg) { request ->
+                    if (!WindowCapturePolicy.shouldRoute(request)) return@captureNewWindow
                     if (!logoutNavigation.onNavigation(request)) {
                         if (!sessionChanging) websiteLanguage.onNavigation(request)
                         val url = request.url.toString()
-                        if (!route(url, request.isForMainFrame && !request.isRedirect && request.method.equals("GET", true))) binding.webView.loadUrl(url)
+                        if (!route(url, userGesture = true)) binding.webView.loadUrl(url)
                     }
                 }
                 return true
@@ -1357,7 +1376,8 @@ class MainActivity : AppCompatActivity() {
         binding.drawer.closeDrawer(GravityCompat.START, false)
         val service = saved?.getBoolean("service") ?: SingleSignOnPolicy.opensViewer(url)
         documents.open(url, model.state.value.language, saved, service = service)
-        if (service || !model.state.value.hasCredentials || lock.forceSecure()) window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        // A closed Moodle window still fading under this one shows through it: the flag stays until its layer is gone.
+        if (service || documents.keepsSecure || !model.state.value.hasCredentials || lock.forceSecure()) window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         else window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
         documents.update(model.state.value.language, model.state.value.textZoom)
         updateDrawerLock()
@@ -1487,6 +1507,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         // A view's pending runnables still run after it leaves the window: none may reach a destroyed screen.
+        pullGuard.cancel()
+        binding.root.removeCallbacks(endPullLater)
         binding.root.removeCallbacks(pageRecoveryTask)
         notices.stopChecks()
         binding.root.removeCallbacks(pageAbandoned)
@@ -1535,7 +1557,7 @@ class MainActivity : AppCompatActivity() {
         override val automationStatus get() = this@MainActivity.automationStatus
         override val inForeground get() = lock.inForeground
         override val documentOpen get() = documents.isOpen
-        override val serviceOpen get() = documents.isService
+        override val serviceOpen get() = documents.isService || documents.keepsSecure
         override val savedDataShown get() = offline.shown
         override val pageUrl get() = documents.webView?.url ?: currentUrl()
         override val pageSource get() = when {
@@ -1556,17 +1578,18 @@ class MainActivity : AppCompatActivity() {
                 StudyFolders.relative(json.optString("course"), json.optString("section"))
             }.getOrNull()
         }
-        override suspend fun materialFolders(urls: List<String>, page: String?): Map<String, String>? {
+        override val actionChannel get() = channel.actions
+        override suspend fun sectionFolders(urls: List<String>, page: String?, tap: DownloadBatch.Tap, section: String): Map<String, String>? {
             val expectedPage = page ?: return null
-            if (rendererUnavailable || sessionChanging || documents.isOpen || page != currentUrl()) return null
+            if (rendererUnavailable || sessionChanging || documents.isOpen || page != currentUrl() || !DownloadBatch.coursePage(page) || !channel.actions) return null
             val epoch = pageEpoch
             val session = sessionEpoch
-            val raw = withTimeoutOrNull(5_000) { binding.webView.evaluate(PageScripts.materialPlaces(expectedPage, urls)) } ?: return null
+            // The keyed channel's own lookup, made with built-ins no site script can swap: the batch goes only when the page
+            // lists every file under the very heading row the tap marked (with its number and text; a second heading with
+            // the same text does not count, and a heading count that changed since the tap refuses the batch).
+            val raw = withTimeoutOrNull(5_000) { binding.webView.evaluate(PageScripts.sectionPlaces(channel.senders(), expectedPage, urls, tap.mark)) } ?: return null
             if (epoch != pageEpoch || session != sessionEpoch || sessionChanging) return null
-            return runCatching {
-                val json = JSONObject(JSONTokener(raw).nextValue() as? String ?: return null)
-                urls.associateWith { url -> json.optJSONObject(url)?.let { StudyFolders.relative(it.optString("course"), it.optString("section")) } ?: StudyFolders.ROOT }
-            }.getOrNull()
+            return DownloadBatch.places(raw, urls, tap, section)?.mapValues { (_, place) -> StudyFolders.relative(place.course, place.section) }
         }
         override fun sectionQueued(section: String, started: Int, present: Int) {
             val name = if (section.length > 60) section.take(59).trimEnd() + "…" else section

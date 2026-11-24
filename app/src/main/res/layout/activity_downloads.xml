@@ -24,9 +24,9 @@
     <!-- The course: a big menu of the courses the files came from, each with its count. -->
     <com.google.android.material.button.MaterialButton android:id="@+id/downloads_subject"
         style="@style/Widget.Material3.Button.OutlinedButton" android:layout_width="match_parent"
-        android:layout_height="44dp" android:layout_marginHorizontal="12dp" android:layout_marginTop="8dp"
-        android:gravity="start|center_vertical" android:insetBottom="0dp" android:insetTop="0dp" android:maxLines="1"
-        android:ellipsize="end" android:paddingHorizontal="12dp" android:textColor="?attr/colorOnSurface"
+        android:layout_height="wrap_content" android:minHeight="48dp" android:layout_marginHorizontal="12dp" android:layout_marginTop="8dp"
+        android:gravity="start|center_vertical" android:insetBottom="0dp" android:insetTop="0dp" android:singleLine="false"
+        android:paddingHorizontal="12dp" android:textColor="?attr/colorOnSurface"
         android:visibility="gone" app:backgroundTint="@color/card_surface" app:cornerRadius="10dp" app:icon="@drawable/ic_book"
         app:iconGravity="start" app:iconSize="18dp" app:iconTint="?attr/colorOnSurfaceVariant" app:strokeColor="?attr/colorOutlineVariant" />
     <HorizontalScrollView android:id="@+id/downloads_filters_scroll" android:layout_width="match_parent"

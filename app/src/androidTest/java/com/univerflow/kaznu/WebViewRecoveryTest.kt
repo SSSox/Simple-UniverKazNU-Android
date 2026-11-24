@@ -31,6 +31,35 @@ class WebViewRecoveryTest {
         }
     }
 
+    @Test fun aNewWindowFormPostIsBlockedBeforeTransportAndNeverRouted() {
+        val retired = java.util.concurrent.CountDownLatch(1)
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity ->
+                val parent = WebView(activity)
+                val transport = parent.WebViewTransport()
+                val message = android.os.Handler(android.os.Looper.getMainLooper()) { true }.obtainMessage()
+                message.obj = transport
+                com.univerflow.kaznu.web.captureNewWindow(activity, message, timeoutMillis = 5_000, onRetired = retired::countDown) {
+                    fail("A POST in a new window must never be routed")
+                }
+                val popup = checkNotNull(transport.webView)
+                val post = object : android.webkit.WebResourceRequest {
+                    override fun getUrl() = android.net.Uri.parse("https://external.invalid/collect")
+                    override fun isForMainFrame() = true
+                    override fun isRedirect() = false
+                    override fun hasGesture() = true
+                    override fun getMethod() = "POST"
+                    override fun getRequestHeaders() = emptyMap<String, String>()
+                }
+                val blocked = popup.webViewClient.shouldInterceptRequest(popup, post)
+                assertEquals(403, blocked?.statusCode)
+                blocked?.data?.close()
+                parent.postDelayed({ parent.destroy() }, 1_000)
+            }
+            assertTrue("Blocked popup request must retire the temporary WebView", retired.await(2, TimeUnit.SECONDS))
+        }
+    }
+
     @Test fun rendererFailureShowsNativeRecoveryAndRecreatesTheSignedInScreenBySelf() {
         org.junit.Assume.assumeTrue(Build.VERSION.SDK_INT >= 26)
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->

@@ -11,6 +11,10 @@ import android.view.ViewGroup
 import android.webkit.*
 import android.widget.FrameLayout
 import android.view.View
+import android.view.ViewTreeObserver
+import android.view.accessibility.AccessibilityManager
+import android.view.accessibility.AccessibilityNodeInfo
+import android.view.inputmethod.InputMethodManager
 import com.univerflow.kaznu.R
 import com.univerflow.kaznu.domain.AppLanguage
 import com.univerflow.kaznu.domain.TextZoom
@@ -34,7 +38,54 @@ class DocumentViewer(
     private val serviceSignedIn: () -> Unit = {},
     /** The user signed out of Moodle with its own Log out; the window closes instead of signing in again. */
     private val serviceSignedOut: () -> Unit = {},
+    /**
+     * A closed window's layer has left the screen and a frame without it was drawn: protection kept for its page
+     * (FLAG_SECURE over Moodle) can be lifted now, not while the page still shows through the fade.
+     */
+    private val onLayerGone: () -> Unit = {},
+    /** Where focus goes back when the window closes if no control of the screen below had it (the source page). */
+    private val returnFocus: () -> View? = { null },
 ) {
+    // A layer that outlived a window opened over it settles through the same callback: the owner works the flag out again.
+    private val secureHold = SecureHold(onLayerGone, onLayerGone)
+    /**
+     * A closed service (Moodle) window still fades or was not yet drawn away: its screenshot protection stays, also
+     * while another window opened in its place is already on screen.
+     */
+    val keepsSecure get() = secureHold.holding
+    // The screen under the window (toolbar, page) is out of Tab and TalkBack order while the window is open.
+    private val underlay = UnderlayTraversal<View>(
+        read = { UnderlayTraversal.Traversal(it.importantForAccessibility, (it as? ViewGroup)?.descendantFocusability) },
+        write = { view, value ->
+            view.importantForAccessibility = value.importance
+            if (view is ViewGroup && value.focusability != null) view.descendantFocusability = value.focusability
+        },
+        hidden = { it.copy(importance = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS,
+            focusability = it.focusability?.let { ViewGroup.FOCUS_BLOCK_DESCENDANTS }) },
+    )
+    private val touchExploration get() =
+        (context.getSystemService(Context.ACCESSIBILITY_SERVICE) as? AccessibilityManager)?.isTouchExplorationEnabled == true
+
+    /** Runs [action] once, after the next frame of [host] is drawn (at once when nothing is on screen to draw). */
+    private fun afterNextFrame(action: () -> Unit) {
+        if (!host.isAttachedToWindow) { action(); return }
+        val observer = host.viewTreeObserver
+        var done = false
+        val listener = object : ViewTreeObserver.OnDrawListener {
+            override fun onDraw() {
+                if (done) return
+                done = true
+                // A draw listener cannot be removed while the frame is drawn; the action follows the frame.
+                host.post {
+                    if (observer.isAlive) observer.removeOnDrawListener(this)
+                    action()
+                }
+            }
+        }
+        observer.addOnDrawListener(listener)
+        host.invalidate()
+    }
+
     /** The open window's frame (bar, loading line, error panel); null while no window is open. */
     private var panel: DocumentPanel? = null
     private var paper: PageSkeleton? = null
@@ -196,7 +247,12 @@ class DocumentViewer(
         val fill = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         val stage = FrameLayout(context).apply { addView(web, fill); addView(sheet, FrameLayout.LayoutParams(fill)) }
         frame.addStage(stage)
+        val focused = host.findFocus()
+        underlay.exclude((0 until host.childCount).map(host::getChildAt), focused ?: returnFocus())
         host.addView(frame.root, FrameLayout.LayoutParams(fill))
+        // A key press must not reach the control under the window: focus moves into the window's bar.
+        focused?.clearFocus()
+        frame.focusEntry(keyboard = !host.isInTouchMode, accessibility = touchExploration)
         if (saved == null) Motion.enter(frame.root)
         update(language)
         automation?.resume()
@@ -356,10 +412,9 @@ class DocumentViewer(
         override fun onCloseWindow(window: WebView) { close() }
         override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message): Boolean {
             // Service authentication stays in the same browsing context; no POST is rebuilt.
-            if (isService) return false
-            if (!isUserGesture) return false
+            if (isService || !isUserGesture || view !== this@DocumentViewer.webView) return false
             captureNewWindow(context, resultMsg) { request ->
-                if (!request.isForMainFrame || !request.method.equals("GET", true) || request.isRedirect) return@captureNewWindow
+                if (view !== this@DocumentViewer.webView || !WindowCapturePolicy.shouldRoute(request)) return@captureNewWindow
                 if (!sessionNavigation(request)) {
                     val target = request.url.toString()
                     if (SitePolicy.printDocument(target)) this@DocumentViewer.webView?.loadUrl(target) else navigate(target)
@@ -428,6 +483,7 @@ class DocumentViewer(
     fun pause() { automation?.pause(); webView?.onPause() }
     fun close(notify: Boolean = true) {
         val hadWindow = isOpen
+        val wasService = hadWindow && isService
         isService = false; servicePending = false
         serviceLastPage = null; serviceResume = null; serviceArrived = false; serviceLoggedOut = false
         serviceTimeout?.let { webView?.removeCallbacks(it) }; serviceTimeout = null
@@ -436,10 +492,38 @@ class DocumentViewer(
         val layer = panel?.root
         webView = null
         panel = null
+        // The fading layer leaves traversal at once; the screen under it gets its order and focus back.
+        layer?.apply {
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+            descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
+            findFocus()?.clearFocus()
+        }
+        val focusBack = underlay.restore()?.takeIf { it.isAttachedToWindow && it.isShown }
+        if (focusBack != null && hadWindow) {
+            // Keyboard focus only for keyboard navigation or a control that is no field: a page or a text field
+            // refocused after a tap would bring the keyboard up over the screen the student came back to.
+            val input = focusBack is WebView || focusBack.onCheckIsTextEditor()
+            val request = FocusReturn.request(host.isInTouchMode, focusBack.isFocusableInTouchMode, input)
+            if (request) focusBack.requestFocus()
+            if (FocusReturn.hideKeyboard(request, input)) {
+                val hide = {
+                    (context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager)?.hideSoftInputFromWindow(focusBack.windowToken, 0)
+                    Unit
+                }
+                hide()
+                // A WebView asks for the keyboard after the focus call returns: put it away once more then.
+                focusBack.postDelayed(hide, 250)
+            }
+            if (touchExploration) focusBack.performAccessibilityAction(AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS, null)
+        }
+        // Screenshot protection stays while the page fades: lifted after the layer is gone and a frame without it drawn.
+        // A session that is ending (or a window opened in its place) removes the layer at once and keeps the flag.
+        val turn = if (layer != null && notify) secureHold.closing(secure = wasService) else { secureHold.cancel(); 0 }
         // The page stays in its layer while it fades; a session that is ending removes both at once.
         val remove = {
             web?.apply { (parent as? ViewGroup)?.removeView(this); destroy() }
             layer?.let(host::removeView)
+            if (turn != 0) { secureHold.removed(turn); afterNextFrame { secureHold.drawn(turn) } }
             Unit
         }
         if (layer != null && notify) Motion.leave(layer, remove) else remove()

@@ -144,6 +144,18 @@
         var key = tileKey(href);
         return key ? hiddenTiles.indexOf(key) < 0 : pins.some(function (p) { return p.url === href; });
     }
+    // The taps that pin, unpin, remove or reorder go through the keyed channel's listener registration where the app has
+    // one (MobilePageAdapter's __univerListen): taken before any site script ran, it calls the handler only for an event the
+    // browser marks trusted, so a site script that swapped addEventListener cannot call it with a lookalike of a tap.
+    // Without it (Windows, or a WebView without the keyed channel, where the app drops pins anyway) the page's own.
+    // Returns the function that removes the handler.
+    function tap(target, type, handler, options) {
+        if (typeof __univerListen === 'function') return __univerListen(target, type, handler, options);
+        target.addEventListener(type, handler, options);
+        return function () { target.removeEventListener(type, handler, options); };
+    }
+    // A pin message, serialized with the channel's own JSON taken at document start where the app has it.
+    function pinMessage(value) { return 'univer-pin:' + (typeof __univerJson === 'function' ? __univerJson(value) : JSON.stringify(value)); }
     function notify(value) {
         // Only the pin request crosses to native code, which validates and stores it; no callable host objects.
         if (typeof __univerNative === 'function') __univerNative(value);
@@ -162,7 +174,7 @@
             if (pin && !pinned(href)) pins = pins.concat([{title:title, url:href}]);
             if (!pin) pins = pins.filter(function (p) { return p.url !== href; });
         }
-        notify('univer-pin:' + JSON.stringify({pin:pin, title:title, url:href}));
+        notify(pinMessage({pin:pin, title:title, url:href}));
         // The tap shows at once, before the app's stored list comes back through configure().
         menuPinsDrawn = null;
         render();
@@ -178,7 +190,7 @@
         var button = li.querySelector(':scope>.univer-app-pin');
         if (!button) {
             button = document.createElement('button'); button.type = 'button'; button.className = 'univer-app-pin';
-            button.addEventListener('click', function (event) { request(event, button.getAttribute('aria-pressed') !== 'true', button.__univerTitle, button.__univerHref); });
+            tap(button, 'click', function (event) { request(event, button.getAttribute('aria-pressed') !== 'true', button.__univerTitle, button.__univerHref); });
             a.after(button); pinButtons.add(button);
         }
         var on = pinned(a.href), label = (on ? text().unpin : text().pin) + ': ' + title;
@@ -259,7 +271,7 @@
         // dragover repeats while the pointer rests; only a real change writes the class the adapter observes.
         trash.addEventListener('dragover', function (event) { if (!draggedTile) return; event.preventDefault(); event.dataTransfer.dropEffect = 'move'; if (!trash.classList.contains('univer-app-trash-hot')) trash.classList.add('univer-app-trash-hot'); });
         trash.addEventListener('dragleave', function (event) { if (!trash.contains(event.relatedTarget)) trash.classList.remove('univer-app-trash-hot'); });
-        trash.addEventListener('drop', function (event) {
+        tap(trash, 'drop', function (event) {
             if (!event.isTrusted || !draggedTile) return;
             event.preventDefault(); event.stopPropagation();
             var node = draggedTile; showTrash(false); draggedTile = null; discardTile(node, true);
@@ -321,13 +333,13 @@
         });
         span.addEventListener('dragover', function (event) { if (!draggedTile || draggedTile === span) return; event.preventDefault(); event.dataTransfer.dropEffect = 'move'; if (!span.classList.contains('univer-app-drop-target')) span.classList.add('univer-app-drop-target'); });
         span.addEventListener('dragleave', function (event) { if (!span.contains(event.relatedTarget)) span.classList.remove('univer-app-drop-target'); });
-        span.addEventListener('drop', function (event) {
+        tap(span, 'drop', function (event) {
             if (!event.isTrusted || !draggedTile || draggedTile === span) return;
             event.preventDefault(); event.stopPropagation(); span.classList.remove('univer-app-drop-target');
             moveTile(draggedTile, Array.from(span.parentElement.querySelectorAll(':scope>.univer-app-tile')).indexOf(span));
         });
-        handle.addEventListener('pointerdown', function (event) { touchReorder(event, span, handle); });
-        handle.addEventListener('keydown', function (event) {
+        tap(handle, 'pointerdown', function (event) { touchReorder(event, span, handle); });
+        tap(handle, 'keydown', function (event) {
             if (!event.isTrusted || !['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End'].includes(event.key)) return;
             event.preventDefault(); event.stopPropagation();
             var nodes = Array.from(span.parentElement.querySelectorAll(':scope>.univer-app-tile')), index = nodes.indexOf(span);
@@ -339,7 +351,7 @@
             span.classList.add('univer-app-pinned');
             var remove = document.createElement('button'); remove.type = 'button'; remove.className = 'univer-app-unpin';
             var label = text().remove + ': ' + title; remove.setAttribute('aria-label', label); remove.title = label;
-            remove.addEventListener('click', function (event) {
+            tap(remove, 'click', function (event) {
                 event.preventDefault(); event.stopPropagation();
                 if (!event.isTrusted) return;
                 discardTile(span, event.detail > 0);
@@ -394,26 +406,26 @@
         // A touch must not also start the browser's own drag of the draggable handle.
         handle.draggable = false;
         try { handle.setPointerCapture(id); } catch (_) { }
-        var move = function (e) { if (e.pointerId === id) drag.move(e.clientX, e.clientY); };
+        var move = function (e) { if (e.pointerId === id) drag.move(e.clientX, e.clientY); }, offs = [];
         var end = function (e) {
             if (e.pointerId !== id) return;
-            ['pointermove', 'pointerup', 'pointercancel'].forEach(function (name) { handle.removeEventListener(name, name === 'pointermove' ? move : end); });
+            offs.forEach(function (off) { off(); });
             handle.draggable = true;
             drag.end(e.type === 'pointerup');
         };
-        handle.addEventListener('pointermove', move); handle.addEventListener('pointerup', end); handle.addEventListener('pointercancel', end);
+        offs = [tap(handle, 'pointermove', move), tap(handle, 'pointerup', end), tap(handle, 'pointercancel', end)];
     }
     function longPressReorder(span, link, handle) {
         // A link is natively draggable: Android Chrome would start its own drag on a long press and cancel the touch.
         link.draggable = false;
         link.addEventListener('dragstart', function (event) { event.preventDefault(); });
-        link.addEventListener('touchstart', function (event) {
+        tap(link, 'touchstart', function (event) {
             if (!event.isTrusted || window !== window.top || event.touches.length !== 1 || span.classList.contains('univer-app-moving')) return;
             var touch = event.touches[0], x = touch.clientX, y = touch.clientY, drag = null;
-            var timer = setTimeout(function () { drag = liftTile(span, x, y); span.__univerLongPress = true; }, 380);
+            var timer = setTimeout(function () { drag = liftTile(span, x, y); span.__univerLongPress = true; }, 380), offs = [];
             var done = function () {
                 clearTimeout(timer);
-                link.removeEventListener('touchmove', move); link.removeEventListener('touchend', end); link.removeEventListener('touchcancel', end);
+                offs.forEach(function (off) { off(); }); offs = [];
             };
             var move = function (e) {
                 var point = e.touches[0];
@@ -433,7 +445,7 @@
                 // Holding without moving opens the edit mode: earlier/later arrows and unpin, like a home screen.
                 if (!moved && e.type === 'touchend') moveMode(span, handle, true);
             };
-            link.addEventListener('touchmove', move, {passive:false}); link.addEventListener('touchend', end); link.addEventListener('touchcancel', end);
+            offs = [tap(link, 'touchmove', move, {passive:false}), tap(link, 'touchend', end), tap(link, 'touchcancel', end)];
         }, {passive:true});
         // The press that lifted the tile must not also open it or show the link menu.
         link.addEventListener('click', function (event) {
@@ -452,7 +464,7 @@
             [-1, 1].forEach(function (step) {
                 var button = document.createElement('button'); button.type = 'button';
                 button.className = step < 0 ? 'univer-app-move-earlier' : 'univer-app-move-later';
-                button.addEventListener('click', function (event) {
+                tap(button, 'click', function (event) {
                     event.preventDefault(); event.stopPropagation();
                     if (!event.isTrusted || button.getAttribute('aria-disabled') === 'true') return;
                     var nodes = Array.from(span.parentElement.querySelectorAll(':scope>.univer-app-tile'));
@@ -466,7 +478,7 @@
             var discard = document.createElement('button'); discard.type = 'button'; discard.className = 'univer-app-move-remove';
             var discardLabel = text().trash + ': ' + (span.querySelector('.univer-app-tile-label')?.textContent || '');
             discard.setAttribute('aria-label', discardLabel); discard.title = discardLabel;
-            discard.addEventListener('click', function (event) {
+            tap(discard, 'click', function (event) {
                 event.preventDefault(); event.stopPropagation();
                 if (!event.isTrusted) return;
                 discardTile(span, event.detail > 0);
@@ -493,7 +505,7 @@
         index = Math.max(0, Math.min(nodes.length - 1, index)); if (from < 0 || from === index) return;
         nodes.splice(from, 1); nodes.splice(index, 0, node);
         tileOrder = nodes.map(function (tile) { return tile.querySelector('a').href; }); orderKey = JSON.stringify(tileOrder);
-        notify('univer-pin:' + JSON.stringify({order:tileOrder}));
+        notify(pinMessage({order:tileOrder}));
         render();
     }
     // The built-in tiles (through the menu's own links where it has them) and the student's pins they do not repeat.
@@ -541,7 +553,7 @@
             items.forEach(function (item) {
                 var row = control('univer-app-add-row', text().pin + ': ' + item.title);
                 row.append(linkIcon(item.href, item.title), el('span', 'univer-app-add-name', item.title), decor('univer-app-add-plus'));
-                row.addEventListener('click', function (event) {
+                tap(row, 'click', function (event) {
                     if (!event.isTrusted) return;
                     var at = Array.prototype.indexOf.call(box.querySelectorAll('.univer-app-add-row'), row);
                     request(event, true, item.title, item.href);

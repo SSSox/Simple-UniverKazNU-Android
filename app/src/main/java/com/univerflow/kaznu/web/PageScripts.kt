@@ -5,7 +5,7 @@ object PageScripts {
     /** Only names beside the exact file link, never form values or the rest of the student's page. */
     fun materialPlace(page: String, target: String) = """(function(){
         if(top!==self||location.origin!==${jsString(SitePolicy.ORIGIN)}||location.href!==${jsString(page)}||
-            !/^\/student\/umkd\/\d+\/\d{4}\/[12]\/?$/.test(location.pathname))return null;
+            !/^\/student\/umkd\/\d+\/\d{4}\/\d+\/?$/.test(location.pathname))return null;
         var target=${jsString(target)},link=Array.from(document.querySelectorAll('#l4 a.downLoad[href]')).find(a=>a.href===target);
         if(!link)return null;
         var section='';for(var row=link.closest('tr')?.previousElementSibling;row;row=row.previousElementSibling)
@@ -13,20 +13,19 @@ object PageScripts {
         var crumbs=document.querySelectorAll('#l4 tr.top>td.ct a[href*="/student/umkd/"]');
         return JSON.stringify({course:crumbs.length>1?crumbs[crumbs.length-1].textContent:'',section:section});
     })()"""
-    /** [materialPlace] for every file of a «Скачать все» in one pass: {address: {course, section}} for the links found. */
-    fun materialPlaces(page: String, targets: List<String>) = """(function(){
-        if(top!==self||location.origin!==${jsString(SitePolicy.ORIGIN)}||location.href!==${jsString(page)}||
-            !/^\/student\/umkd\/\d+\/\d{4}\/[12]\/?$/.test(location.pathname))return null;
-        var wanted=[${targets.joinToString(",") { jsString(it) }}],found={};
-        var crumbs=document.querySelectorAll('#l4 tr.top>td.ct a[href*="/student/umkd/"]'),course=crumbs.length>1?crumbs[crumbs.length-1].textContent:'';
-        Array.from(document.querySelectorAll('#l4 a.downLoad[href]')).forEach(function(link){
-            if(wanted.indexOf(link.href)<0||found[link.href])return;
-            var section='';for(var row=link.closest('tr')?.previousElementSibling;row;row=row.previousElementSibling)
-                if(row.cells?.length===1&&row.cells[0].tagName==='TH'){section=row.cells[0].textContent;break;}
-            found[link.href]={course:course,section:section};
-        });
-        return JSON.stringify(found);
-    })()"""
+    /**
+     * Where the open UMKD page lists [targets], for «Скачать все»: {count, files: {address: {course, section, head,
+     * tapped}}} (see [DownloadBatch.places]), read by the keyed channel's lookup (univer-channel.js) with built-ins taken
+     * at document start, so a site script that swapped querySelectorAll, a getter or JSON.stringify cannot make up the
+     * answer. [mark] is the number the channel gave the tapped heading row; tapped says whether a file's heading is that
+     * very row. [senders] is [ChannelGuard.senders]; without the keyed channel there is no lookup and the answer is null.
+     */
+    fun sectionPlaces(senders: String, page: String, targets: List<String>, mark: Int): String {
+        val list = targets.joinToString(",") { jsString(it) }
+        // tests/dom/download-all-channel.test.cjs reads these literals: keep them plain and concatenated.
+        return "(function(){var s=$senders;return s&&s.keyed===true&&typeof s.places==='function'?" +
+            "s.places(${jsString(page)},[$list],$mark):null;})()"
+    }
     /**
      * The visible page heading: the current #tools link or the first visible heading
      * (the last breadcrumb link of an adapted heading). No form data or text beyond it is returned.
@@ -69,7 +68,17 @@ object PageScripts {
         for(var j=0;j<fields.length;j++){
             var f=fields[j];
             if(f.disabled||f.readOnly||own(f))continue;
-            if(f.tagName==='SELECT'){for(var k=0;k<f.options.length;k++)if(f.options[k].selected!==f.options[k].defaultSelected)return 'edited';continue;}
+            if(f.tagName==='SELECT'){
+                var opts=f.options;
+                if(f.multiple){for(var k=0;k<opts.length;k++)if(opts[k].selected!==opts[k].defaultSelected)return 'edited';}
+                else{
+                    var def=-1;
+                    for(var k=0;k<opts.length;k++)if(opts[k].defaultSelected)def=k;
+                    if(def<0&&!(f.size>1))for(var m=0;m<opts.length;m++){var o=opts[m],p=o.parentElement;if(!o.disabled&&!(p&&p.tagName==='OPTGROUP'&&p.disabled)){def=m;break;}}
+                    if(f.selectedIndex!==def)return 'edited';
+                }
+                continue;
+            }
             var type=(f.type||'').toLowerCase();
             if(type==='hidden'||type==='submit'||type==='button'||type==='reset'||type==='image')continue;
             if(type==='checkbox'||type==='radio'){if(f.checked!==f.defaultChecked)return 'edited';continue;}

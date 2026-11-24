@@ -85,7 +85,7 @@ class AutomaticRecoveryTest {
                     recovered.add(url)
                     // The ended session's page is redirected by the site to its login form.
                     web.loadUrl(if (url.endsWith("/student/umkd/")) "https://univer.kaznu.kz/user/login" else url)
-                }) { status = it }
+                }, sessionOver = { true }) { status = it }
                 web.webViewClient = object : WebViewClient() {
                     override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse {
                         var mime = "text/html"
@@ -156,7 +156,7 @@ class AutomaticRecoveryTest {
                 web = WebView(activity)
                 activity.setContentView(web)
                 web.settings.javaScriptEnabled = true
-                controller = AutomationController(web, model, activity.lifecycleScope, recover = { web.loadUrl(it) }) { status = it }
+                controller = AutomationController(web, model, activity.lifecycleScope, recover = { web.loadUrl(it) }, sessionOver = { true }) { status = it }
                 web.webViewClient = object : WebViewClient() {
                     override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse {
                         val body = if (request.url.path == "/fixture/signed-in") { confirmations.incrementAndGet(); signedIn } else notice

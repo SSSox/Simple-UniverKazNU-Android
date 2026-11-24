@@ -92,21 +92,34 @@
     }
     // The button is a child of the heading's row, not of the heading: the heading's text names the fold and the folder.
     // The app takes at most 200 files in one message, so a larger section has no button rather than one that does nothing.
+    // The button shows only where the app takes the message: the keyed channel with its serializer and its listener
+    // registration (MobilePageAdapter's __univerJson and __univerListen, null on a WebView without document-start scripts
+    // and in a document window). Both were taken before any site script ran, so a swapped JSON.stringify cannot change
+    // the message and a swapped addEventListener never gets the handler to call with a lookalike of a tap.
+    function serializer() { return typeof __univerNative === 'function' && typeof __univerJson === 'function' ? __univerJson : null; }
+    function listener() { return typeof __univerListen === 'function' ? __univerListen : null; }
+    // The channel's own note of the tapped heading row (MobilePageAdapter's __univerMark): its number among the rows of
+    // #l4 with one TH cell, how many there are, and a number that names this very row to the app's lookup. The lookup
+    // counts the same way with the same built-ins, and the app refuses the batch unless the count and the row agree.
+    function marker() { return typeof __univerMark === 'function' ? __univerMark : null; }
     function allButton(record) {
-        var button = record.all, count = record.head.tagName === 'TH' ? sectionFiles(record.items).length : 0;
+        var button = record.all, count = record.head.tagName === 'TH' && serializer() && listener() && marker() ? sectionFiles(record.items).length : 0;
         if (count < 2 || count > 200) { if (button) { button.remove(); record.all = null; } return; }
         if (!button) {
             button = record.all = document.createElement('button'); button.type = 'button'; button.className = 'univer-app-fold-all';
-            button.addEventListener('click', function (event) {
+            // Only the student's own tap downloads: the channel calls this for a click the browser marks trusted, nothing else.
+            listener()(button, 'click', function (event) {
                 event.preventDefault(); event.stopPropagation();
-                // Only the student's own tap downloads: a page script cannot dispatch a trusted click.
                 if (!event.isTrusted) return;
                 // A double tap sends the section once.
-                var urls = sectionFiles(record.items), now = performance.now();
+                var urls = sectionFiles(record.items), now = performance.now(), json = serializer();
                 if (record.sent != null && now - record.sent < 1500) return;
                 record.sent = now;
-                if (urls.length && typeof __univerNative === 'function')
-                    __univerNative('univer-download-all:' + JSON.stringify({section:nameOf(record.head), urls:urls}));
+                // The serializer taken at document start: a JSON.stringify or toJSON the site swapped in cannot change it.
+                // The app checks again that every address belongs to this section of the open page.
+                var mark = marker(), tap = urls.length && json && mark ? mark(record.head) : null;
+                var message = tap ? json({section:nameOf(record.head), head:tap.head, count:tap.count, mark:tap.mark, urls:urls}) : null;
+                if (typeof message === 'string') __univerNative('univer-download-all:' + message);
             });
         }
         var row = record.head.parentNode, t = text();
