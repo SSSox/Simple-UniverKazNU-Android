@@ -21,7 +21,11 @@ import com.univerflow.kaznu.web.RecoveryBackoff
 import com.univerflow.kaznu.web.SessionGuard
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.InternalCoroutinesApi
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.job
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
@@ -110,11 +114,41 @@ class UniverViewModel(private val repository: SessionRepository) : ViewModel() {
         }.await()
 
     // Like [retained]: an accepted save/logout finishes even when the Activity that asked is recreated.
-    private suspend fun <T> sessionChange(action: suspend () -> T): T =
+    private suspend fun <T> sessionChange(done: () -> Unit = {}, action: suspend () -> T): T =
         viewModelScope.async(Dispatchers.Main.immediate, start = CoroutineStart.UNDISPATCHED) {
-            initialization.await()
-            changes.withLock { action() }
+            try {
+                initialization.await()
+                changes.withLock { action() }
+            } finally { done() }
         }.await()
+
+    /**
+     * An unlock check: like [sessionChange], but the asker's cancellation (the pad hidden or entered again) cancels the
+     * check too, so a dismissed pad never leaves a guess (PBKDF2) still to start. A PIN change or removal is an accepted
+     * settings operation instead and, like a save, outlives its screen ([sessionChange]). A vault call
+     * that already ran still answers ([com.univerflow.kaznu.data.committedOn]); its follow-up then runs in [settle].
+     */
+    @OptIn(InternalCoroutinesApi::class)
+    private suspend fun <T> verification(done: () -> Unit = {}, action: suspend () -> T): T {
+        val asker = currentCoroutineContext().job
+        val work = viewModelScope.async(Dispatchers.Main.immediate + com.univerflow.kaznu.data.VerificationAsker(asker),
+            start = CoroutineStart.UNDISPATCHED) {
+            try {
+                initialization.await()
+                changes.withLock {
+                    // The asker may be cancelled (the pad hidden) while this waited; then no guess may start.
+                    asker.ensureActive()
+                    ensureActive()
+                    action()
+                }
+            } finally { done() }
+        }
+        // Cancelled together with the asker, at once: not only once the asker resumes from await, by which time the
+        // vault's dispatcher could already have started the guess.
+        val link = asker.invokeOnCompletion(onCancelling = true, invokeImmediately = true) { work.cancel() }
+        return try { work.await() } catch (cancelled: CancellationException) { work.cancel(); throw cancelled }
+        finally { link.dispose() }
+    }
 
     suspend fun save(login: String, password: String) = sessionChange {
         val next = Credentials(login.trim(), password)
@@ -346,20 +380,41 @@ class UniverViewModel(private val repository: SessionRepository) : ViewModel() {
         return result
     }
 
+    /** How the private copies are taken; a test sees them through this. */
+    internal var copyDigits: (CharArray) -> CharArray = { it.copyOf() }
+
     /**
      * The vault reads private copies of the entered digits, taken before anything suspends and erased once the change
      * is over. The change runs in viewModelScope and outlives a recreated screen (rotation, theme or language change),
      * which erases its own arrays when its work is cancelled: reading those, a check would guess, or store, blank digits.
      */
-    private suspend fun <T> withDigits(first: CharArray, second: CharArray?, action: suspend (CharArray, CharArray?) -> T): T {
-        val one = first.copyOf()
-        val two = second?.copyOf()
-        return sessionChange { try { action(one, two) } finally { one.fill('\u0000'); two?.fill('\u0000') } }
+    private suspend fun <T> withDigits(
+        first: CharArray, second: CharArray?, cancellable: Boolean = false,
+        action: suspend (CharArray, CharArray?) -> T,
+    ): T {
+        val one = copyDigits(first)
+        val two = second?.let(copyDigits)
+        // Erased by the work itself, whether it reached the vault or was cancelled while waiting for start-up or the lock.
+        val wipe = { one.fill('\u0000'); two?.fill('\u0000'); Unit }
+        val change: suspend () -> T = { action(one, two) }
+        return if (cancellable) verification(wipe, change) else sessionChange(wipe, change)
     }
 
-    suspend fun unlockWithPin(pin: CharArray): UnlockResult = withDigits(pin, null) { digits, _ -> handle(repository.unlockWithPin(digits)) }
+    /**
+     * What follows a finished vault call: once the repository has answered (opened, wiped, changed), memory and state
+     * must follow it even if the work is cancelled now. The vault call itself (PBKDF2) stays cancellable.
+     */
+    private suspend fun <T> settle(block: suspend () -> T): T = withContext(NonCancellable) { block() }
 
-    suspend fun unlockWithBiometric(cipher: javax.crypto.Cipher): UnlockResult = sessionChange { handle(repository.unlockWithBiometric(cipher)) }
+    suspend fun unlockWithPin(pin: CharArray): UnlockResult = withDigits(pin, null, cancellable = true) { digits, _ ->
+        val result = repository.unlockWithPin(digits)
+        settle { handle(result) }
+    }
+
+    suspend fun unlockWithBiometric(cipher: javax.crypto.Cipher): UnlockResult = verification {
+        val result = repository.unlockWithBiometric(cipher)
+        settle { handle(result) }
+    }
 
     /** The cipher for the biometric prompt, or null when biometrics cannot unlock (not enabled, or the phone's biometrics changed). */
     suspend fun biometricUnlockCipher(): javax.crypto.Cipher? = sessionChange {
@@ -387,12 +442,18 @@ class UniverViewModel(private val repository: SessionRepository) : ViewModel() {
     }
 
     suspend fun changePin(oldPin: CharArray, newPin: CharArray): UnlockResult =
-        withDigits(oldPin, newPin) { old, new -> handle(repository.changePin(old, new!!)) }
+        withDigits(oldPin, newPin) { old, new ->
+            val result = repository.changePin(old, new!!)
+            settle { handle(result) }
+        }
 
     suspend fun disableLock(pin: CharArray): UnlockResult = withDigits(pin, null) { digits, _ ->
-        val result = handle(repository.disableLock(digits))
-        if (result is UnlockResult.Success) mutableState.update { it.copy(lock = it.lock.copy(enabled = false, biometric = false)) }
-        result
+        val disabled = repository.disableLock(digits)
+        settle {
+            val result = handle(disabled)
+            if (result is UnlockResult.Success) mutableState.update { it.copy(lock = it.lock.copy(enabled = false, biometric = false)) }
+            result
+        }
     }
 
     suspend fun biometricEnrollCipher() = sessionChange { repository.biometricEnrollCipher() }

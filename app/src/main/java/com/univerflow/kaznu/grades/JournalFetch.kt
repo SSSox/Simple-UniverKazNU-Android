@@ -24,9 +24,14 @@ object JournalFetch {
     private const val MAX_BYTES = 4 * 1024 * 1024
     private const val READ_NANOS = 60_000_000_000L
 
-    /** [current]: false once a sign-out came after the request began, so its renewed cookie must not revive the session. */
-    fun get(userAgent: String, cookies: CookieManager = CookieManager.getInstance(), current: () -> Boolean = { true }): JournalPage {
-        val cookie = cookies.getCookie(ADDRESS)?.takeIf { it.isNotBlank() } ?: return JournalPage.SignedOut
+    /**
+     * [header]: the Cookie header to send, read from [cookies] by default; a caller that names the session it asks
+     * about passes its own snapshot. [current]: false once a sign-out came after the request began, so its renewed
+     * cookie must not revive the session.
+     */
+    fun get(userAgent: String, cookies: CookieManager = CookieManager.getInstance(), current: () -> Boolean = { true },
+            header: String? = cookies.getCookie(ADDRESS)): JournalPage {
+        val cookie = header?.takeIf { it.isNotBlank() } ?: return JournalPage.SignedOut
         val connection = URL(ADDRESS).openConnection() as HttpURLConnection
         return try {
             connection.instanceFollowRedirects = false

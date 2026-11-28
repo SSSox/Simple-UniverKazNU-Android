@@ -46,5 +46,24 @@ object LinkPolicy {
     fun handBack(url: String?): Boolean =
         SitePolicy.resumable(url) || SitePolicy.materialFile(url) || SingleSignOnPolicy.moodleResumable(url)
 
+    /**
+     * A file the link window was handed as a download, which may come from a navigation no one tapped: it may only be
+     * offered to the user, and only an https file of another site. Univer and Moodle never leave this way: logout,
+     * language, sign-in, notices and session keys included, on any port, with or without a trailing DNS dot, and under
+     * a name written in front of that host (www, or any other label). Exact-origin checks for trusted navigation stay
+     * as they are.
+     */
+    fun download(url: String?): Boolean =
+        https(url) && SitePolicy.external(url) && !SitePolicy.trusted(url) && !SingleSignOnPolicy.moodle(url) && !ownHost(url)
+
+    /** Univer's and Moodle's hostnames. Compared by name only: case, a trailing DNS dot and any labels in front ignored. */
+    private val OWN_HOSTS = setOf("univer.kaznu.kz", "dl.kaznu.kz", "dl.kaznu.edu.kz")
+
+    private fun ownHost(url: String?): Boolean = runCatching {
+        val host = URI(url!!).host ?: return true
+        val name = host.lowercase().trimEnd('.')
+        OWN_HOSTS.any { name == it || name.endsWith(".$it") }
+    }.getOrDefault(true)
+
     private fun https(url: String?) = runCatching { URI(url!!).scheme.equals("https", true) }.getOrDefault(false)
 }

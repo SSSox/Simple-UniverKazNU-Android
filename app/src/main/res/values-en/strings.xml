@@ -315,6 +315,8 @@
     <string name="link_failed">The page didn\'t open. Check the connection and try again.</string>
     <string name="link_certificate">The site\'s certificate isn\'t valid, so the page wasn\'t opened.</string>
     <string name="link_blocked">This address can\'t be opened in the app.</string>
+    <string name="link_file">%1$s: “%2$s”. Opens in another app.</string>
+    <string name="link_file_unnamed">%1$s. Opens in another app.</string>
     <!-- Grade report: the journal's «Поделиться успеваемостью», drawn as PDF or PNG. -->
     <string name="report_dialog_title">Share grades</string>
     <string name="report_pdf">PDF file: for printing and email</string>

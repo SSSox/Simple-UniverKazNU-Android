@@ -48,6 +48,21 @@
     'use strict';
     if (location.origin !== 'https://univer.kaznu.kz' || window.__univerAttendanceV1) return;
     var dom = window.__univerDomV1, clean = dom.clean, ownRows = dom.ownRows, el = dom.el, setText = dom.setText;
+    function canAct() {
+        if (typeof __univerActions === 'boolean') return __univerActions;
+        return typeof __univerNative === 'function';
+    }
+    function deliver(prefix, value) {
+        if (typeof __univerPost === 'function') { __univerPost(prefix, value); return; }
+        var body;
+        try { body = (typeof __univerJson === 'function' ? __univerJson : JSON.stringify)(value); } catch (e) { return; }
+        if (typeof body === 'string' && typeof __univerNative === 'function') __univerNative(prefix + body);
+    }
+    function onTap(node, handler) {
+        var run = function (event) { if (event && event.isTrusted) handler(event); };
+        if (typeof __univerListen === 'function') __univerListen(node, 'click', run);
+        else node.addEventListener('click', run);
+    }
     var reader = window.__univerGradeReadV1, scores = reader.scores;
     var selected = 'all', language = 'ru', state = null, selectedCourse = 'all';
     var hidden = new Map(), labels = new Map(), owned = [], identities = new WeakMap(), sequence = 0;
@@ -543,7 +558,7 @@
         state.caption.textContent = t.filter; state.note.textContent = t.note; state.note.hidden = selected === 'all';
         setText(state.share, t.report);
         var graded = groups.some(group => group.heading && group.overall && scores(clean(group.overall)).length);
-        dom.setHidden(state.share, typeof __univerNative !== 'function' || !/^\/student\/attendance\/full(\/|$)/.test(location.pathname) || !graded);
+        dom.setHidden(state.share, !canAct() || !/^\/student\/attendance\/full(\/|$)/.test(location.pathname) || !graded);
         dom.setHidden(state.goal, !graded || selected !== 'all' || selectedCourse !== 'all');
         setText(state.goalCaption, t.goal); state.goal.setAttribute('aria-label', t.goal);
         state.goal.querySelectorAll('button[data-goal]').forEach(button => {
@@ -570,7 +585,7 @@
         var note = el('p', 'univer-app-attendance-filter-note'), summaryList = el('section', 'univer-app-attendance-overview');
         // The report for printing or sending (a parent, a curator) is drawn by the app from every course's totals.
         var share = el('button', 'univer-app-attendance-report'); share.type = 'button'; share.hidden = true;
-        share.addEventListener('click', event => { if (event.isTrusted && typeof __univerNative === 'function') __univerNative('univer-report:' + JSON.stringify(reportData())); });
+        onTap(share, function () { deliver('univer-report:', reportData()); });
         // The level to aim at (a parent's question: how far is «Отлично»?). The hints and the report count to it; it is
         // chosen with all courses in view and kept for each course.
         var goal = el('div', 'univer-app-goal'), goalCaption = el('p', 'univer-app-goal-caption'), goalList = el('div', 'univer-app-goal-list');

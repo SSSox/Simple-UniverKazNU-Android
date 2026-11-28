@@ -9,6 +9,9 @@ import com.univerflow.kaznu.domain.FileKind
 import com.univerflow.kaznu.domain.FileKinds
 import com.univerflow.kaznu.domain.TextSearch
 import com.univerflow.kaznu.preview.TextExtract
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.ByteArrayInputStream
@@ -121,6 +124,42 @@ class DownloadSearchTest {
         assertEquals(listOf("a", "b", "c"), DownloadList.view(records, "", null, null, null, DownloadList.Order.DATE).records.map { it.id })
         assertEquals(listOf("b", "a", "c"), DownloadList.view(records, "", null, null, null, DownloadList.Order.SIZE).records.map { it.id })
         assertEquals(listOf("c", "a", "b"), DownloadList.view(records, "", null, null, null, DownloadList.Order.NAME).records.map { it.id })
+    }
+
+    /** Back on the screen past midnight with the same records and filters: the date groups are drawn again for the new day. */
+    @Test fun theRenderKeyChangesAtLocalMidnightSoDateGroupsAreRedrawn() {
+        val zone = java.util.TimeZone.getTimeZone("Asia/Almaty")
+        val calendar = java.util.Calendar.getInstance(zone).apply { clear(); set(2026, java.util.Calendar.NOVEMBER, 24, 23, 59) }
+        val beforeMidnight = calendar.timeInMillis
+        val afterMidnight = beforeMidnight + 2 * 60_000L
+        val laterThatNight = beforeMidnight + 60_000L - 1
+        val records = listOf(DownloadRecord("a", fileName = "a.pdf", started = beforeMidnight - 3_600_000L))
+        fun key(now: Long) = DownloadList.RenderKey(records, "", null, null, false, 0, 0L, DownloadList.day(now, zone))
+        assertEquals("Within one day the cached list is reused", key(beforeMidnight), key(laterThatNight))
+        assertNotEquals("A new local day draws the list again", key(beforeMidnight), key(afterMidnight))
+        // The groups the redraw shows really are different.
+        assertEquals(DownloadList.Period.TODAY, DownloadList.period(records[0].started, beforeMidnight, zone))
+        assertEquals(DownloadList.Period.YESTERDAY, DownloadList.period(records[0].started, afterMidnight, zone))
+    }
+
+    /** Whatever sequence of reads, re-reads, removals and oversized texts, the kept texts stay within both limits. */
+    @Test fun textCacheStaysWithinItsCharacterBudgetAfterEveryEviction() {
+        val random = java.util.Random(7)
+        val cache = DownloadList.TextCache(maxFiles = 5, maxCharacters = 1_000)
+        repeat(5_000) {
+            val id = "id" + random.nextInt(12)
+            when (random.nextInt(6)) {
+                0 -> cache.remove(id)
+                1 -> cache.yieldTo(id)
+                2 -> cache.get(id)
+                else -> cache.put(id, DownloadList.FileText("Ёß".repeat(random.nextInt(650))))
+            }
+            val kept = cache.snapshot().values.sumOf { it.text.length }
+            assertTrue("Characters kept: $kept", kept <= 1_000)
+            assertTrue("Files kept: ${cache.size}", cache.size <= 5)
+            // The folded copy is the same length as the text, so the budget also bounds both strings together.
+            cache.snapshot().values.forEach { assertEquals(it.text.length, it.folded.length) }
+        }
     }
 
     /** The search reads a text only when it needs it, and the map of read texts cannot grow past its budget. */
@@ -312,5 +351,115 @@ class DownloadSearchTest {
         assertEquals(listOf(running, overnight, yesterday), sorted)
         assertEquals(listOf(DownloadList.Period.TODAY, DownloadList.Period.TODAY, DownloadList.Period.YESTERDAY),
             sorted.map { DownloadList.period(it.displayTime, now, zone) })
+    }
+
+    @Test fun precomputedSearchKeyIsBuiltOnceAndPresentMatchesViewAndCountsOffMainThread() = runBlocking {
+        val a = DownloadRecord("a", fileName = "Учёба Лекция 1.pdf", source = "Психология (курс)", started = 3, total = 30, state = DownloadState.COMPLETED, uri = "content://x/a")
+        val b = DownloadRecord("b", fileName = "Задание.docx", source = "Социология", started = 2, total = 90, state = DownloadState.COMPLETED, uri = "content://x/b")
+        val c = DownloadRecord("c", fileName = "Отчёт.pdf", source = "Физика", started = 1, total = 10, state = DownloadState.COMPLETED, uri = "content://x/c")
+        assertSame("searchKey is cached per record instance", a.searchKey, a.searchKey)
+        assertEquals("учеба лекция 1.pdf психология (курс)", a.searchKey)
+        assertTrue(FileKinds.matchesQuery(a, "УЧЕБА психология"))
+        assertFalse(FileKinds.matchesQuery(a, "учеба социология"))
+
+        val cache = DownloadList.TextCache()
+        val textB = cache.put("b", DownloadList.FileText("Глава про учёбу и память."))
+        val textC = cache.put("c", DownloadList.FileText("Механика и динамика."))
+        val scan = DownloadList.TextScan("учеб")
+        val records = listOf(a, b, c)
+        val snapshotTexts = cache.copy()
+        val snapshotScan = scan.snapshot("учеб")
+
+        // Filtering runs safely off the main thread on immutable snapshots while cache/scan mutate on the caller thread.
+        val job = async(Dispatchers.Default) {
+            DownloadList.present(records, "учеб", FileKind.WORD, null, snapshotTexts, DownloadList.Order.DATE, snapshotScan)
+        }
+        cache.put("d", DownloadList.FileText("Ещё один текст"))
+        val presented = job.await()
+        scan.remember(presented.checked)
+
+        val expectedView = DownloadList.view(records, "учеб", FileKind.WORD, null, snapshotTexts, DownloadList.Order.DATE, scan)
+        val expectedCounts = DownloadList.kindCounts(records, "учеб", null, snapshotTexts, scan)
+        assertEquals(expectedView.records, presented.view.records)
+        assertEquals(expectedView.snippets, presented.view.snippets)
+        assertEquals(expectedCounts, presented.counts)
+        assertEquals(mapOf(FileKind.PDF to 1, FileKind.WORD to 1), presented.counts)
+        assertEquals(setOf("b", "c"), presented.checked.keys)
+        assertEquals("учёб", presented.checked.getValue("b").second?.let { it.text.substring(it.start, it.end) })
+        assertNull(presented.checked.getValue("c").second)
+
+        // A second pass with the same FileText references reuses the remembered results without re-checking them.
+        val second = DownloadList.present(records, "учеб", null, null, snapshotTexts, DownloadList.Order.DATE, scan.snapshot("учеб"))
+        assertTrue("unchanged cached texts are not scanned again", second.checked.isEmpty())
+        assertEquals(listOf("a", "b"), second.view.records.map { it.id })
+        assertSame(textB, snapshotTexts["b"])
+        assertSame(textC, snapshotTexts["c"])
+    }
+
+    @Test fun evictedFileTextsAreNotRetainedByTextScanWhileEvictedMatchesRemainVisible() {
+        val books = listOf(
+            record("m1"), // match evaluated via scan.read, then evicted
+            record("x1"), // miss evaluated via present + remember, then evicted
+            record("m2"), // match evaluated via present + remember, then evicted
+            record("k1"), // stays in cache to evict earlier entries
+            record("k2"),
+        )
+        val cache = DownloadList.TextCache(maxFiles = 2, maxCharacters = 10_000)
+        val scan = DownloadList.TextScan("энтропия")
+
+        fun putAndRead(id: String, body: String): java.lang.ref.WeakReference<DownloadList.FileText> {
+            val entry = cache.put(id, DownloadList.FileText(body))
+            scan.read(id, entry)
+            return java.lang.ref.WeakReference(entry)
+        }
+        fun putAndPresent(id: String, body: String): java.lang.ref.WeakReference<DownloadList.FileText> {
+            val entry = cache.put(id, DownloadList.FileText(body))
+            val presented = DownloadList.present(books, "энтропия", null, null, cache.copy(), DownloadList.Order.DATE, scan.snapshot("энтропия"))
+            scan.remember(presented.checked)
+            return java.lang.ref.WeakReference(entry)
+        }
+
+        val evictedReadMatch = putAndRead("m1", "Глава 1: энтропия и тепло " + "a".repeat(200))
+        val evictedPresentMiss = putAndPresent("x1", "Механика без совпадений " + "b".repeat(200))
+        val evictedPresentMatch = putAndPresent("m2", "Глава 2: энтропия и порядок " + "c".repeat(200))
+        // Two newer reads overflow maxFiles = 2, evicting m1, x1 and m2 from TextCache.
+        putAndRead("k1", "Нейтральный текст 1")
+        putAndRead("k2", "Нейтральный текст 2")
+
+        assertFalse("m1" in cache)
+        assertFalse("x1" in cache)
+        assertFalse("m2" in cache)
+
+        // Evicted FileText instances (both hits and misses) must be reclaimable while TextScan stays alive.
+        val refs = listOf(evictedReadMatch, evictedPresentMiss, evictedPresentMatch)
+        for (attempt in 0 until 60) {
+            if (refs.all { it.get() == null }) break
+            System.gc()
+            System.runFinalization()
+            Thread.sleep(15)
+        }
+        assertNull("evicted match FileText from read() must not be pinned by TextScan", evictedReadMatch.get())
+        assertNull("evicted miss FileText must not be pinned by TextScan", evictedPresentMiss.get())
+        assertNull("evicted match FileText from present()/remember() must not be pinned by TextScan", evictedPresentMatch.get())
+
+        // Evicted matches stay visible with their snippets in view(), present() and kindCounts(); evicted misses do not.
+        val view = DownloadList.view(books, "энтропия", null, null, cache.snapshot(), DownloadList.Order.NAME, scan)
+        assertEquals(listOf("m1", "m2"), view.records.map { it.id })
+        assertEquals("энтропия", view.snippets.getValue("m1").let { it.text.substring(it.start, it.end) })
+        assertEquals("энтропия", view.snippets.getValue("m2").let { it.text.substring(it.start, it.end) })
+
+        val presented = DownloadList.present(books, "энтропия", null, null, cache.copy(), DownloadList.Order.NAME, scan.snapshot("энтропия"))
+        assertEquals(listOf("m1", "m2"), presented.view.records.map { it.id })
+        assertEquals(view.snippets, presented.view.snippets)
+        assertEquals(mapOf(FileKind.PDF to 2), presented.counts)
+        assertEquals(mapOf(FileKind.PDF to 2), DownloadList.kindCounts(books, "энтропия", null, cache.snapshot(), scan))
+        assertTrue("evicted files are not re-queued for the same query", scan.pending(books, cache).isEmpty())
+
+        // A fresh FileText instance for the same id gets a new token and is re-evaluated rather than returning a stale result.
+        cache.put("x1", DownloadList.FileText("Обновлённый текст: энтропия"))
+        val updated = DownloadList.present(books, "энтропия", null, null, cache.copy(), DownloadList.Order.NAME, scan.snapshot("энтропия"))
+        scan.remember(updated.checked)
+        assertEquals(listOf("m1", "m2", "x1"), updated.view.records.map { it.id })
+        assertEquals(setOf("x1"), updated.checked.keys)
     }
 }

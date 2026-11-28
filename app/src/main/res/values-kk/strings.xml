@@ -314,6 +314,8 @@
     <string name="link_failed">Бет ашылмады. Қосылымды тексеріп, қайталап көріңіз.</string>
     <string name="link_certificate">Сайттың сертификаты жарамсыз, сондықтан бет ашылмады.</string>
     <string name="link_blocked">Бұл мекенжайды қолданбада ашу мүмкін емес.</string>
+    <string name="link_file">%1$s: «%2$s». Басқа қолданбада ашылады.</string>
+    <string name="link_file_unnamed">%1$s. Басқа қолданбада ашылады.</string>
     <!-- Grade report: the journal's «Поделиться успеваемостью», drawn as PDF or PNG. -->
     <string name="report_dialog_title">Үлгерімді бөлісу</string>
     <string name="report_pdf">PDF файл: басып шығаруға және поштаға</string>

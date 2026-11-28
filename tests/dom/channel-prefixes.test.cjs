@@ -11,7 +11,12 @@ function kotlinFiles(dir) {
 test('every message prefix the app reads is let through by the keyed sender', () => {
   const adapter = fs.readFileSync('app/src/main/java/com/univerflow/kaznu/web/MobilePageAdapter.kt', 'utf8');
   const allowed = new Set([...adapter.match(/var k=\[([^\]]*)\]/)[1].matchAll(/'(univer-[a-z-]+:)'/g)].map(m => m[1]));
+  const channel = fs.readFileSync('app/src/main/assets/univer-channel.js', 'utf8');
+  const posted = new Set([...channel.match(/var k=\[([^\]]*)\]/)[1].matchAll(/'(univer-[a-z-]+:)'/g)].map(m => m[1]));
   const read = new Set(kotlinFiles('app/src/main/java').flatMap(f => [...fs.readFileSync(f, 'utf8').matchAll(/PREFIX = "(univer-[a-z-]+:)"/g)].map(m => m[1])));
   assert.ok(read.size >= 7);
   assert.deepEqual([...read].filter(p => !allowed.has(p)), []);
+  assert.deepEqual([...posted].sort(), [...allowed].sort());
+  const tapOf = source => source.match(/var tap=\{([^}]*)\}/)[1].replace(/\s/g, '');
+  assert.equal(tapOf(channel), tapOf(adapter), 'the raw sender and the modules refuse the same tap prefixes');
 });

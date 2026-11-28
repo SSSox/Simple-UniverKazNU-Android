@@ -321,6 +321,8 @@
     <string name="link_failed">Страница не открылась. Проверьте подключение и попробуйте ещё раз.</string>
     <string name="link_certificate">У сайта недействительный сертификат, поэтому страница не открыта.</string>
     <string name="link_blocked">Этот адрес нельзя открыть в приложении.</string>
+    <string name="link_file">%1$s: «%2$s». Откроется вне приложения.</string>
+    <string name="link_file_unnamed">%1$s. Откроется вне приложения.</string>
     <!-- Grade report: the journal's «Поделиться успеваемостью», drawn as PDF or PNG. -->
     <string name="report_dialog_title">Поделиться успеваемостью</string>
     <string name="report_pdf">PDF-файл: для печати и почты</string>

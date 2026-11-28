@@ -18,6 +18,10 @@ import com.univerflow.kaznu.domain.UnlockResult
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.job
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -37,9 +41,7 @@ class LocalSessionRepository(
 ) : SessionRepository {
     private val storage = Mutex()
 
-    private suspend fun <T> access(action: () -> T): T = storage.withLock {
-        withContext(ioDispatcher) { action() }
-    }
+    private suspend fun <T> access(action: () -> T): T = storage.withLock { committedOn(ioDispatcher, action) }
 
     override suspend fun load(): StoredSession = access {
         var storageError = false
@@ -210,4 +212,29 @@ internal fun guessPin(
         if (opened) ledger.clearAttempts() else ledger.failures = PinLockout.retained(failures, wrongPin = false)
         UnlockResult.Unavailable
     }
+}
+
+/**
+ * Runs [action] on [dispatcher] and hands its result back even if the caller is cancelled meanwhile. A cancelled
+ * caller still never starts the action (no PIN is guessed, no PBKDF2 runs); but once the action has run (a guess
+ * counted, the account wiped, the PIN changed), plain withContext would discard that answer on the way back to the
+ * caller's dispatcher, and the caller could never bring memory and state in line with what was written.
+ */
+internal suspend fun <T> committedOn(dispatcher: CoroutineDispatcher, action: () -> T): T {
+    val caller = currentCoroutineContext().job
+    // The job that asked for an unlock check: once it is cancelling, no guess starts, even before its cancellation
+    // has reached [caller].
+    val asker = currentCoroutineContext()[VerificationAsker]?.job
+    return withContext(NonCancellable) {
+        withContext(dispatcher) {
+            asker?.ensureActive()
+            caller.ensureActive()
+            action()
+        }
+    }
+}
+
+/** Marks a vault call made for [job]'s unlock check; [committedOn] checks [job] right before the action starts. */
+internal class VerificationAsker(val job: kotlinx.coroutines.Job) : kotlin.coroutines.AbstractCoroutineContextElement(Key) {
+    companion object Key : kotlin.coroutines.CoroutineContext.Key<VerificationAsker>
 }

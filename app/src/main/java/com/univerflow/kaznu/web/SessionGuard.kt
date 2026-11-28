@@ -18,6 +18,12 @@ class SessionGuard(val loginTimeout: Long = 25_000, private val reauthentication
         private set
     private var lastLogin: Long? = null
     private var lastReauthentication: Long? = null
+    /**
+     * The reauthentication call handed to the page and not yet answered: its challenge, the document it runs in and the
+     * wall-clock deadline after which the script refuses it. Recorded before the call is queued, so a pause or a
+     * navigation that cancels the wait for its answer leaves it in place; while it stands, no response timer runs.
+     */
+    private var handoff: Triple<String, String, Long>? = null
     private val logins = ArrayDeque<Long>()
     private val reauthenticationAttempts = ArrayDeque<Long>()
     private val completedReauthentications = linkedSetOf<String>()
@@ -65,6 +71,7 @@ class SessionGuard(val loginTimeout: Long = 25_000, private val reauthentication
 
     fun reauthenticationRejected(document: String, now: Long = lastReauthentication ?: 0) {
         pendingReauthentication = null
+        handoff = null
         lateReauthentication = null
         rejectChallenge(document, now)
     }
@@ -139,6 +146,7 @@ class SessionGuard(val loginTimeout: Long = 25_000, private val reauthentication
 
     fun releaseReauthentication(challenge: String) {
         if (pendingReauthentication != challenge) return
+        handoff = null
         pendingReauthentication = null; lastReauthentication = null
         if (reauthenticationAttempts.isNotEmpty()) reauthenticationAttempts.removeLast()
     }
@@ -164,10 +172,42 @@ class SessionGuard(val loginTimeout: Long = 25_000, private val reauthentication
         if (reauthenticationAttempts.size >= 3) return false
         pendingReauthentication = challenge
         lateReauthentication = null
+        handoff = null
         reauthenticationDocument = document
         lastReauthentication = now
         reauthenticationAttempts.addLast(now)
         return true
+    }
+
+    /** [challenge]'s call is about to be queued in [document]; the script refuses it after the wall-clock [deadline]. */
+    fun reauthenticationQueued(challenge: String, document: String, deadline: Long) {
+        if (pendingReauthentication == challenge) handoff = Triple(challenge, document, deadline)
+    }
+
+    /** The page's automation answered that [challenge]'s dialog was sent at [now]: the response timer runs from here. */
+    fun reauthenticationSent(challenge: String, now: Long) {
+        if (pendingReauthentication != challenge) return
+        lastReauthentication = now
+        if (handoff?.first == challenge) handoff = null
+    }
+
+    /** The script answered that it entered nothing for [challenge]: the attempt is given back. */
+    fun reauthenticationRefused(challenge: String) = releaseReauthentication(challenge)
+
+    /**
+     * A probe of [document] while a call is unanswered. [sentChallenge] is the challenge that document reports as sent.
+     * Its own document reporting the submission acknowledges it ([now] starts the timer); the same document past the
+     * [wallNow] deadline without one proves the script refused. Another document cannot tell whether the old one sent:
+     * the attempt in flight is dropped, but the budget keeps it.
+     */
+    fun reauthenticationProbed(document: String, sentChallenge: String, now: Long, wallNow: Long) {
+        val (challenge, queuedIn, deadline) = handoff ?: return
+        when {
+            pendingReauthentication != challenge -> handoff = null
+            document != queuedIn -> { handoff = null; pendingReauthentication = null; lastReauthentication = null }
+            sentChallenge == challenge -> reauthenticationSent(challenge, now)
+            wallNow > deadline -> reauthenticationRefused(challenge)
+        }
     }
 
     /** True when this result lifted a stop that an unanswered (late) request had caused. */
@@ -175,6 +215,7 @@ class SessionGuard(val loginTimeout: Long = 25_000, private val reauthentication
         val late = lateReauthentication == challenge
         if (pendingReauthentication != challenge && !late) return false
         pendingReauthentication = null
+        handoff = null
         lateReauthentication = null
         if (!success) { rejectChallenge(reauthenticationDocument, now); return false }
         completedReauthentications.add(challenge)
@@ -188,7 +229,7 @@ class SessionGuard(val loginTimeout: Long = 25_000, private val reauthentication
     }
 
     fun reauthenticationTimedOut(now: Long): Boolean {
-        if (pendingReauthentication != null && now - (lastReauthentication ?: now) > reauthenticationTimeout) {
+        if (pendingReauthentication != null && handoff == null && now - (lastReauthentication ?: now) > reauthenticationTimeout) {
             lateReauthentication = pendingReauthentication
             pendingReauthentication = null
             block(reauthenticationDocument, now, timeout = true)
@@ -204,6 +245,7 @@ class SessionGuard(val loginTimeout: Long = 25_000, private val reauthentication
         pendingDocument = null
         pendingReauthentication = null
         lateReauthentication = null
+        handoff = null
     }
 
 
@@ -221,7 +263,7 @@ class SessionGuard(val loginTimeout: Long = 25_000, private val reauthentication
      */
     fun retry() {
         retryVersion++
-        blocked = false; pendingDocument = null; pendingReauthentication = null; lateReauthentication = null
+        blocked = false; pendingDocument = null; pendingReauthentication = null; lateReauthentication = null; handoff = null
         lastLogin = null; lastReauthentication = null
         stopped = false; ambiguous = false; blockedDocument = null; blockedAt = null; reauthenticationDocument = null
         completedReauthentications.clear()
@@ -232,7 +274,7 @@ class SessionGuard(val loginTimeout: Long = 25_000, private val reauthentication
         retry()
         loginRefusals = 0; logins.clear(); reauthenticationAttempts.clear(); spacingWaived = false; waivedLogin = null
     }
-    fun stop() { blocked = true; stopped = true; pendingDocument = null; pendingReauthentication = null; lateReauthentication = null; spacingWaived = false }
+    fun stop() { blocked = true; stopped = true; pendingDocument = null; pendingReauthentication = null; lateReauthentication = null; handoff = null; spacingWaived = false }
 
     /**
      * One submission per appearance; one still shown 20 s after sending is resent, at most three times per ten minutes.

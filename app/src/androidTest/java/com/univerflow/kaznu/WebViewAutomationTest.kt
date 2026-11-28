@@ -74,6 +74,9 @@ class WebViewAutomationTest {
     private fun probe() = JSONObject(JSONTokener(eval("JSON.stringify(window.__univerAutomationV1.probe())")).nextValue() as String)
     private fun call(method: String) = eval("window.__univerAutomationV1.$method")
     private fun token() = JSONObject.quote(probe().getString("document"))
+    /** The sealed reauthentication call's handoff for the page's own cookies, current for a minute. */
+    private fun handoff() = AutomationController.handoff(JSONTokener(eval("document.cookie")).nextValue() as? String,
+        "0123456789abcdef0123456789abcdef", System.currentTimeMillis() + 60_000)
 
     @Test fun dynamicInputsUseRealLegacyJquerySubmitHandlerExactlyOnce() {
         load("""<form id="login_frm" action="/" method="post"><input type="text" id="_random_alpha">
@@ -275,7 +278,7 @@ class WebViewAutomationTest {
         eval("document.getElementById('auth_modal').style.display='block'")
         val p = probe()
         assertTrue(p.getBoolean("reauthReady"))
-        val args = "${token()},${JSONObject.quote(p.getString("reauthChallenge"))},'fixture-user','fixture-password'"
+        val args = "${token()},${JSONObject.quote(p.getString("reauthChallenge"))},'fixture-user','fixture-password',${handoff()}"
         assertEquals("\"submitted\"", call("reauthenticate($args)"))
         assertEquals("\"wait\"", call("reauthenticate($args)"))
         assertEquals("true", eval("window.authCaptured"))
@@ -287,7 +290,7 @@ class WebViewAutomationTest {
         eval("document.getElementById('auth_modal').style.display='block'")
         val later = probe()
         assertNotEquals(p.getString("reauthChallenge"), later.getString("reauthChallenge"))
-        call("reauthenticate(${token()},${JSONObject.quote(later.getString("reauthChallenge"))},'fixture-user','fixture-password')")
+        call("reauthenticate(${token()},${JSONObject.quote(later.getString("reauthChallenge"))},'fixture-user','fixture-password',${handoff()})")
         assertEquals("2", eval("window.authPosts"))
     }
 
@@ -295,7 +298,7 @@ class WebViewAutomationTest {
         load("<p>Dashboard fixture</p>${reauthFixture.replace("value=\"fixture-user\"", "value=\"fixture-other\"")}", reauthScript,
             "https://univer.kaznu.kz/student")
         eval("document.getElementById('auth_modal').style.display='block'")
-        val args = "${token()},${JSONObject.quote(probe().getString("reauthChallenge"))},'fixture-user','fixture-password'"
+        val args = "${token()},${JSONObject.quote(probe().getString("reauthChallenge"))},'fixture-user','fixture-password',${handoff()}"
         assertEquals("\"account-mismatch\"", call("reauthenticate($args)"))
         assertEquals("0", eval("window.authPosts"))
         assertEquals("\"fixture-other\"", eval("document.getElementById('modal_auth_login').value"))
@@ -306,7 +309,7 @@ class WebViewAutomationTest {
         load("<p>Dashboard fixture</p>$reauthFixture", reauthScript, "https://univer.kaznu.kz/student")
         eval("window.authFails=true;document.getElementById('auth_modal').style.display='block'")
         val p = probe()
-        val args = "${token()},${JSONObject.quote(p.getString("reauthChallenge"))},'fixture-user','fixture-password'"
+        val args = "${token()},${JSONObject.quote(p.getString("reauthChallenge"))},'fixture-user','fixture-password',${handoff()}"
         call("reauthenticate($args)")
         eval("$(document).trigger('ajaxSuccess',[{responseText:'{\"code\":1}'},{url:'https://external.test/user/ajl',type:'POST'}])")
         assertEquals("pending", probe().getString("reauthOutcome"))

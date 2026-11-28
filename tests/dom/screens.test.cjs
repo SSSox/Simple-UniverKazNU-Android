@@ -472,3 +472,88 @@ test('an empty exam page sends nothing (its rows may still be loading), and so d
   assert.doesNotThrow(() => plain.apply());
   plain.close();
 });
+
+test('wraps, added controls and listeners do not accumulate across AJAX re-draws and release on disable', () => {
+  const p = page('/student/failfx/', orders('<tr class="empty"><td colspan="8">Нет данных</td></tr>'), { size: 900 });
+  const add = p.w.EventTarget.prototype.addEventListener;
+  const remove = p.w.EventTarget.prototype.removeEventListener;
+  let active = 0;
+  p.w.EventTarget.prototype.addEventListener = function (type) { if (type === 'click') active++; return add.apply(this, arguments); };
+  p.w.EventTarget.prototype.removeEventListener = function (type) { if (type === 'click') active--; return remove.apply(this, arguments); };
+
+  const host = p.q('#l4>td');
+  p.apply();
+  const firstMemo = p.q('#memo');
+  const firstButton = p.q('#memo>button.univer-scr-more');
+  assert.ok(firstMemo && firstButton);
+  assert.equal(active, 1, 'one listener after first pass');
+
+  // Simulate 6 AJAX re-draws replacing the panel contents.
+  for (let i = 0; i < 6; i++) {
+    host.innerHTML = orders('<tr class="empty"><td colspan="8">Нет данных</td></tr>');
+    p.apply();
+  }
+  assert.equal(active, 1, 'detached memo listeners were released instead of accumulating: ' + active);
+  assert.equal(firstMemo.querySelector('.univer-scr-clamp'), null, 'detached memo wrapper was unwrapped on re-draw');
+  assert.equal(firstMemo.querySelector('button.univer-scr-more'), null, 'detached memo button was removed on re-draw');
+  // Clicking the old detached button must not toggle anything.
+  firstButton.click();
+  assert.equal(firstButton.getAttribute('aria-expanded'), 'false');
+
+  // Disabling mobile mode releases wraps, added nodes and listeners even if release() is not called directly.
+  p.d.documentElement.classList.remove('univer-mobile');
+  p.apply();
+  assert.equal(active, 0, 'all listeners released on disable');
+  assert.equal(p.all('.univer-scr-clamp, button.univer-scr-more, .univer-scr-empty').length, 0);
+  assert.equal(p.q('#univer-screens-style'), null);
+  p.close();
+});
+
+test('multiple memos measure together before writing any button even without the mobile adapter', () => {
+  const body =
+    `<table class="mt"><tr class="top"><td class="ct">Памятка 1</td></tr><tr class="mid"><td class="ct" id="m1">${memo}</td></tr></table>` +
+    `<table class="mt"><tr class="top"><td class="ct">Памятка 2</td></tr><tr class="mid"><td class="ct" id="m2">${memo}</td></tr></table>`;
+  const p = page('/student/failfx/', body, { size: 900 });
+  const countsAtRead = [];
+  Object.defineProperty(p.w.HTMLElement.prototype, 'scrollHeight', {
+    configurable: true,
+    get() {
+      if (this.classList.contains('univer-scr-clamp')) countsAtRead.push(p.all('button.univer-scr-more').length);
+      return this.classList.contains('univer-scr-clamp') ? 900 : 0;
+    }
+  });
+  p.apply();
+  assert.deepEqual(countsAtRead, [0, 0], 'all memos read before any button is written');
+  assert.equal(p.all('button.univer-scr-more').length, 2);
+  p.release();
+  p.close();
+});
+
+test('a re-draw that replaces only the memo wrapper takes its Show in full button and listener along, and reclamping adds one button', () => {
+  const p = page('/student/failfx/', orders('<tr class="empty"><td colspan="8">Нет данных</td></tr>'), { size: 900 });
+  const add = p.w.EventTarget.prototype.addEventListener;
+  const remove = p.w.EventTarget.prototype.removeEventListener;
+  let active = 0;
+  p.w.EventTarget.prototype.addEventListener = function (type) { if (type === 'click') active++; return add.apply(this, arguments); };
+  p.w.EventTarget.prototype.removeEventListener = function (type) { if (type === 'click') active--; return remove.apply(this, arguments); };
+  p.apply();
+  const cell = p.q('#memo'), oldButton = cell.querySelector(':scope>button.univer-scr-more');
+  assert.ok(oldButton);
+  for (let i = 0; i < 3; i++) {
+    const fresh = p.d.createElement('span'); fresh.textContent = 'Новая памятка. ' + memo;
+    cell.querySelector(':scope>.univer-scr-clamp').replaceWith(fresh);
+    p.apply();
+    assert.equal(cell.querySelectorAll('button.univer-scr-more').length, 1, 'one button after reclamp ' + i);
+    assert.equal(cell.querySelectorAll(':scope>.univer-scr-clamp').length, 1);
+    assert.equal(cell.querySelector('.univer-scr-clamp button'), null, 'the old button is not folded into the new wrapper');
+    assert.equal(active, 1, 'one listener after reclamp ' + i + ': ' + active);
+  }
+  assert.ok(!oldButton.isConnected, 'the replaced wrapper\'s button left with it');
+  const button = cell.querySelector(':scope>button.univer-scr-more');
+  button.click();
+  assert.ok(cell.querySelector(':scope>.univer-scr-clamp').classList.contains('univer-scr-open'), 'the new button opens the new wrapper');
+  p.release();
+  assert.equal(active, 0);
+  assert.equal(p.all('[class*="univer-scr"]').length, 0);
+  p.close();
+});

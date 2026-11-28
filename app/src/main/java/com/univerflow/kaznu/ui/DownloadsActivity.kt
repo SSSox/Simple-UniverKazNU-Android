@@ -70,8 +70,12 @@ class DownloadsActivity : AppCompatActivity() {
     private val query get() = textScan.query
     private var snippets: Map<String, TextSearch.Snippet> = emptyMap()
     private var indexJob: Job? = null
+    private var renderJob: Job? = null
+    private var textsVersion = 0L
+    private var renderedKey: DownloadList.RenderKey? = null
     private var indexProgress: Pair<Int, Int>? = null
     private var shownCounts: Map<FileKind, Int>? = null
+
     /** The record whose file Android is asking the student about (a file saved by an earlier install). */
     private var consentFor: String? = null
     private val consent = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
@@ -175,6 +179,8 @@ class DownloadsActivity : AppCompatActivity() {
         // Files can be moved or deleted in other apps while this screen is hidden.
         checked.clear()
         verify(records)
+        // Back after midnight with nothing else changed: the date groups are drawn for the new day.
+        if (renderedKey != null) render()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -227,13 +233,17 @@ class DownloadsActivity : AppCompatActivity() {
                     indexProgress = index to round.size
                     val content = textIndex.text(record)
                     if (scan !== textScan || !textSearch) break
-                    val entry = texts.put(record.id, DownloadList.FileText(content.orEmpty()))
-                    val matched = scan.read(record.id, entry)
-                    if (matched || FileKinds.matchesQuery(record, scan.query)) render()
+                    val entry = DownloadList.FileText(content.orEmpty())
+                    val snippet = withContext(Dispatchers.Default) { TextSearch.snippet(entry.text, entry.folded, scan.query) }
+                    if (scan !== textScan || !textSearch) break
+                    texts.put(record.id, entry)
+                    val matched = scan.record(record.id, entry, snippet)
+                    if (matched || FileKinds.matchesQuery(record, scan.query)) { textsVersion++; render() }
                     else { texts.yieldTo(record.id); renderSubtitle() }
                 }
             }
             indexProgress = null
+            renderSubtitle()
             render()
         }
     }
@@ -266,9 +276,7 @@ class DownloadsActivity : AppCompatActivity() {
     }
 
     /** Each chip says how many files it would show, in a quieter colour than its name. */
-    private fun showCounts() {
-        val inside = textSearch && query.isNotBlank()
-        val counts = DownloadList.kindCounts(records, query, subject, texts.takeIf { inside }?.snapshot(), textScan)
+    private fun showCounts(counts: Map<FileKind, Int>) {
         // A running download renders the list every 250 ms: chips whose numbers stay are not re-laid out each time.
         if (counts == shownCounts) return
         shownCounts = counts
@@ -311,20 +319,33 @@ class DownloadsActivity : AppCompatActivity() {
 
     private fun render() {
         if (AppLockSession.locked) { finish(); return }
-        val inside = textSearch && query.isNotBlank()
-        val order = when (sort) { R.id.downloads_sort_name -> DownloadList.Order.NAME; R.id.downloads_sort_size -> DownloadList.Order.SIZE; else -> DownloadList.Order.DATE }
-        val view = DownloadList.view(records, query, filter, subject, texts.takeIf { inside }?.snapshot(), order, textScan)
-        val visible = view.records
-        shown = visible.size
-        snippets = view.snippets
-        // The found words are part of each row, so the list diff redraws exactly the cards whose words changed.
-        adapter.submitList(rows(visible, order))
-        showCounts()
-        renderSubtitle()
-        Motion.show(binding.downloadsEmpty, visible.isEmpty())
-        binding.downloadsEmptyText.text = text(if (records.isEmpty()) R.string.downloads_empty else R.string.downloads_no_match)
-        binding.downloadsEmptyHint.text = text(R.string.downloads_empty_hint)
-        binding.downloadsEmptyHint.isVisible = records.isEmpty()
+        val key = DownloadList.RenderKey(records, query, filter, subject, textSearch, sort, textsVersion, DownloadList.day(System.currentTimeMillis()))
+        if (key == renderedKey && renderJob?.isActive != true) return
+        val inside = key.textSearch && key.query.isNotBlank()
+        val order = when (key.sort) { R.id.downloads_sort_name -> DownloadList.Order.NAME; R.id.downloads_sort_size -> DownloadList.Order.SIZE; else -> DownloadList.Order.DATE }
+        val scan = textScan
+        val cachedTexts = if (inside) texts.copy() else null
+        val scanSnapshot = if (inside) scan.snapshot(key.query) else DownloadList.ScanSnapshot.EMPTY
+        renderJob?.cancel()
+        renderJob = lifecycleScope.launch {
+            val presentation = withContext(Dispatchers.Default) {
+                DownloadList.present(key.records, key.query, key.filter, key.subject, cachedTexts, order, scanSnapshot)
+            }
+            if (isFinishing || AppLockSession.locked) { finish(); return@launch }
+            if (scan === textScan && presentation.checked.isNotEmpty()) scan.remember(presentation.checked)
+            renderedKey = key
+            val visible = presentation.view.records
+            shown = visible.size
+            snippets = presentation.view.snippets
+            // The found words are part of each row, so the list diff redraws exactly the cards whose words changed.
+            adapter.submitList(rows(visible, order))
+            showCounts(presentation.counts)
+            renderSubtitle()
+            Motion.show(binding.downloadsEmpty, visible.isEmpty())
+            binding.downloadsEmptyText.text = text(if (key.records.isEmpty()) R.string.downloads_empty else R.string.downloads_no_match)
+            binding.downloadsEmptyHint.text = text(R.string.downloads_empty_hint)
+            binding.downloadsEmptyHint.isVisible = key.records.isEmpty()
+        }
     }
 
     /** Files by when they arrived, each group one sheet; a search or another order is one sheet of results. */
@@ -380,7 +401,10 @@ class DownloadsActivity : AppCompatActivity() {
             delay(RECHECK_MS)
             val gone = withContext(Dispatchers.IO) { first.filter { FileActions.locate(this@DownloadsActivity, it) == FilePresence.GONE } }
             repository.removeGone(gone)
-            gone.forEach { textIndex.forget(it.id); texts.remove(it.id); textScan.forget(it.id) }
+            if (gone.isNotEmpty()) {
+                gone.forEach { textIndex.forget(it.id); texts.remove(it.id); textScan.forget(it.id) }
+                textsVersion++
+            }
         }
     }
 
@@ -418,7 +442,7 @@ class DownloadsActivity : AppCompatActivity() {
     }
 
     private fun forget(record: DownloadRecord) {
-        repository.remove(record.id); textIndex.forget(record.id); texts.remove(record.id); textScan.forget(record.id)
+        repository.remove(record.id); textIndex.forget(record.id); texts.remove(record.id); textScan.forget(record.id); textsVersion++
     }
 
     /** Deleting is final, so it is asked first, with the file's name. */

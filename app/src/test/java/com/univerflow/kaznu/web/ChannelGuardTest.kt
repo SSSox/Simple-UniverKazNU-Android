@@ -21,8 +21,23 @@ class ChannelGuardTest {
     fun withoutDocumentStartScriptsTheOldUnkeyedChannelStays() {
         assertEquals("univer-pin:{}", ChannelGuard.unwrap("univer-pin:{}", secret, active = false))
         assertFalse(ChannelGuard.senders(secret, active = false).contains(secret))
-        // The modules' sender lets no pin or «Скачать все» through an unkeyed channel (MobilePageAdapter's NATIVE).
+        // The modules' sender lets no tap command through an unkeyed channel (MobilePageAdapter's NATIVE).
         assertTrue(ChannelGuard.senders(secret, active = false).contains("keyed:false"))
+    }
+
+    @Test
+    fun anUnkeyedChannelRefusesEveryTapAndStillTakesReports() {
+        listOf("univer-pin:{}", "univer-download-all:{}", "univer-report:{}", "univer-calendar:{}", "univer-export:{}").forEach {
+            assertFalse(it, ChannelGuard.accepts(it, actions = false))
+        }
+        listOf("univer-schedule:{}", "univer-grades:{}", "univer-exams:{}").forEach {
+            assertTrue(it, ChannelGuard.accepts(it, actions = false))
+        }
+        assertTrue(ChannelGuard.accepts("univer-calendar:{}", actions = true))
+        assertFalse(ChannelGuard.accepts("univer-reports:{}", actions = true))
+        assertEquals(ChannelGuard.Kind.CALENDAR, ChannelGuard.kind("univer-calendar:{\"pin\":true,\"url\":\"https://evil.example/\"}"))
+        assertNull(ShortcutBridge.parse("univer-calendar:{\"pin\":true,\"url\":\"https://evil.example/\"}"))
+        assertNull(CalendarMessage.parse("univer-calendar:{\"pin\":true,\"url\":\"https://evil.example/\"}", now = 0L))
     }
 
     @Test

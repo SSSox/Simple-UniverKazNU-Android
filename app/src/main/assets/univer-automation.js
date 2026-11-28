@@ -18,6 +18,9 @@
         findInDocument = Document.prototype.querySelector,
         dispatch = EventTarget.prototype.dispatchEvent, press = HTMLElement.prototype.click,
         setInputValue = describe(HTMLInputElement.prototype, 'value').set,
+        inputValue = describe(HTMLInputElement.prototype, 'value').get,
+        inputReadOnly = describe(HTMLInputElement.prototype, 'readOnly').get,
+        SiteString = String, trimText = String.prototype.trim, lowerText = String.prototype.toLowerCase,
         inputType = describe(HTMLInputElement.prototype, 'type').get,
         inputDisabled = describe(HTMLInputElement.prototype, 'disabled').get,
         formAction = describe(HTMLFormElement.prototype, 'action').get,
@@ -26,6 +29,16 @@
         documentUrl = describe(Document.prototype, 'URL').get,
         urlOrigin = describe(URL.prototype, 'origin').get,
         matches = RegExp.prototype.test, startDocument = document, LOGIN_PAGE = /^\/user\/login(?:moodle)?\/?$/i;
+    // The handoff guard of a reauthentication (see [handoffStands]): the page's cookies and the wall clock, read through
+    // the built-ins taken here, so a later swap cannot make a changed session or an expired call look current.
+    var pageCookie = describe(Document.prototype, 'cookie').get, wallClock = Date.now, imul = Math.imul,
+        findText = String.prototype.indexOf, sliceText = String.prototype.slice, createObject = Object.create,
+        codeAt = String.prototype.charCodeAt, numberText = Number.prototype.toString, hasOwn = Object.prototype.hasOwnProperty;
+    // Its records are objects without a prototype, filled by plain assignment: no page method or setter (Array push,
+    // an index setter, String split's Symbol.split) takes part in reading or comparing the cookies.
+    function record() { return call(createObject, Object, [null]); }
+    // Cookie names this document has shown to scripts: one that disappears later was removed, not HttpOnly.
+    var cookiesSeen = record();
     var token = Date.now().toString(36) + Math.random().toString(36).slice(2);
     var loginClicked = false, sequence = 0, interactiveSince = 0;
     var episodes = {notice: {}, agreement: {}, reauth: {}};
@@ -299,8 +312,67 @@
             return !/^(SCRIPT|STYLE|NOSCRIPT)$/.test(node.tagName) && visible(node) && hasText(node);
         });
     }
+    /**
+     * The cookies this document shows to scripts, through the built-ins taken at document start: a record whose
+     * entries 0 to count - 1 each have a name and a value.
+     */
+    function visibleCookies() {
+        var text = SiteString(call(pageCookie, startDocument, []) || ''), result = record(), count = 0, from = 0;
+        while (from <= text.length) {
+            var end = call(findText, text, [';', from]);
+            if (end < 0) end = text.length;
+            var part = call(trimText, call(sliceText, text, [from, end]), []);
+            from = end + 1;
+            if (!part) continue;
+            var at = call(findText, part, ['=']), pair = record();
+            pair.name = at < 0 ? part : call(sliceText, part, [0, at]);
+            pair.value = at < 0 ? '' : call(sliceText, part, [at + 1]);
+            cookiesSeen[pair.name] = true;
+            result[count++] = pair;
+        }
+        result.count = count;
+        return result;
+    }
+    /** FNV-1a of [salt], a newline, [name], '=' and [value], as AutomationController.cookieMark computes it. */
+    function cookieMark(salt, name, value) {
+        var text = salt + '\n' + name + '=' + value, hash = 0x811c9dc5;
+        for (var i = 0; i < text.length; i++) { hash ^= call(codeAt, text, [i]); hash = imul(hash, 0x01000193) >>> 0; }
+        return call(numberText, hash, [16]);
+    }
+    /**
+     * Whether the call the controller authorised still stands now, in the same evaluation that enters the password:
+     * its wall-clock [handoff].deadline has not passed (a call the renderer ran late is refused, so the controller's
+     * response timer starts from this call's own answer), and the session the controller checked is still the page's:
+     * every cookie the page shows has the value the controller saw (salted marks, no cookie value is handed in), none
+     * is new, and none this document showed before has gone. HttpOnly cookies are never visible here; the controller
+     * compares them itself right before the call.
+     */
+    function handoffStands(handoff) {
+        if (!handoff || typeof handoff !== 'object') return 'expired';
+        var deadline = +handoff.deadline;
+        function expired() { return !(deadline > 0) || !(call(wallClock, Date, []) <= deadline); }
+        if (expired()) return 'expired';
+        var salt = SiteString(handoff.salt || ''), expected = record(), list = handoff.session || [];
+        if (!salt) return 'session-changed';
+        for (var i = 0; i < list.length; i++) {
+            var name = SiteString(list[i][0]);
+            if (!call(hasOwn, expected, [name])) expected[name] = record();
+            expected[name][SiteString(list[i][1])] = true;
+        }
+        var visible = visibleCookies(), shown = record();
+        for (var j = 0; j < visible.count; j++) {
+            var cookie = visible[j];
+            if (!call(hasOwn, expected, [cookie.name]) || expected[cookie.name][cookieMark(salt, cookie.name, cookie.value)] !== true)
+                return 'session-changed';
+            shown[cookie.name] = true;
+        }
+        for (var seen in cookiesSeen) if (call(hasOwn, expected, [seen]) && shown[seen] !== true) return 'session-changed';
+        // Reading the cookies takes time, and the renderer may be suspended in between: the clock is read once more.
+        return expired() ? 'expired' : '';
+    }
     function probe() {
         if (location.origin !== origin) return {trusted: false};
+        try { visibleCookies(); } catch (_) { }
         var docs = documents(), login = loginForm(), notice = noticeForm(docs), agreement = agreementForm(docs), reauth = reauthForm(docs);
         var n = episode('notice', notice), a = episode('agreement', agreement), r = episode('reauth', reauth);
         // The site counts a rejected attempt in #auth_try: the pending submission has failed.
@@ -381,21 +453,28 @@
         sendWithPassword(target, password); // Dynamic encryption/key handler remains intact.
         return 'submitted';
     }
-    function reauthenticate(expected, challenge, login, password) {
+    function reauthenticate(expected, challenge, login, password, handoff) {
         if (!sealed) return 'unprotected';
         if (!valid(expected)) return 'wait';
+        var refused = handoffStands(handoff);
+        if (refused) return refused;
         var target = reauthForm(documents()), e = episode('reauth', target);
         if (!target || !target.ready || target.attempt !== 1 || e.id !== challenge || e.clicked || ajax.reauth.state === 'pending') return 'wait';
         if (!genuine(target, '#auth_modal form#modal_auth_frm')) return 'wait';
         // Do not replace the account bound by the site's readonly reauthentication field.
         // An empty readonly field names no account yet and receives the saved login.
-        var bound = target.login.readOnly ? target.login.value.trim() : '';
-        if (bound && bound.toLowerCase() !== String(login).trim().toLowerCase()) return 'account-mismatch';
+        // Read through the built-ins taken at document start: a page that swapped the field's getters or String's
+        // methods could otherwise answer here, or see the saved login compared.
+        var bound = call(inputReadOnly, target.login, []) ? call(trimText, SiteString(call(inputValue, target.login, [])), []) : '';
+        if (bound && call(lowerText, bound, []) !== call(lowerText, call(trimText, SiteString(login), []), [])) return 'account-mismatch';
         if (!bound) setLogin(target.login, login);
         // As for the login page: the login's events may have changed the form, so it is checked again before the
         // password goes in, and the episode counts as submitted only then.
         if (e.clicked || ajax.reauth.state === 'pending' || !genuine(target, '#auth_modal form#modal_auth_frm')) return 'wait';
-        e.clicked = true; ajax.reauth = {state: 'pending', challenge: e.id, doc: target.form.ownerDocument};
+        // The login's events take time and may set cookies: the deadline and the session are read once more.
+        refused = handoffStands(handoff);
+        if (refused) return refused;
+        e.clicked = true; ajax.reauth = {state: 'pending', challenge: e.id, doc: call(ownerOf, target.form, [])};
         sendWithPassword(target, password); // Official ajl() serializes nonce/cheat and performs AJAX.
         return 'submitted';
     }

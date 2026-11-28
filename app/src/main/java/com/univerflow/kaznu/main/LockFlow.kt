@@ -44,8 +44,24 @@ class LockFlow(private val activity: AppCompatActivity, private val model: Unive
     private var biometricAutoShown = false
     // Set while the unlock screen is up: whether it offers the biometric key.
     private var unlockBiometric: Boolean? = null
+    private val autoBiometricTask = Runnable { promptBiometricUnlock() }
+    private val offerPinTask = Runnable {
+        val state = model.state.value
+        if (offerShown || activity.isFinishing || activity.isDestroyed || !state.ready || state.locked || !state.hasCredentials || state.paused ||
+            state.lock.enabled || state.lock.offerHandled || model.credentials == null || host.sessionChanging || lockUi.isShowing) return@Runnable
+        offerShown = true
+        host.track(MaterialAlertDialogBuilder(activity).setIcon(R.drawable.ic_lock)
+            .setTitle(host.text(R.string.offer_pin_title)).setMessage(host.text(R.string.offer_pin_message)).setCancelable(false)
+            .setPositiveButton(host.text(R.string.offer_pin_set)) { _, _ -> answerPinOffer(); startPinSetup() }
+            .setNegativeButton(host.text(R.string.offer_pin_later)) { _, _ -> answerPinOffer() }.show())
+    }
 
     val showing get() = lockUi.isShowing
+
+    fun close() {
+        activity.window.decorView.removeCallbacks(autoBiometricTask)
+        activity.window.decorView.removeCallbacks(offerPinTask)
+    }
 
     fun restore(saved: Bundle?) { offerShown = saved?.getBoolean(OFFER_SHOWN) ?: false }
 
@@ -87,6 +103,7 @@ class LockFlow(private val activity: AppCompatActivity, private val model: Unive
 
     fun releaseUnlockScreen() {
         if (unlockBiometric == null) return
+        activity.window.decorView.removeCallbacks(autoBiometricTask)
         unlockBiometric = null
         biometricAutoShown = false
         lockUi.hide(animated = true)
@@ -97,16 +114,21 @@ class LockFlow(private val activity: AppCompatActivity, private val model: Unive
     fun autoPromptBiometric() {
         if (unlockBiometric != true || biometricAutoShown || !inForeground || !model.state.value.locked) return
         biometricAutoShown = true
-        activity.window.decorView.post { promptBiometricUnlock() }
+        activity.window.decorView.removeCallbacks(autoBiometricTask)
+        activity.window.decorView.post(autoBiometricTask)
     }
 
     private fun promptBiometricUnlock() {
-        if (biometricPrompting || !model.state.value.locked) return
+        if (biometricPrompting || !inForeground || activity.isFinishing || activity.isDestroyed ||
+            unlockBiometric != true || !model.state.value.locked) return
         biometricPrompting = true
         activity.lifecycleScope.launch {
             val cipher = try { model.biometricUnlockCipher() }
             catch (cancelled: CancellationException) { biometricPrompting = false; throw cancelled }
             catch (_: Exception) { null }
+            if (activity.isFinishing || activity.isDestroyed || !inForeground || !model.state.value.locked) {
+                biometricPrompting = false; return@launch
+            }
             if (cipher == null) { biometricPrompting = false; host.message(R.string.bio_changed); return@launch }
             BiometricUi.prompt(activity, cipher, host.text(R.string.bio_prompt_title), host.text(R.string.bio_prompt_subtitle), host.text(R.string.bio_use_pin),
                 onSuccess = { opened ->
@@ -114,6 +136,7 @@ class LockFlow(private val activity: AppCompatActivity, private val model: Unive
                         val result = try { model.unlockWithBiometric(opened) } catch (cancelled: CancellationException) { biometricPrompting = false; throw cancelled }
                         catch (_: Exception) { UnlockResult.Unavailable }
                         biometricPrompting = false
+                        if (activity.isFinishing || activity.isDestroyed) return@launch
                         if (result is UnlockResult.BiometricInvalid) host.message(R.string.bio_changed)
                         else if (result !is UnlockResult.Success) host.message(R.string.lock_unavailable)
                     }
@@ -134,16 +157,8 @@ class LockFlow(private val activity: AppCompatActivity, private val model: Unive
     fun maybeOfferPin() {
         val early = model.state.value
         if (offerShown || !early.ready || !early.hasCredentials || early.lock.enabled || early.lock.offerHandled) return
-        activity.window.decorView.postDelayed({
-            val state = model.state.value
-            if (offerShown || activity.isFinishing || activity.isDestroyed || !state.ready || state.locked || !state.hasCredentials || state.paused ||
-                state.lock.enabled || state.lock.offerHandled || model.credentials == null || host.sessionChanging || lockUi.isShowing) return@postDelayed
-            offerShown = true
-            host.track(MaterialAlertDialogBuilder(activity).setIcon(R.drawable.ic_lock)
-                .setTitle(host.text(R.string.offer_pin_title)).setMessage(host.text(R.string.offer_pin_message)).setCancelable(false)
-                .setPositiveButton(host.text(R.string.offer_pin_set)) { _, _ -> answerPinOffer(); startPinSetup() }
-                .setNegativeButton(host.text(R.string.offer_pin_later)) { _, _ -> answerPinOffer() }.show())
-        }, 900)
+        activity.window.decorView.removeCallbacks(offerPinTask)
+        activity.window.decorView.postDelayed(offerPinTask, 900)
     }
 
     private fun answerPinOffer() { activity.launchCatching { model.markLockOfferHandled() } }
@@ -154,9 +169,13 @@ class LockFlow(private val activity: AppCompatActivity, private val model: Unive
         lockUi.create(closeable = true, accept = { pin ->
             attempt(false) {
                 model.enableLock(pin)
-                // The PIN screen closes right after this returns; the message and the biometric offer follow it.
-                activity.window.decorView.post { host.message(R.string.pin_enabled_msg); offerBiometric(); applyWindowSecurity() }
                 true
+            }
+        }, onAccepted = {
+            if (!activity.isFinishing && !activity.isDestroyed) {
+                host.message(R.string.pin_enabled_msg)
+                if (!model.state.value.locked && !host.sessionChanging && !lockUi.isShowing) offerBiometric()
+                applyWindowSecurity()
             }
         }, onClose = { applyWindowSecurity() })
         applyWindowSecurity()
@@ -194,13 +213,21 @@ class LockFlow(private val activity: AppCompatActivity, private val model: Unive
         lockUi.enter(R.string.lock_verify_title, null, closeable = true, biometric = false, forgot = false,
             verify = { model.unlockWithPin(it) }, keepOpen = true, onWiped = { host.message(R.string.lock_wiped) },
             onVerified = { old ->
+                var outcome: UnlockResult? = null
                 lockUi.create(R.string.lock_new_title, closeable = true, accept = { new ->
-                    when (changeWithVerifiedPin(old, new) { current, next -> model.changePin(current, next) }) {
-                        is UnlockResult.Success -> { host.message(R.string.pin_changed_msg); true }
-                        UnlockResult.Wiped -> { host.message(R.string.lock_wiped); true }
-                        else -> false
+                    val result = changeWithVerifiedPin(old, new) { current, next -> model.changePin(current, next) }
+                    outcome = result
+                    result is UnlockResult.Success || result == UnlockResult.Wiped
+                }, onAccepted = {
+                    if (!activity.isFinishing && !activity.isDestroyed) {
+                        when (outcome) {
+                            is UnlockResult.Success -> host.message(R.string.pin_changed_msg)
+                            UnlockResult.Wiped -> host.message(R.string.lock_wiped)
+                            else -> Unit
+                        }
+                        applyWindowSecurity()
                     }
-                }, onClose = { old.fill('\u0000'); applyWindowSecurity() })
+                }, onClose = { applyWindowSecurity() }, onCleared = { old.fill('\u0000') })
             }, onClose = { applyWindowSecurity() })
         applyWindowSecurity()
     }
@@ -209,7 +236,13 @@ class LockFlow(private val activity: AppCompatActivity, private val model: Unive
     fun disablePin() {
         lockUi.enter(R.string.security_disable_title, R.string.security_disable_message, closeable = true, biometric = false, forgot = false,
             verify = { model.disableLock(it) }, onWiped = { host.message(R.string.lock_wiped) },
-            onVerified = { it.fill('\u0000'); host.message(R.string.pin_disabled_msg); applyWindowSecurity() }, onClose = { applyWindowSecurity() })
+            onVerified = {
+                it.fill('\u0000')
+                if (!activity.isFinishing && !activity.isDestroyed) {
+                    host.message(R.string.pin_disabled_msg)
+                    applyWindowSecurity()
+                }
+            }, onClose = { applyWindowSecurity() })
         applyWindowSecurity()
     }
 

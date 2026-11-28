@@ -6,6 +6,11 @@
    json is a serializer taken here as well: a JSON.stringify, Object.keys or toJSON the site sets up later cannot change
    what a tap sends. It copies plain data (strings, numbers, booleans, null, arrays and objects with their own enumerable
    keys) into objects without a prototype, so no inherited toJSON or getter takes part, and drops anything else.
+   post(prefix, value) is the only sender that may start a tap. The prefix is one of the list below, compared as a whole,
+   and the body is json(value): a string the page built cannot choose another command's prefix, and a body of the wrong
+   shape for that prefix is not sent. The raw sender keys only a report (the week, the totals, the exams). It will not
+   put the secret on a pin, a download, a grade report, a calendar event or a schedule export, so a text the page
+   composed cannot be passed off as one of those. The same list and lengths are MobilePageAdapter's NATIVE.
    listen registers a module's handler for an action (a pin, «Скачать все») through addEventListener as it is here, so a
    site script that swaps it later never gets the handler to call with an object of its own; the handler runs only for
    an event the browser itself marks trusted, read through the isTrusted getter taken here (a lookalike object makes
@@ -54,6 +59,80 @@
         };
         apply(addListener, target, [type, wrapper, options]);
         return function () { apply(removeListener, target, [type, wrapper, options]); };
+    }
+    /* clock is what a tap's calendar event is computed with: Date, its readers, Promise.prototype.then and the event's
+       target, taken here, so a Date.prototype.getHours, Date.now or then the page swaps after the tap cannot move or
+       replace what the tap sends, nor (taken before any site script) what a card computes when it is drawn. Times are plain numbers (ms) and a moment's fields a frozen object without a prototype. */
+    var DateOf = Date, construct = Reflect.construct, dateNow = Date.now, dates = Date.prototype, timeOf = dates.getTime,
+        yearOf = dates.getFullYear, monthOf = dates.getMonth, dateOf = dates.getDate, dayOf = dates.getDay,
+        hoursOf = dates.getHours, minutesOf = dates.getMinutes, then = Promise.prototype.then,
+        targetOf = Object.getOwnPropertyDescriptor(Event.prototype, 'target').get, PromiseOf = Promise;
+    // The week reader's built-ins (clock.page). A WebView without one of them leaves page() to the module's own reader.
+    var HOME = 'https://univer.kaznu.kz', WEEK_PAGE = /^\/student\/myschedule\/\d{4}\/[12]\/\d{1,2}\.\d{1,2}\.\d{4}\/\d{1,2}\.\d{1,2}\.\d{4}\/?$/,
+        fetchOf = typeof window.fetch === 'function' ? window.fetch : null, setTimer = window.setTimeout, clearTimer = window.clearTimeout,
+        URLOf = URL, AbortOf = typeof AbortController === 'function' ? AbortController : null, ParserOf = DOMParser,
+        parseHtml = DOMParser.prototype.parseFromString, textOfResponse = null, responseStatus = null, responseUrl = null,
+        urlHref, urlOrigin, urlPath, signalOf, abortIt;
+    try {
+        var getter = function (proto, name) { return Object.getOwnPropertyDescriptor(proto, name).get; };
+        urlHref = getter(URL.prototype, 'href'); urlOrigin = getter(URL.prototype, 'origin'); urlPath = getter(URL.prototype, 'pathname');
+        signalOf = getter(AbortOf.prototype, 'signal'); abortIt = AbortOf.prototype.abort;
+        if (typeof Response === 'function') { responseStatus = getter(Response.prototype, 'status'); responseUrl = getter(Response.prototype, 'url'); textOfResponse = Response.prototype.text; }
+    } catch (_) { fetchOf = null; }
+    function whole(n) { return typeof n === 'number' && n === n && n !== Infinity && n !== -Infinity ? n : 0; }
+    var clock = freeze({
+        now: function () { return apply(dateNow, DateOf, []); },
+        // A Date's time through the getTime taken here (NaN for anything that is not a Date).
+        time: function (date) { try { return apply(timeOf, date, []); } catch (_) { return NaN; } },
+        at: function (year, month, date, hours, minutes) {
+            return apply(timeOf, construct(DateOf, [whole(year), whole(month), whole(date), whole(hours), whole(minutes), 0, 0]), []);
+        },
+        parts: function (time) {
+            var d = construct(DateOf, [whole(time)]), p = create(null);
+            p.year = apply(yearOf, d, []); p.month = apply(monthOf, d, []); p.date = apply(dateOf, d, []);
+            p.day = apply(dayOf, d, []); p.hours = apply(hoursOf, d, []); p.minutes = apply(minutesOf, d, []);
+            return freeze(p);
+        },
+        then: function (promise, done, failed) { try { apply(then, promise, [done, failed]); } catch (_) { failed(); } },
+        target: function (event) { try { return apply(targetOf, event, []); } catch (_) { return null; } },
+        // A new Promise of the constructor taken here. Resolve it only with an object that has no prototype or an own
+        // `then`, so no then the page put on a prototype takes part.
+        promise: function (executor) { return construct(PromiseOf, [executor]); },
+        // page(path, limit, wait): one GET of a week of the student's schedule, read and parsed with fetch, the
+        // response's status, url and text, URL, AbortController, setTimeout and DOMParser as they were here, so a page
+        // that swaps them at load neither changes nor blocks the neighbouring week «В календарь» and the export read.
+        // It resolves with {doc} (no prototype) or rejects; null when the WebView had no fetch or Response at document start.
+        page: function (path, limit, wait) { return typeof fetchOf === 'function' && typeof textOfResponse === 'function' ? readPage(path, limit, wait) : null; }
+    });
+    function readPage(path, limit, wait) {
+        return construct(PromiseOf, [function (resolve, reject) {
+            var timer = null, settled = false, done = function (value, failure) {
+                if (settled) return;
+                settled = true;
+                if (timer !== null) { try { apply(clearTimer, window, [timer]); } catch (_) { } timer = null; }
+                if (failure) { reject(failure); return; }
+                var box = create(null); box.doc = value; resolve(box);
+            };
+            var failed = function () { done(null, new Error('Unavailable')); };
+            if (typeof path !== 'string' || !apply(test, WEEK_PAGE, [path])) { done(null, new Error('Address')); return; }
+            var url = construct(URLOf, [path, HOME]), href = apply(urlHref, url, []), wanted = apply(urlPath, url, []);
+            if (apply(urlOrigin, url, []) !== HOME) { done(null, new Error('Address')); return; }
+            var abort = construct(AbortOf, []), init = create(null);
+            init.credentials = 'same-origin'; init.cache = 'no-store'; init.redirect = 'error'; init.signal = apply(signalOf, abort, []);
+            timer = apply(setTimer, window, [function () { try { apply(abortIt, abort, []); } catch (_) { } failed(); }, wait]);
+            apply(then, apply(fetchOf, window, [href, init]), [function (response) {
+                try {
+                    var final = construct(URLOf, [apply(responseUrl, response, []), HOME]);
+                    if (apply(responseStatus, response, []) !== 200 || apply(urlOrigin, final, []) !== HOME || apply(urlPath, final, []) !== wanted) { failed(); return; }
+                    apply(then, apply(textOfResponse, response, []), [function (html) {
+                        try {
+                            if (typeof html !== 'string' || html.length > limit) { failed(); return; }
+                            done(apply(parseHtml, construct(ParserOf, []), [html, 'text/html']), null);
+                        } catch (_) { failed(); }
+                    }, failed]);
+                } catch (_) { failed(); }
+            }, failed]);
+        }]);
     }
     var describe = Object.getOwnPropertyDescriptor, test = RegExp.prototype.test,
         selectAll = Document.prototype.querySelectorAll, nodeCount = describe(NodeList.prototype, 'length').get,
@@ -116,13 +195,82 @@
         // getter of the site's takes part in the stringify taken at document start.
         return apply(stringify, null, [answer]);
     }
-    function sender(channel) {
-        var post = channel && channel.postMessage;
-        if (typeof post !== 'function') return null;
-        return function (value) { if (typeof value === 'string') apply(post, channel, [secret + value]); };
+    function open(channel) {
+        var postMessage = channel && channel.postMessage;
+        if (typeof postMessage !== 'function') return null;
+        // postMessage is the one taken now. A site script that later replaces the channel object never sees the secret.
+        return function (value) { if (typeof value === 'string') apply(postMessage, channel, [secret + value]); };
+    }
+    // The same prefixes, lengths and tap set as MobilePageAdapter's NATIVE (tests/dom/channel-prefixes.test.cjs reads both).
+    var k=['univer-pin:',8192,'univer-download-all:',65536,'univer-report:',65536,'univer-calendar:',4096,'univer-schedule:',131072,'univer-export:',98304,'univer-grades:',65536,'univer-exams:',32768];
+    var tap={'univer-pin:':1,'univer-download-all:':1,'univer-report:':1,'univer-calendar:':1,'univer-export:':1};
+    var MOMENT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/, DAY = /^\d{4}-\d{2}-\d{2}$/;
+    function listed(message, prefix) {
+        var i;
+        if (typeof message !== 'string' || message.length < prefix.length) return false;
+        for (i = 0; i < prefix.length; i++) if (message[i] !== prefix[i]) return false;
+        return true;
+    }
+    // A report the raw sender may key: the week, the totals or the exams, within that prefix's own length.
+    function reportText(message) {
+        var i, prefix;
+        for (i = 0; i < k.length; i += 2) {
+            prefix = k[i];
+            if (tap[prefix] === 1) continue;
+            if (listed(message, prefix) && message.length <= k[i + 1]) return true;
+        }
+        return false;
+    }
+    function shape(prefix, copy) {
+        var i, list;
+        if (prefix === 'univer-pin:') {
+            list = copy.order;
+            if (isArray(list)) {
+                for (i = 0; i < list.length; i++) if (typeof list[i] !== 'string') return false;
+                return true;
+            }
+            return typeof copy.pin === 'boolean' && typeof copy.url === 'string';
+        }
+        if (prefix === 'univer-download-all:') return typeof copy.section === 'string' && isArray(copy.urls) && typeof copy.head === 'number' && typeof copy.count === 'number' && typeof copy.mark === 'number';
+        if (prefix === 'univer-report:') return copy.v === 1 && isArray(copy.courses);
+        if (prefix === 'univer-calendar:') {
+            if (copy.v !== 1 || typeof copy.title !== 'string' || copy.title.length < 1 || copy.title.length > 200) return false;
+            if (typeof copy.start !== 'string' || !apply(test, MOMENT, [copy.start])) return false;
+            if (typeof copy.end !== 'string' || !apply(test, MOMENT, [copy.end])) return false;
+            if (typeof copy.place !== 'string' || copy.place.length > 200 || typeof copy.notes !== 'string' || copy.notes.length > 500) return false;
+            if (!(copy.until === undefined || copy.until === null || (typeof copy.until === 'string' && apply(test, DAY, [copy.until])))) return false;
+            if (!(copy.interval === undefined || copy.interval === null || copy.interval === 1 || copy.interval === 2)) return false;
+            if (!(copy.partial === undefined || copy.partial === null || typeof copy.partial === 'boolean')) return false;
+            return true;
+        }
+        if (prefix === 'univer-schedule:') return copy.v === 1 && typeof copy.week === 'string' && isArray(copy.lessons);
+        if (prefix === 'univer-export:') return (copy.v === 0 || copy.v === 1) && (copy.kind === 'ics' || copy.kind === 'png');
+        if (prefix === 'univer-grades:') return copy.v === 1 && isArray(copy.courses);
+        if (prefix === 'univer-exams:') return copy.v === 1 && (copy.kind === 'exam' || copy.kind === 'midterm') && isArray(copy.items);
+        return false;
+    }
+    // Taken once, at document start. post() keys through this, not through whatever the page later puts on window.
+    var appPipe = open(window.__univerAppEvents), noticeSend = open(window.__univerNoticeEvents);
+    // Reports only. A pin, a download, the grade report, a calendar event or an export is not keyed from a raw string.
+    function app(value) { if (reportText(value) && typeof appPipe === 'function') appPipe(value); }
+    // Prefix and body are separate. The body is plain data serialized here, never a message string the page composed.
+    function post(prefix, value) {
+        try {
+            var lim = 0, i, copy, body, message;
+            if (typeof prefix !== 'string' || window !== window.top) return;
+            for (i = 0; i < k.length; i += 2) if (k[i] === prefix) lim = k[i + 1];
+            if (!lim) return;
+            copy = plain(value, 0);
+            if (!copy || typeof copy !== 'object' || isArray(copy) || !shape(prefix, copy)) return;
+            body = apply(stringify, null, [copy]);
+            if (typeof body !== 'string' || body.length < 2 || body[0] !== '{') return;
+            message = prefix + body;
+            if (message.length > lim) return;
+            if (typeof appPipe === 'function') appPipe(message);
+        } catch (_) { }
     }
     // keyed: these senders carry the secret, so native code may act on what they send (downloads, home tiles).
-    var senders = freeze({app: sender(window.__univerAppEvents), notice: sender(window.__univerNoticeEvents), json: json, listen: listen, mark: mark, places: places, keyed: true});
+    var senders = freeze({app: app, notice: noticeSend, json: json, listen: listen, mark: mark, places: places, post: post, clock: clock, keyed: true});
     try {
         Object.defineProperty(window, '__univerClaim', {value: freeze(function (key) { return key === secret ? senders : null; })});
     } catch (_) { /* Nothing defined it before: this runs ahead of every site script of the document. */ }

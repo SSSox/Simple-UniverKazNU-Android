@@ -227,22 +227,34 @@ class MobilePageAdapter(
          * «Скачать все», the journal's grade report, «В календарь», the saved timetable and the grades snapshot go through
          * the keyed app sender, each within its own length, nothing else. Strict, so a
          * function the page swapped in for a built-in cannot reach the sender through .caller; the prefix checks use no
-         * prototype method. Pins and «Скачать все» act without a further question, so they pass only through the keyed
-         * channel: on a WebView without it the site could send the same text itself. __univerJson is the channel's
-         * serializer taken at document start (null without it), which a module sending an action must use; __univerListen
-         * its listener registration (null without it), through which such a module takes the tap that sends the action;
-         * __univerMark notes the heading row a «Скачать все» tap came from (null without it), which the app's lookup
-         * then requires to hold every file of the batch.
+         * prototype method. __univerPost(prefix, value) picks the prefix from this list and serializes [value] itself
+         * (the document-start copy when the channel is keyed), so a string the page built cannot wear another command's
+         * prefix. The raw-string sender refuses every tap prefix (pin, download, report, calendar, export) even when
+         * the channel is keyed: those go only through __univerPost, and only when __univerActions is true. The week,
+         * the totals and the exams are reports and may still use the raw sender. __univerJson is the channel's
+         * serializer taken at document start (null without it); __univerListen its listener registration (null without
+         * it), through which a module takes the tap that sends the action; __univerMark notes the heading row a
+         * «Скачать все» tap came from (null without it), which the app's lookup then requires to hold every file.
+         * __univerClock is the channel's Date, Promise, then, event target and week reader (fetch, Response, URL,
+         * DOMParser) taken at document start (null without it), with which «В календарь» and the schedule export compute,
+         * read the neighbouring week for and check what a tap sends.
          */
-        private const val NATIVE = "var __univerNative=__univerSend&&typeof __univerSend.app==='function'?function(v){'use strict';" +
-            "if(typeof v!=='string'||v.length<11)return;" +
-            "var k=['univer-pin:',8192,'univer-download-all:',65536,'univer-report:',65536,'univer-calendar:',4096,'univer-schedule:',131072,'univer-export:',98304,'univer-grades:',65536,'univer-exams:',32768],i,j,p,m=false;" +
+        private const val NATIVE = "var k=['univer-pin:',8192,'univer-download-all:',65536,'univer-report:',65536,'univer-calendar:',4096,'univer-schedule:',131072,'univer-export:',98304,'univer-grades:',65536,'univer-exams:',32768];" +
+            "var tap={'univer-pin:':1,'univer-download-all:':1,'univer-report:':1,'univer-calendar:':1,'univer-export:':1};" +
+            "var __univerActions=!!(__univerSend&&__univerSend.keyed===true);" +
+            "var __univerPost=__univerSend&&typeof __univerSend.post==='function'?__univerSend.post:(__univerSend&&typeof __univerSend.app==='function'?function(prefix,value){'use strict';" +
+            "if(typeof prefix!=='string'||tap[prefix]===1)return;var i,lim=0;for(i=0;i<k.length;i+=2)if(prefix===k[i])lim=k[i+1];" +
+            "if(!lim)return;var body;try{body=JSON.stringify(value);}catch(e){return;}" +
+            "if(typeof body!=='string'||body.length<2||body[0]!=='{')return;var v=prefix+body;if(v.length>lim)return;" +
+            "if(window===window.top)__univerSend.app(v);}:null);" +
+            "var __univerNative=__univerSend&&typeof __univerSend.app==='function'?function(v){'use strict';" +
+            "if(typeof v!=='string'||v.length<11)return;var i,j,p,m=false;" +
             "for(j=0;j<k.length&&!m;j+=2){p=k[j];m=v.length<=k[j+1];for(i=0;m&&i<p.length;i++)if(v[i]!==p[i])m=false;}" +
-            "if(m&&__univerSend.keyed!==true&&(p==='univer-pin:'||p==='univer-download-all:'))m=false;" +
-            "if(window===window.top&&m)__univerSend.app(v);}:null;" +
+            "if(!m||tap[p]===1)return;if(window===window.top)__univerSend.app(v);}:null;" +
             "var __univerJson=__univerSend&&__univerSend.keyed===true&&typeof __univerSend.json==='function'?__univerSend.json:null;" +
             "var __univerListen=__univerSend&&__univerSend.keyed===true&&typeof __univerSend.listen==='function'?__univerSend.listen:null;" +
-            "var __univerMark=__univerSend&&__univerSend.keyed===true&&typeof __univerSend.mark==='function'?__univerSend.mark:null;"
+            "var __univerMark=__univerSend&&__univerSend.keyed===true&&typeof __univerSend.mark==='function'?__univerSend.mark:null;" +
+            "var __univerClock=__univerSend&&__univerSend.keyed===true&&__univerSend.clock&&typeof __univerSend.clock.now==='function'?__univerSend.clock:null;"
 
         /**
          * [body] (the modules) run with [senders] (a JS expression, see [ChannelGuard.senders]) as their only sender.

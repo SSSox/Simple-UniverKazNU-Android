@@ -1,5 +1,6 @@
 package com.univerflow.kaznu.web
 
+import android.content.res.AssetManager
 import android.os.SystemClock
 import android.webkit.CookieManager
 import android.webkit.WebView
@@ -7,7 +8,9 @@ import androidx.webkit.ScriptHandler
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import com.univerflow.kaznu.UniverViewModel
+import com.univerflow.kaznu.data.GradeStore
 import com.univerflow.kaznu.domain.AppLanguage
+import com.univerflow.kaznu.grades.JournalFetch
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -48,9 +51,9 @@ class AutomationController(private val web: WebView, private val model: UniverVi
      * The site shows its reauthentication dialog only to a session that is over; a script on any page of the site could
      * draw a lookalike of it, so the saved password goes into such a dialog only after this says so.
      */
-    private val sessionOver: suspend () -> Boolean? = SessionCheck.journal(web),
+    private val sessionOver: suspend (cookie: String?) -> Boolean? = SessionCheck.journal(web),
     private val status: (AutomationStatus) -> Unit) {
-    private val library = web.context.assets.open("univer-automation.js").bufferedReader().use { it.readText() }
+    private val library = readLibrary(web.context.assets)
     private val seal = ChannelGuard.newSecret()
     private var startScript: ScriptHandler? = if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) null
         else runCatching { WebViewCompat.addDocumentStartJavaScript(web, sealed(library, seal), setOf(SitePolicy.ORIGIN)) }.getOrNull()
@@ -60,6 +63,11 @@ class AutomationController(private val web: WebView, private val model: UniverVi
     private var unsealedDocument: String? = null
     /** The last [sessionOver] answer, the dialog it was asked about and when it came (see [SessionCheck.Answers]). */
     private val checked = SessionCheck.Answers()
+    /**
+     * The one [sessionOver] request in flight, never waited for: the loop started after the app comes back gets the
+     * answer of the one sent before when the account, session, document and dialog are the same (see [SessionCheck.Shared]).
+     */
+    private val sessionRequest = SessionCheck.Shared(scope, SystemClock::elapsedRealtime, sessionOver)
     private var watch: Job? = null
     private var generation = 0
     private var switchingUntil = 0L
@@ -100,7 +108,7 @@ class AutomationController(private val web: WebView, private val model: UniverVi
     }
     fun pause() { running = false; generation++; watch?.cancel(); presentation.setEnabled(false) }
     fun close() {
-        running = false; generation++; watch?.cancel(); presentation.close()
+        running = false; generation++; watch?.cancel(); sessionRequest.cancel(); presentation.close()
         startScript?.remove(); startScript = null
         // An attempt in flight in this WebView is abandoned with it; a replacement must not read its
         // fresh form as the site's rejection.
@@ -138,7 +146,8 @@ class AutomationController(private val web: WebView, private val model: UniverVi
         val epoch = generation
         scope.launch {
             if (SitePolicy.trusted(web.url)) {
-                val result = evaluate("$library; window.__univerAutomationV1.switchLanguage(${quote(language.siteCode)})")
+                if (!sealedHere || evaluate("typeof window.__univerAutomationV1") != "object") evaluate(library)
+                val result = evaluate("window.__univerAutomationV1&&window.__univerAutomationV1.switchLanguage(${quote(language.siteCode)})")
                 if (result == "clicked" || epoch != generation) return@launch
             }
             val headers = web.url?.takeIf(SitePolicy::trusted)?.let { mapOf("Referer" to it) } ?: emptyMap()
@@ -173,7 +182,7 @@ class AutomationController(private val web: WebView, private val model: UniverVi
         if (!SitePolicy.trusted(web.url) || !model.state.value.ready) return
         val epoch = ++generation
         watch = scope.launch {
-            evaluate(library)
+            if (!sealedHere || evaluate("typeof window.__univerAutomationV1") != "object") evaluate(library)
             presentation.apply()
             val round = Round(epoch)
             while (isActive && epoch == generation && SitePolicy.trusted(web.url)) {
@@ -259,6 +268,9 @@ class AutomationController(private val web: WebView, private val model: UniverVi
         }
         // The site closes auth_modal BEFORE /user/ajl completes. Wait for its result.
         // A late answer (after the timeout) still counts: it proves the password.
+        // A call whose answer never came back (the wait ended, or a pause or navigation cancelled it): its own document
+        // shows whether it sent; another document cannot, and the attempt then stays counted.
+        guard.reauthenticationProbed(document, probe.optString("reauthResultChallenge"), now, System.currentTimeMillis())
         val pending = guard.pendingReauthentication ?: guard.lateReauthentication
         if (pending != null) {
             val outcome = probe.optString("reauthOutcome")
@@ -308,15 +320,18 @@ class AutomationController(private val web: WebView, private val model: UniverVi
             probe.optBoolean("reauthReady") -> {
                 val credentials = model.credentials
                 val challenge = probe.getString("reauthChallenge")
-                var at = now
+                // This account, the Cookie header the journal request sends, this document and this dialog, read now.
+                fun keyNow() = SessionCheck.Key(GradeStore.of(web.context).generation,
+                    SessionCheck.session(CookieManager.getInstance().getCookie(JournalFetch.ADDRESS)), document, challenge)
+                val key = keyNow()
                 if (credentials != null && !guard.blocked) {
-                    if (!checked.stands(challenge, now)) {
-                        val asked = generation
-                        val over = sessionOver()
-                        if (asked != generation || !running) return
+                    if (!checked.stands(key, now)) {
+                        // Asked for this account, session, document and dialog only; the loop keeps probing meanwhile.
+                        val reply = sessionRequest.poll(key) ?: return
                         // The answer stands from when it came: a request that took long does not shorten it.
-                        at = SystemClock.elapsedRealtime()
-                        checked.record(challenge, over, at)
+                        checked.record(key, reply.over, reply.at)
+                        // An answer that waited too long (the app was minimised) is asked again.
+                        if (!checked.stands(key, now)) return
                     }
                     when (checked.over) {
                         // Still signed in: the dialog is not the site's own. Nothing goes into it; the student decides.
@@ -327,10 +342,21 @@ class AutomationController(private val web: WebView, private val model: UniverVi
                         true -> Unit
                     }
                 }
-                if (credentials != null && guard.tryReauthenticate(challenge, at, document)) {
+                // Checked again right before the password goes in: an answer for another account or session never counts.
+                // The submission is stamped now, when it is sent, not when the answer came.
+                if (credentials != null && !guard.blocked && (checked.over != true || keyNow() != key || !checked.stands(key, now))) return
+                if (credentials != null && guard.tryReauthenticate(challenge, now, document)) {
                     report(AutomationStatus.SIGNING_IN)
-                    val result = evaluate(onSite(seal, "reauthenticate(${quote(document)},${quote(challenge)},${quote(credentials.login)},${quote(credentials.password)})"))
-                    if (result == "wait" || result == UNPROTECTED) guard.releaseReauthentication(challenge)
+                    // The script itself refuses once the deadline has passed or the page's cookies are no longer the
+                    // session checked here: a call the renderer runs late, or after the cookies changed, enters nothing.
+                    val deadline = System.currentTimeMillis() + SUBMIT_WINDOW
+                    val handoff = handoff(key.session, newSalt(), deadline)
+                    // Recorded before the wait: if it is cancelled or ends without an answer, the next probe settles it.
+                    guard.reauthenticationQueued(challenge, document, deadline)
+                    val result = evaluate(onSite(seal, "reauthenticate(${quote(document)},${quote(challenge)},${quote(credentials.login)},${quote(credentials.password)},$handoff)"))
+                    if (result == "wait" || result == UNPROTECTED || result in REFUSED) guard.reauthenticationRefused(challenge)
+                    // The response timer runs from the script's own answer that it sent the dialog, not from the queueing.
+                    if (result == "submitted") guard.reauthenticationSent(challenge, SystemClock.elapsedRealtime())
                     if (result == UNPROTECTED) { unsealedDocument = document; report(AutomationStatus.SIGN_IN_UNAVAILABLE) }
                     // The dialog's readonly login belongs to another account: never replace it.
                     if (result?.contains("account-mismatch") == true) { guard.stop(); report(AutomationStatus.LOGIN_FAILED) }
@@ -496,13 +522,58 @@ class AutomationController(private val web: WebView, private val model: UniverVi
 
     private fun quote(value: String) = jsString(value)
 
+    /** Shares one read of the automation library across every controller instance in the process. */
+    internal class SharedSource {
+        @Volatile private var cached: String? = null
+        fun get(read: () -> String): String =
+            cached ?: synchronized(this) { cached ?: read().also { cached = it } }
+    }
+
     companion object {
         /** A login form older than this is reloaded before the saved account is submitted to it. */
         private const val STALE_FORM = 600_000L
         private const val PLACEHOLDER = "__UNIVER_AUTOMATION_SEAL__"
         private val HEX = Regex("[0-9a-f]{32}")
+        private val sharedLibrary = SharedSource()
+        /** How long after it is queued a reauthentication call may still enter the password; under [evaluate]'s 3 s wait. */
+        const val SUBMIT_WINDOW = 2_000L
+        /** What the script answers when it refused the handoff: the deadline passed, or the page's session changed. */
+        val REFUSED = setOf("expired", "session-changed")
+
+        private fun newSalt(): String {
+            val bytes = ByteArray(16).also { java.security.SecureRandom().nextBytes(it) }
+            return bytes.joinToString("") { "%02x".format(it) }
+        }
+
+        /** FNV-1a over [salt], a newline, [name], '=' and [value] (UTF-16 units), as the script's cookieMark computes it. */
+        fun cookieMark(salt: String, name: String, value: String): String {
+            var hash = 0x811c9dc5.toInt()
+            for (c in "$salt\n$name=$value") { hash = hash xor c.code; hash *= 0x01000193 }
+            return hash.toUInt().toString(16)
+        }
+
+        /** The Cookie header [session] as [name, value] pairs, split as the script splits document.cookie. */
+        fun cookiePairs(session: String?): List<Pair<String, String>> = session.orEmpty().split(';').mapNotNull { raw ->
+            val part = raw.trim()
+            if (part.isEmpty()) null else part.indexOf('=').let { at -> if (at < 0) part to "" else part.substring(0, at) to part.substring(at + 1) }
+        }
+
+        /**
+         * The handoff argument of the sealed reauthentication call: its wall-clock [deadline], and [session]'s cookies as
+         * names with salted marks, so the page learns no value it could not read itself.
+         */
+        fun handoff(session: String?, salt: String, deadline: Long): String {
+            require(HEX.matches(salt))
+            val pairs = cookiePairs(session).joinToString(",") { (name, value) -> "[${jsString(name)},${jsString(cookieMark(salt, name, value))}]" }
+            return "{deadline:$deadline,salt:${jsString(salt)},session:[$pairs]}"
+        }
+
         /** What a credential call answers when the automation in the page is not the sealed one. */
         const val UNPROTECTED = "unprotected"
+
+        private fun readLibrary(assets: AssetManager): String = sharedLibrary.get {
+            assets.open("univer-automation.js").bufferedReader().use { it.readText() }
+        }
 
         /** The library with [seal] (32 hex digits, safe inside its quotes) in place of the placeholder. */
         fun sealed(library: String, seal: String): String {

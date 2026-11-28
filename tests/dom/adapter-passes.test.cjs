@@ -107,3 +107,261 @@ test('a resize that keeps the width (the keyboard, the viewport the adapter set)
   assert.equal(passes.length, 2);
   w.__univerMobileV1.setEnabled(false, 'ru'); w.close();
 });
+
+test('memos and dialog toolbars batch all layout reads before any writes via afterLayout', () => {
+  const longText = 'Памятка студенту. '.repeat(50);
+  const body =
+    '<table class="mt"><tr class="top"><td class="ct">Памятка 1</td></tr><tr class="mid"><td class="ct memo-long">' + longText + '</td></tr></table>' +
+    '<table class="mt"><tr class="top"><td class="ct">Памятка 2</td></tr><tr class="mid"><td class="ct memo-short">' + longText + '</td></tr></table>' +
+    '<table class="mt"><tr class="top"><td class="ct">Памятка 3</td></tr><tr class="mid"><td class="ct memo-long">' + longText + '</td></tr></table>' +
+    '<div id="simplemodal-container" class="dlg-open" style="z-index:1010"><a class="simplemodal-close">x</a></div>' +
+    '<div id="simplemodal-container" class="dlg-hidden" style="z-index:1020"><a class="simplemodal-close">x</a></div>';
+  const html = '<html><head></head><body><table class="wrappertable"><tr id="l4"><td class="center">' + body + '</td></tr></table></body></html>';
+  const w = new JSDOM(html, { url: 'https://univer.kaznu.kz/student/failfx/', runScripts: 'outside-only', virtualConsole: new VirtualConsole(), pretendToBeVisual: true }).window;
+  Object.defineProperty(w.document, 'readyState', { value: 'complete', configurable: true });
+  w.CSS = { supports: () => true };
+  w.CSSLayerBlockRule = function () {};
+  w.matchMedia = () => ({ matches: false, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} });
+
+  let watching = false;
+  const memoReadButtons = [], dialogReadWrites = [];
+  w.Element.prototype.getClientRects = function () {
+    if (watching && this.id === 'simplemodal-container') {
+      const written = Array.from(w.document.querySelectorAll('.univer-app-modal-toolbar')).filter(b => b.style.zIndex !== '').length;
+      dialogReadWrites.push(written);
+    }
+    return this.classList.contains('dlg-hidden') ? [] : [{ width: 320, height: 160 }];
+  };
+  Object.defineProperty(w.HTMLElement.prototype, 'scrollHeight', {
+    configurable: true,
+    get() {
+      if (watching && this.classList.contains('univer-scr-clamp')) memoReadButtons.push(w.document.querySelectorAll('button.univer-scr-more').length);
+      return this.parentElement?.classList.contains('memo-long') ? 900 : 120;
+    }
+  });
+  Object.defineProperty(w.HTMLElement.prototype, 'clientHeight', {
+    configurable: true,
+    get() { return this.classList.contains('univer-scr-clamp') ? 160 : 0; }
+  });
+  scripts.forEach(name => w.eval(fs.readFileSync('app/src/main/assets/' + name, 'utf8')));
+
+  watching = true;
+  try { w.__univerMobileV1.setEnabled(true, 'ru'); } finally { watching = false; }
+
+  assert.equal(memoReadButtons.length, 3, 'all three memos were measured');
+  assert.ok(memoReadButtons.every(count => count === 0), 'no memo button was written before all memos were read: ' + memoReadButtons);
+  assert.equal(w.document.querySelectorAll('button.univer-scr-more').length, 2, 'only overflowing memos folded');
+  assert.equal(w.document.querySelector('.memo-short .univer-scr-clamp'), null, 'short memo was unwrapped');
+
+  assert.equal(dialogReadWrites.length, 2, 'both dialogs were measured');
+  assert.ok(dialogReadWrites.every(count => count === 0), 'no toolbar z-index was written before all dialog reads: ' + dialogReadWrites);
+  const toolbars = Array.from(w.document.querySelectorAll('.univer-app-modal-toolbar'));
+  assert.equal(toolbars.length, 2);
+  assert.deepEqual(toolbars.map(b => [b.style.zIndex, b.hidden]), [['1011', false], ['1021', true]]);
+
+  w.__univerMobileV1.setEnabled(false, 'ru');
+  w.close();
+});
+
+test('schedule minute ticks update countdowns in place without a full pass, and refresh on midnight or week change', async () => {
+  const days = ['ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ', 'ВС'];
+  const sched = '<select id="weekSelect"><option value="1" selected>Неделя 12. 16.11.2026 - 22.11.2026</option>' +
+    '<option value="2">Неделя 13. 23.11.2026 - 29.11.2026</option></select>' +
+    '<table class="schedule"><tr><th></th>' + days.map(d => '<th>' + d + '</th>').join('') + '</tr>' +
+    '<tr><td class="time">09:00–09:50</td>' + days.map(d => '<td><div class="groups"><div><p>Предмет ' + d + '</p><p>Преподаватель</p></div></div></td>').join('') + '</tr></table>';
+  const html = '<html><head></head><body><table class="wrappertable"><tr id="l4"><td class="center">' + sched + '</td></tr></table></body></html>';
+  const w = new JSDOM(html, { url: 'https://univer.kaznu.kz/student/myschedule/', runScripts: 'outside-only', virtualConsole: new VirtualConsole(), pretendToBeVisual: true }).window;
+  w.CSS = { supports: () => true };
+  w.CSSLayerBlockRule = function () {};
+  w.matchMedia = () => ({ matches: false, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} });
+
+  // Fake clock starting Tuesday 17.11.2026 09:10:00.
+  let nowMs = new Date(2026, 10, 17, 9, 10, 0).getTime();
+  const RealDate = w.Date;
+  w.Date = class extends RealDate {
+    constructor(...a) { super(...(a.length ? a : [nowMs])); }
+    static now() { return nowMs; }
+  };
+  // Capture only the minute-boundary timer (~60 s, ignoring shorter module timeouts) so we can fire it deterministically.
+  const realSetTimeout = w.setTimeout.bind(w);
+  let minuteTick = null;
+  w.setTimeout = (fn, ms, ...args) => {
+    if (ms >= 30000) { minuteTick = () => fn(...args); return 9999; }
+    return realSetTimeout(fn, ms, ...args);
+  };
+  w.clearTimeout = () => {};
+
+  scripts.forEach(name => w.eval(fs.readFileSync('app/src/main/assets/' + name, 'utf8')));
+  const tables = w.__univerTablesV1, fit = tables.fit;
+  let passes = 0;
+  tables.fit = function () { passes++; return fit.apply(this, arguments); };
+
+  w.__univerMobileV1.setEnabled(true, 'ru');
+  await wait(150);
+  const afterInitial = passes;
+  assert.ok(afterInitial >= 1);
+  assert.equal(w.document.querySelector('th.univer-app-today-col')?.textContent, 'ВТ');
+  assert.match(w.document.querySelector('.univer-app-now-count')?.textContent || '', /40 мин/);
+  assert.ok(minuteTick, 'minute timer was scheduled');
+
+  // One minute later on the same day: countdown updates, zero full adapter passes run.
+  nowMs += 60_000;
+  const tick1 = minuteTick; minuteTick = null;
+  tick1();
+  await wait(150);
+  assert.equal(passes, afterInitial, 'minute tick on unchanged day/DOM skipped the full adapter pass');
+  assert.match(w.document.querySelector('.univer-app-now-count')?.textContent || '', /39 мин/);
+  assert.ok(minuteTick, 'minute timer rescheduled itself');
+
+  // Crossing midnight to Wednesday 18.11.2026 00:01:00 refreshes today's column via a pass.
+  nowMs = new Date(2026, 10, 18, 0, 1, 0).getTime();
+  const tick2 = minuteTick; minuteTick = null;
+  tick2();
+  await wait(150);
+  const afterMidnight = passes;
+  assert.ok(afterMidnight > afterInitial, 'midnight date change triggered a refresh pass');
+  assert.equal(w.document.querySelector('th.univer-app-today-col')?.textContent, 'СР');
+
+  // Changing the selected week option also triggers a refresh pass on the next tick.
+  w.document.getElementById('weekSelect').selectedIndex = 1;
+  const tick3 = minuteTick; minuteTick = null;
+  tick3();
+  await wait(150);
+  assert.ok(passes > afterMidnight, 'week selection change triggered a refresh pass');
+  assert.equal(w.document.querySelector('th.univer-app-today-col'), null, 'next week does not contain today');
+
+  w.__univerMobileV1.setEnabled(false, 'ru');
+  w.close();
+});
+
+test('schedule refresh detects rowspan and colspan changes while preserving text and row count', async () => {
+  const sched = '<select id="weekSelect"><option value="1" selected>Неделя 12. 16.11.2026 - 22.11.2026</option></select>' +
+    '<table class="schedule">' +
+    '<tr><th></th><th>ПН</th><th>ВТ</th><th>СР</th></tr>' +
+    '<tr><td class="time">09:00–09:50</td>' +
+      '<td class="mon-slot"><div class="groups"><div><p>Алгебра</p><p>Иванов</p></div></div></td>' +
+      '<td class="tue-slot"><div class="groups"><div><p>Физика</p><p>Петров</p></div></div></td>' +
+      '<td></td></tr>' +
+    '<tr><td class="time">10:00–10:50</td><td></td><td></td><td></td></tr>' +
+    '</table>';
+  const html = '<html><head></head><body><table class="wrappertable"><tr id="l4"><td class="center">' + sched + '</td></tr></table></body></html>';
+  const w = new JSDOM(html, { url: 'https://univer.kaznu.kz/student/myschedule/', runScripts: 'outside-only', virtualConsole: new VirtualConsole(), pretendToBeVisual: true }).window;
+  w.CSS = { supports: () => true };
+  w.CSSLayerBlockRule = function () {};
+  w.matchMedia = () => ({ matches: false, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} });
+
+  let nowMs = new Date(2026, 10, 16, 9, 10, 0).getTime();
+  const RealDate = w.Date;
+  w.Date = class extends RealDate {
+    constructor(...a) { super(...(a.length ? a : [nowMs])); }
+    static now() { return nowMs; }
+  };
+  const realSetTimeout = w.setTimeout.bind(w);
+  let minuteTick = null;
+  w.setTimeout = (fn, ms, ...args) => {
+    if (ms >= 30000) { minuteTick = () => fn(...args); return 9999; }
+    return realSetTimeout(fn, ms, ...args);
+  };
+  w.clearTimeout = () => {};
+
+  scripts.forEach(name => w.eval(fs.readFileSync('app/src/main/assets/' + name, 'utf8')));
+  const tables = w.__univerTablesV1, fit = tables.fit;
+  let passes = 0;
+  tables.fit = function () { passes++; return fit.apply(this, arguments); };
+
+  w.__univerMobileV1.setEnabled(true, 'ru');
+  await wait(150);
+
+  const table = w.document.querySelector('table.schedule');
+  const monSlot = table.querySelector('td.mon-slot');
+  const initialRows = table.rows.length;
+  const initialText = table.textContent;
+  const dayCards = i => Array.from(w.document.querySelectorAll('.univer-app-day')[i].querySelectorAll('.univer-app-lesson'))
+    .map(c => ({
+      time: c.querySelector('time')?.getAttribute('aria-label') || '',
+      subject: c.querySelector('.univer-app-lesson-name')?.textContent || '',
+    }));
+
+  assert.deepEqual(dayCards(0), [{ time: '09:00–09:50', subject: 'Алгебра' }]);
+  assert.deepEqual(dayCards(1), [{ time: '09:00–09:50', subject: 'Физика' }]);
+  assert.deepEqual(dayCards(2), []);
+
+  // 1) Mutate rowspan silently (bypassing observer via quiet) so only the minute-tick fingerprint can catch it.
+  const beforeRowspan = passes;
+  w.__univerMobileV1.quiet(() => monSlot.setAttribute('rowspan', '2'));
+  assert.equal(table.rows.length, initialRows, 'row count unchanged');
+  assert.equal(table.textContent, initialText, 'table text unchanged');
+  await wait(150);
+  assert.equal(passes, beforeRowspan, 'quiet change did not trigger observer pass');
+
+  nowMs += 60_000;
+  const tick1 = minuteTick; minuteTick = null;
+  tick1();
+  await wait(150);
+  assert.ok(passes > beforeRowspan, 'minute-tick fingerprint detected rowspan change');
+  assert.deepEqual(dayCards(0), [{ time: '09:00–10:50', subject: 'Алгебра' }], 'agenda updated lesson end time after rowspan change');
+
+  // 2) Mutate colspan directly: MutationObserver detects it immediately while preserving row count and text.
+  const beforeColspan = passes;
+  monSlot.setAttribute('colspan', '2');
+  assert.equal(table.rows.length, initialRows, 'row count still unchanged');
+  assert.equal(table.textContent, initialText, 'table text still unchanged');
+  await wait(150);
+  assert.ok(passes > beforeColspan, 'observer detected colspan change');
+  assert.deepEqual(dayCards(2), [{ time: '09:00–09:50', subject: 'Физика' }], 'colspan shifted the following lesson to Wednesday');
+
+  w.__univerMobileV1.setEnabled(false, 'ru');
+  w.close();
+});
+
+test('an href added to an existing lesson anchor reaches the agenda on the next minute tick and through the observer', async () => {
+  const sched = '<select id="weekSelect"><option value="1" selected>Неделя 12. 16.11.2026 - 22.11.2026</option></select>' +
+    '<table class="schedule">' +
+    '<tr><th></th><th>ПН</th><th>ВТ</th></tr>' +
+    '<tr><td class="time">09:00–09:50</td>' +
+      '<td><div class="groups"><div><p>Алгебра</p><p>Иванов</p><p><a class="room">Аудитория</a></p></div></div></td>' +
+      '<td><div class="groups"><div><p>Физика</p><p>Петров</p><p><a class="room">Аудитория</a></p></div></div></td></tr>' +
+    '</table>';
+  const html = '<html><head></head><body><table class="wrappertable"><tr id="l4"><td class="center">' + sched + '</td></tr></table></body></html>';
+  const w = new JSDOM(html, { url: 'https://univer.kaznu.kz/student/myschedule/', runScripts: 'outside-only', virtualConsole: new VirtualConsole(), pretendToBeVisual: true }).window;
+  w.CSS = { supports: () => true };
+  w.CSSLayerBlockRule = function () {};
+  w.matchMedia = () => ({ matches: false, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} });
+  let nowMs = new Date(2026, 10, 16, 9, 10, 0).getTime();
+  const RealDate = w.Date;
+  w.Date = class extends RealDate {
+    constructor(...a) { super(...(a.length ? a : [nowMs])); }
+    static now() { return nowMs; }
+  };
+  const realSetTimeout = w.setTimeout.bind(w);
+  let minuteTick = null;
+  w.setTimeout = (fn, ms, ...args) => {
+    if (ms >= 30000) { minuteTick = () => fn(...args); return 9999; }
+    return realSetTimeout(fn, ms, ...args);
+  };
+  w.clearTimeout = () => {};
+  scripts.forEach(name => w.eval(fs.readFileSync('app/src/main/assets/' + name, 'utf8')));
+  w.__univerMobileV1.setEnabled(true, 'ru');
+  await wait(150);
+  const links = i => Array.from(w.document.querySelectorAll('.univer-app-day')[i].querySelectorAll('.univer-app-page-link')).map(a => a.getAttribute('href'));
+  assert.deepEqual(links(0), []);
+  assert.deepEqual(links(1), []);
+  const anchors = w.document.querySelectorAll('table.schedule a.room');
+
+  // Added silently: only the minute fingerprint can notice it.
+  w.__univerMobileV1.quiet(() => anchors[0].setAttribute('href', 'https://univer.kaznu.kz/room/1'));
+  await wait(150);
+  assert.deepEqual(links(0), [], 'quiet change alone does not rebuild');
+  nowMs += 60_000;
+  const tick = minuteTick; minuteTick = null; tick();
+  await wait(150);
+  assert.deepEqual(links(0), ['https://univer.kaznu.kz/room/1'], 'minute tick rebuilt the agenda with the new link');
+
+  // Added by the site: the observer follows href changes.
+  anchors[1].setAttribute('href', 'https://univer.kaznu.kz/room/2');
+  await wait(250);
+  assert.deepEqual(links(1), ['https://univer.kaznu.kz/room/2'], 'observer rebuilt the agenda with the new link');
+
+  w.__univerMobileV1.setEnabled(false, 'ru');
+  w.close();
+});

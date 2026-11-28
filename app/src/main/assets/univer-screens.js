@@ -10,7 +10,7 @@
     var dom = window.__univerDomV1, clean = dom.clean, el = dom.el, setText = dom.setText, ownRows = dom.ownRows;
     // Without layers and :has() the hidden sources would stand beside the views that replace them.
     var capable = !!(window.CSS && CSS.supports && CSS.supports('selector(:has(a))') && window.CSSLayerBlockRule);
-    var language = 'ru', style = null, page = '', views = {}, entered = {}, timer = 0;
+    var language = 'ru', style = null, page = '', views = {}, entered = {}, examTimer = 0;
     var classes = new Map(), added = [], listeners = [], wraps = [];
 
     function words() {
@@ -90,6 +90,8 @@
     }
     // Writes made outside the layout's pass (the minute timer, the GPA count) do not start a new pass.
     function quiet(action) { var mobile = window.__univerMobileV1; if (mobile && mobile.quiet) mobile.quiet(action); else action(); }
+    // Inside the adapter's pass, layout reads wait for the pass's single batched read (afterLayout), not mid-pass.
+    function later(read, write) { var mobile = window.__univerMobileV1; if (mobile && mobile.afterLayout) mobile.afterLayout(read, write); else write(read()); }
     function listen(node, type, handler) { node.addEventListener(type, handler); listeners.push([node, type, handler]); }
     function ui() { return window.__univerMotionUI; }
     // Only a real pointer click animates; scripted and keyboard clicks change state at once.
@@ -131,38 +133,63 @@
     function textOf(node) { return clean(Array.from(node.childNodes).filter(function (n) { return n.nodeType === 3; }).map(function (n) { return n.nodeValue; }).join(' ')); }
 
     // Long memo text folds to a few lines behind "Show in full". The cell's own nodes move into one wrapper, which
-    // release() unwraps again; the height change is animated.
-    var fits = new WeakSet();
-    function clampCell(cell, name) {
-        if (!cell || fits.has(cell) || cell.querySelector(':scope>.univer-scr-clamp')) return;
-        if (!cell.getClientRects().length) return;
-        if (cell.querySelector('table,form,input,select,textarea,iframe,video')) { fits.add(cell); return; }
-        var box = el('div', 'univer-scr-clamp');
-        while (cell.firstChild) box.appendChild(cell.firstChild);
-        cell.appendChild(box); wraps.push(box);
-        if (box.scrollHeight <= box.clientHeight + 24) { unwrap(box); fits.add(cell); return; }
-        var button = create('button', 'univer-scr-more'); button.type = 'button'; button.setAttribute('aria-expanded', 'false');
-        button.textContent = words().more; button.dataset.univerScrName = name || '';
-        listen(button, 'click', function (event) {
-            var open = !box.classList.contains('univer-scr-open'), before = box.getBoundingClientRect().height;
-            ui()?.stop(box);
-            box.classList.toggle('univer-scr-open', open);
-            button.setAttribute('aria-expanded', String(open)); button.textContent = open ? words().less : words().more;
-            if (moving(event)) ui()?.resize(box, before, open ? 260 : 200);
-            if (!open && box.getBoundingClientRect().top < 0) box.scrollIntoView({block:'start', behavior:moving(event) && motionAllowed() ? 'smooth' : 'auto'});
+    // release() unwraps again; the height change is animated. All cells wrap first, then measure together and write
+    // together via afterLayout(read, write), avoiding one forced layout per memo.
+    // Each wrapper's "Show in full" button sits beside it in the cell, so it goes when its wrapper goes.
+    var fits = new WeakSet(), mores = new WeakMap();
+    function clampCells(cells, name) {
+        var pending = [];
+        cells.forEach(function (cell) {
+            if (!cell || fits.has(cell) || cell.querySelector(':scope>.univer-scr-clamp')) return;
+            // A button left from a wrapper the site replaced is not wrapped into the new one, nor kept as a second button.
+            Array.from(cell.querySelectorAll(':scope>button.univer-scr-more')).forEach(function (old) { if (added.indexOf(old) >= 0) drop(old); });
+            if (cell.querySelector('table,form,input,select,textarea,iframe,video')) { fits.add(cell); return; }
+            var box = el('div', 'univer-scr-clamp');
+            while (cell.firstChild) box.appendChild(cell.firstChild);
+            cell.appendChild(box); wraps.push(box);
+            pending.push({cell:cell, box:box, name:name || ''});
         });
-        cell.appendChild(button);
+        if (!pending.length) return;
+        later(function () {
+            return pending.map(function (item) {
+                if (!item.box.isConnected || !item.cell.isConnected) return null;
+                var visible = item.box.getClientRects().length > 0;
+                return {visible:visible, overflows:visible && item.box.scrollHeight > item.box.clientHeight + 24};
+            });
+        }, function (measured) {
+            pending.forEach(function (item, i) {
+                var result = measured[i], box = item.box, cell = item.cell;
+                if (!result || !box.isConnected || !cell.isConnected || !document.documentElement.classList.contains('univer-scr')) return;
+                if (!result.visible) { unwrap(box); return; }
+                if (!result.overflows) { unwrap(box); fits.add(cell); return; }
+                var button = create('button', 'univer-scr-more'); button.type = 'button'; button.setAttribute('aria-expanded', 'false');
+                button.textContent = words().more; button.dataset.univerScrName = item.name;
+                listen(button, 'click', function (event) {
+                    var open = !box.classList.contains('univer-scr-open'), before = box.getBoundingClientRect().height;
+                    ui()?.stop(box);
+                    box.classList.toggle('univer-scr-open', open);
+                    button.setAttribute('aria-expanded', String(open)); button.textContent = open ? words().less : words().more;
+                    if (moving(event)) ui()?.resize(box, before, open ? 260 : 200);
+                    if (!open && box.getBoundingClientRect().top < 0) box.scrollIntoView({block:'start', behavior:moving(event) && motionAllowed() ? 'smooth' : 'auto'});
+                });
+                cell.appendChild(button); mores.set(box, button);
+            });
+        });
     }
+    function clampCell(cell, name) { clampCells([cell], name); }
     function unwrap(box) {
         var i = wraps.indexOf(box); if (i >= 0) wraps.splice(i, 1);
+        var more = mores.get(box); if (more) { mores.delete(box); drop(more); }
         if (box.parentNode) { while (box.firstChild) box.parentNode.insertBefore(box.firstChild, box); box.remove(); }
     }
     // A long memo panel: a text cell over 600 characters in a panel of its own.
     function clampMemos() {
+        var cells = [];
         document.querySelectorAll('#l4 table.mt>tbody>tr>td.ct').forEach(function (cell) {
             if (cell.closest('#tools,.univer-scr-view') || cell.parentElement.classList.contains('top') || clean(cell).length < 600) return;
-            clampCell(cell, 'memo');
+            cells.push(cell);
         });
+        clampCells(cells, 'memo');
     }
 
     // An empty state with a title, an icon and an optional line, standing in for a table that says "no data".
@@ -245,16 +272,58 @@
         var hours = Math.floor(ms / 3600000);
         return hours >= 1 ? [String(hours), w.hours] : [String(Math.max(1, Math.ceil(ms / 60000))), w.minutes];
     }
-    // «В календарь»: the student's own tap hands this exam to the phone's calendar app (two hours; one for a consultation).
+    // True when a tap may open the calendar or the report. Without the keyed channel the control is not shown:
+    // a press would have nothing honest to do. Tests stub only __univerNative, so the flag is absent there.
+    function canAct() {
+        if (typeof __univerActions === 'boolean') return __univerActions;
+        return typeof __univerNative === 'function';
+    }
+    // The prefix is this call's own argument. The document-start sender serializes the fields; a page function cannot
+    // hand back a different command's text and have it keyed.
+    function deliver(prefix, value) {
+        if (typeof __univerPost === 'function') { __univerPost(prefix, value); return; }
+        var body;
+        try { body = (typeof __univerJson === 'function' ? __univerJson : JSON.stringify)(value); } catch (e) { return; }
+        if (typeof body === 'string' && typeof __univerNative === 'function') __univerNative(prefix + body);
+    }
+    function onTap(node, handler) {
+        var run = function (event) { if (event && event.isTrusted) handler(event); };
+        if (typeof __univerListen === 'function') __univerListen(node, 'click', run);
+        else node.addEventListener('click', run);
+    }
+    // The keyed channel's clock (univer-channel.js), taken at document start; this module's own only without the channel.
+    var timer = typeof __univerClock === 'object' && __univerClock && typeof __univerClock.time === 'function' ? __univerClock : {
+        time: function (date) { return date.getTime(); },
+        parts: function (time) { var d = new Date(time); return {year:d.getFullYear(), month:d.getMonth(), date:d.getDate(), hours:d.getHours(), minutes:d.getMinutes()}; }
+    };
+    // Text on one line within [max] characters, by characters alone: no String method the page may swap takes part.
+    function flat(value, max) {
+        if (typeof value !== 'string') return '';
+        var out = '', gap = false, i, c;
+        for (i = 0; i < value.length && out.length < max; i++) {
+            c = value[i];
+            if (c === ' ' || c === '\n' || c === '\t' || c === '\r' || c === '\f' || c === '\v' || c === '\u00a0') { gap = out.length > 0; continue; }
+            if (gap) { out += ' '; gap = false; if (out.length >= max) break; }
+            out += c;
+        }
+        return out;
+    }
+    function twoDigits(n) { return n < 10 ? '0' + n : '' + n; }
+    function momentOf(time) { var p = timer.parts(time); return p.year + '-' + twoDigits(p.month + 1) + '-' + twoDigits(p.date) + 'T' + twoDigits(p.hours) + ':' + twoDigits(p.minutes); }
+    // The student's own tap hands this exam to the phone's calendar app (two hours; one for a consultation), as
+    // CalendarEvent.of reads it. The event is made when the button is drawn, its time through the clock taken at document
+    // start and its text by characters alone, and kept in this closure: what the page changes later is not what is sent.
     function calendarButton(item, w) {
+        if (!canAct()) return null;
+        var start = timer.time(item.at);
+        if (start !== start) return null;
+        var kind = item.kind === 'exam' ? w.exam : item.kind === 'consult' ? w.consult : item.kindText, notes = '', parts = [item.teacher, item.group, item.note], i;
+        for (i = 0; i < 3; i++) if (typeof parts[i] === 'string' && parts[i]) notes += (notes ? ' · ' : '') + parts[i];
+        var message = {v:1, title:flat((kind ? kind + ': ' : '') + item.name, 200), start:momentOf(start),
+            end:momentOf(start + (item.kind === 'consult' ? 1 : 2) * 3600000), place:flat(item.place, 200), notes:flat(notes, 500), until:null};
+        if (!message.title) return null;
         var button = el('button', 'univer-scr-calendar', w.calendar); button.type = 'button';
-        button.addEventListener('click', function (event) {
-            if (!event.isTrusted || typeof __univerNative !== 'function') return;
-            var kind = item.kind === 'exam' ? w.exam : item.kind === 'consult' ? w.consult : item.kindText;
-            __univerNative(dom.calendarMessage({title:(kind ? kind + ': ' : '') + item.name, start:item.at,
-                end:new Date(item.at.getTime() + (item.kind === 'consult' ? 1 : 2) * 3600000), place:item.place,
-                notes:[item.teacher, item.group, item.note].filter(Boolean).join(' · ')}));
-        });
+        onTap(button, function () { deliver('univer-calendar:', message); });
         return button;
     }
     // The coming exams (or midterms, by the page) go to the app for its reminders, as local wall-clock times. The list
@@ -294,7 +363,7 @@
             card.appendChild(el('p', 'univer-scr-next-when', w.weekdays[next.at.getDay()] + ', ' + next.at.getDate() + ' ' + w.months[next.at.getMonth()] + ' · ' + hhmm(next.at)));
             var count = el('div', 'univer-scr-count'), value = el('span', 'univer-scr-count-value'), unit = el('span', 'univer-scr-count-unit');
             count.append(value, unit); card.appendChild(count);
-            if (typeof __univerNative === 'function') card.appendChild(calendarButton(next, w));
+            var toCalendar = calendarButton(next, w); if (toCalendar) card.appendChild(toCalendar);
             node.appendChild(card); parts.push(card);
         }
         var days = el('ol', 'univer-scr-days'); days.setAttribute('aria-label', w.schedule);
@@ -328,7 +397,7 @@
                 if (item.place) meta.appendChild(el('span', 'univer-scr-where', item.place));
                 if (item.group) meta.appendChild(el('span', 'univer-scr-group', item.group));
                 if (meta.childNodes.length) body.appendChild(meta);
-                var later = typeof __univerNative === 'function' && item.at.getTime() > Date.now();
+                var later = canAct() && item.at.getTime() > Date.now();
                 if (item.links.length || item.take || later) {
                     var links = el('p', 'univer-scr-slot-links');
                     if (item.take) {
@@ -356,13 +425,13 @@
         refreshExams(views.exams);
         // The countdown and "today" follow the clock between site updates; once the next exam has begun, the card
         // moves on to the one after it.
-        clearInterval(timer); timer = setInterval(function () {
+        clearInterval(examTimer); examTimer = setInterval(function () {
             quiet(function () {
                 var current = views.exams; if (!current) return;
                 if (current.next && current.next.at.getTime() <= Date.now()) exams(); else refreshExams(current);
             });
         }, 60000);
-        views.exams.cleanup = function () { clearInterval(timer); timer = 0; };
+        views.exams.cleanup = function () { clearInterval(examTimer); examTimer = 0; };
         enter('exams', parts);
     }
     // The start button finds the site's link when it is tapped, so a list the site has re-rendered still starts the exam.
@@ -533,7 +602,7 @@
         }
         // The introduction under the scale folds; the scale itself is outside the fold.
         var wrapper = cell.querySelector(':scope>.univer-scr-clamp');
-        if (!wrapper && !fits.has(cell) && cell.getClientRects().length && clean(cell).length > 400) {
+        if (!wrapper && !fits.has(cell) && clean(cell).length > 400) {
             var scaleBox = views.scale && views.scale.node.parentNode === cell ? views.scale.node : null;
             if (scaleBox) scaleBox.remove();
             clampCell(cell, 'intro');
@@ -1062,21 +1131,21 @@ ${M} #l4 :is(a.univer-scr-action,a.univer-scr-link,button.univer-scr-start,butto
 `);
     }
 
-    function apply(lang) {
-        language = lang || 'ru';
-        if (!capable || document.readyState === 'loading' || !document.body) return;
-        var path = location.pathname, route = ROUTES.find(function (r) { return r[0].test(path); });
-        if (!route) { release(); return; }
-        var root = document.documentElement;
-        if (!root.classList.contains('univer-mobile')) return;
-        if (!style || !style.isConnected) {
-            style = document.createElement('style'); style.id = 'univer-screens-style'; style.textContent = css();
-            // First in <head>: the first declared layer wins among !important rules.
-            var head = document.head || root; head.insertBefore(style, head.firstChild);
-        }
-        mark(root, 'univer-scr');
-        if (page !== route[1]) { if (page) unmark(root, 'univer-scr-page-' + page); page = route[1]; }
-        mark(root, 'univer-scr-page-' + page);
+    // Detached nodes left behind by AJAX re-draws release their views, wraps, added nodes, listeners and classes so
+    // nothing accumulates across passes and detached site nodes return to how the site drew them.
+    function prune() {
+        Object.keys(views).forEach(function (name) {
+            var view = views[name];
+            var lost = (view.node && !view.node.isConnected) || (view.nodes && view.nodes.some(function (n) { return !n.isConnected; }));
+            if (lost) forget(name);
+        });
+        wraps.slice().forEach(function (box) { if (!box.isConnected) unwrap(box); });
+        added.slice().forEach(function (node) { if (!node.isConnected) drop(node); });
+        listeners = listeners.filter(function (l) {
+            if (l[0].isConnected) return true;
+            l[0].removeEventListener(l[1], l[2]);
+            return false;
+        });
         // A node the site took out loses this module's classes, so putting it back later shows it as the site drew it.
         classes.forEach(function (set, node) {
             if (node.isConnected) return;
@@ -1084,6 +1153,23 @@ ${M} #l4 :is(a.univer-scr-action,a.univer-scr-link,button.univer-scr-start,butto
             if (!node.getAttribute('class')) node.removeAttribute('class');
             classes.delete(node);
         });
+    }
+    function apply(lang) {
+        language = lang || 'ru';
+        if (!capable || document.readyState === 'loading' || !document.body) return;
+        var path = location.pathname, route = ROUTES.find(function (r) { return r[0].test(path); });
+        var root = document.documentElement;
+        if (!route || !root.classList.contains('univer-mobile')) { release(); return; }
+        if (page && page !== route[1]) release();
+        if (!style || !style.isConnected) {
+            style = document.createElement('style'); style.id = 'univer-screens-style'; style.textContent = css();
+            // First in <head>: the first declared layer wins among !important rules.
+            var head = document.head || root; head.insertBefore(style, head.firstChild);
+        }
+        mark(root, 'univer-scr');
+        page = route[1];
+        mark(root, 'univer-scr-page-' + page);
+        prune();
         if (route[2]) route[2]();
         if (page !== 'exams') { forget('exams'); forget('scheduleEmpty'); }
         mainActions();
@@ -1094,7 +1180,7 @@ ${M} #l4 :is(a.univer-scr-action,a.univer-scr-link,button.univer-scr-start,butto
     }
     function release() {
         Object.keys(views).forEach(forget);
-        clearInterval(timer); timer = 0;
+        clearInterval(examTimer); examTimer = 0;
         listeners.forEach(function (l) { l[0].removeEventListener(l[1], l[2]); }); listeners = [];
         added.forEach(function (node) { node.remove(); }); added = [];
         wraps.slice().forEach(unwrap); wraps = [];

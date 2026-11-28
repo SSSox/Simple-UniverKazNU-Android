@@ -13,6 +13,7 @@ import android.webkit.GeolocationPermissions
 import android.webkit.PermissionRequest
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.SslErrorHandler
+import android.webkit.URLUtil
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
@@ -27,16 +28,19 @@ import com.google.android.material.snackbar.Snackbar
 import com.univerflow.kaznu.R
 import com.univerflow.kaznu.databinding.ActivityLinkViewerBinding
 import com.univerflow.kaznu.domain.AppLanguage
+import com.univerflow.kaznu.web.DownloadOffer
+import com.univerflow.kaznu.web.LinkFileLabel
 import com.univerflow.kaznu.web.LinkOpening
 import com.univerflow.kaznu.web.LinkPolicy
 import com.univerflow.kaznu.web.LinkProfile
 import com.univerflow.kaznu.web.LinkStep
 import com.univerflow.kaznu.web.SitePolicy
+import java.net.URI
 
 /**
  * Pages of other sites inside the app, like Moodle's panel, in a WebView profile of their own ([LinkProfile]): their
  * sign-ins stay between runs and never meet the Univer session. No JavaScript bridge, local files, extra windows,
- * permissions or certificate exceptions; files go to the browser. A tap on a Univer or Moodle page returns it to the main
+ * permissions or certificate exceptions; a file is offered in a bar and goes to the browser only from the user's tap. A tap on a Univer or Moodle page returns it to the main
  * screen as this screen's result.
  */
 class LinkViewerActivity : AppCompatActivity() {
@@ -50,6 +54,9 @@ class LinkViewerActivity : AppCompatActivity() {
     private var errorOpensBrowser = false
     /** The main-frame address being loaded, to tell its certificate failure from one of an embedded resource. */
     private var pending: String? = null
+    /** The file the page handed over, waiting for a tap on the bar's «Open»; a download never opens anything by itself. */
+    private val downloads = DownloadOffer { openSystem(it) }
+    private var downloadBar: Snackbar? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -99,7 +106,7 @@ class LinkViewerActivity : AppCompatActivity() {
         LinkProfile.cookies().apply { setAcceptCookie(true); setAcceptThirdPartyCookies(view, false) }
         view.webViewClient = Client()
         view.webChromeClient = Chrome()
-        view.setDownloadListener { url, _, _, _, _ -> openSystem(url) }
+        view.setDownloadListener { url, _, disposition, mime, _ -> offerDownload(url, disposition, mime) }
         return view
     }
 
@@ -144,6 +151,30 @@ class LinkViewerActivity : AppCompatActivity() {
         failedUrl = null
         binding.linkError.root.isVisible = false
         web?.isVisible = true
+    }
+
+    /**
+     * A download may answer a navigation nobody tapped, so it only puts up a bar naming the file and its site; the
+     * browser opens it from the bar's button. A file that may not leave (not https, Univer or Moodle) is refused quietly.
+     */
+    private fun offerDownload(url: String?, disposition: String?, mime: String?) {
+        val offer = downloads.offer(url) ?: run { message(R.string.link_blocked); return }
+        val address = url!!
+        val host = LinkFileLabel.visibleHost(runCatching { URI(address).host }.getOrNull().orEmpty())
+        val name = LinkFileLabel.visibleName(runCatching { URLUtil.guessFileName(address, disposition, mime) }.getOrNull())
+        val label = name?.let { localized.getString(R.string.link_file, host, it) } ?: localized.getString(R.string.link_file_unnamed, host)
+        downloadBar?.dismiss()
+        val bar = Snackbar.make(binding.root, label, DOWNLOAD_BAR_MS)
+            .setAction(text(R.string.open_file)) { downloads.accept(offer) }
+            .addCallback(object : Snackbar.Callback() {
+                override fun onDismissed(shown: Snackbar, event: Int) {
+                    if (event != Snackbar.Callback.DISMISS_EVENT_ACTION) downloads.dismiss(offer)
+                    if (downloadBar === shown) downloadBar = null
+                }
+            })
+        bar.setTextMaxLines(3)
+        downloadBar = bar
+        bar.show()
     }
 
     /** Mail, phone, plain http and files go to the system; nothing else ever leaves this screen. */
@@ -241,6 +272,8 @@ class LinkViewerActivity : AppCompatActivity() {
 
     companion object {
         private const val EXTRA_URL = "url"
+        /** Long enough to read the file's name and reach the button; accessibility settings stretch it further. */
+        private const val DOWNLOAD_BAR_MS = 10_000
         private const val EXTRA_LANGUAGE = "language"
         const val RESULT_URL = "url"
         fun intent(context: Context, url: String, language: AppLanguage): Intent =

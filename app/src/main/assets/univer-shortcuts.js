@@ -158,8 +158,11 @@
     function pinMessage(value) { return 'univer-pin:' + (typeof __univerJson === 'function' ? __univerJson(value) : JSON.stringify(value)); }
     function notify(value) {
         // Only the pin request crosses to native code, which validates and stores it; no callable host objects.
-        if (typeof __univerNative === 'function') __univerNative(value);
-        else if (window.CefSharp) CefSharp.PostMessage(value);
+        // The prefix stays univer-pin: here. The keyed sender will not stamp the key onto some other command's text.
+        if (typeof __univerPost === 'function') { __univerPost('univer-pin:', value); return; }
+        var text = pinMessage(value);
+        if (typeof __univerNative === 'function') __univerNative(text);
+        else if (window.CefSharp) CefSharp.PostMessage(text);
     }
     function request(event, pin, title, href) {
         event.preventDefault(); event.stopPropagation();
@@ -174,7 +177,7 @@
             if (pin && !pinned(href)) pins = pins.concat([{title:title, url:href}]);
             if (!pin) pins = pins.filter(function (p) { return p.url !== href; });
         }
-        notify(pinMessage({pin:pin, title:title, url:href}));
+        notify({pin:pin, title:title, url:href});
         // The tap shows at once, before the app's stored list comes back through configure().
         menuPinsDrawn = null;
         render();
@@ -505,7 +508,7 @@
         index = Math.max(0, Math.min(nodes.length - 1, index)); if (from < 0 || from === index) return;
         nodes.splice(from, 1); nodes.splice(index, 0, node);
         tileOrder = nodes.map(function (tile) { return tile.querySelector('a').href; }); orderKey = JSON.stringify(tileOrder);
-        notify(pinMessage({order:tileOrder}));
+        notify({order:tileOrder});
         render();
     }
     // The built-in tiles (through the menu's own links where it has them) and the student's pins they do not repeat.

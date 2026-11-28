@@ -134,8 +134,13 @@ test('without the keyed channel there is no «Скачать все», and neith
   assert.equal(p.d.querySelectorAll('button.univer-app-fold-all').length, 0, 'no button that would do nothing');
   p.w.direct('univer-download-all:{"section":"Лекции","head":0,"count":1,"mark":1,"urls":["' + URL_OF(9102) + '"]}');
   p.w.direct('univer-pin:{"pin":true,"url":"https://evil.example/"}');
+  p.w.direct('univer-report:{}');
+  p.w.direct('univer-calendar:{}');
+  p.w.direct('univer-export:{}');
   p.w.direct('univer-grades:{}');
-  assert.deepEqual(p.app, ['univer-grades:{}'], 'what the pages report still goes; nothing that acts by itself');
+  p.w.direct('univer-schedule:{"v":1}');
+  p.w.direct('univer-exams:{}');
+  assert.deepEqual(p.app, ['univer-grades:{}', 'univer-schedule:{"v":1}', 'univer-exams:{}'], 'reports still go; no tap command does');
   assert.equal(p.w.eval(sectionPlaces(UNKEYED, PAGE, [URL_OF(9102)], 1)), null, 'and no lookup vouches for an address');
   p.w.close();
 });

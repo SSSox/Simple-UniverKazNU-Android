@@ -6,7 +6,6 @@ import androidx.webkit.WebViewFeature
 import com.univerflow.kaznu.domain.CalendarEvent
 import com.univerflow.kaznu.domain.ExamItem
 import com.univerflow.kaznu.domain.ExamKind
-import com.univerflow.kaznu.domain.ExamPlan
 import com.univerflow.kaznu.domain.ExportKind
 import com.univerflow.kaznu.domain.GradeReport
 import com.univerflow.kaznu.domain.GradeTotals
@@ -22,8 +21,8 @@ import org.json.JSONTokener
 /**
  * Receives home-tile pin and order taps, a UMKD section's «Скачать все», the journal's «Поделиться успеваемостью» and
  * «В календарь», the schedule's week and the journal's totals from the site's main frame. Only data crosses: a listener limited to the exact Univer origin, no callable host
- * objects, and only messages carrying [channel]'s key: the site's own scripts cannot pin a tile, start downloads or
- * open the share sheet. A WebView without the keyed channel takes no pin and no «Скачать все» at all.
+ * objects, and only messages carrying [channel]'s key: the site's own scripts cannot pin a tile, start downloads,
+ * open the share sheet, the calendar or the schedule export. A WebView without the keyed channel takes none of those.
  */
 class ShortcutBridge(private val web: WebView, private val channel: ChannelGuard, private val onDownloadAll: (DownloadBatch) -> Unit = {},
     private val onReport: (GradeReport?) -> Unit = {}, private val onCalendar: (CalendarEvent?) -> Unit = {},
@@ -36,23 +35,26 @@ class ShortcutBridge(private val web: WebView, private val channel: ChannelGuard
         if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) WebViewCompat.addWebMessageListener(web, CHANNEL, setOf(SitePolicy.ORIGIN)) { _, message, origin, mainFrame, _ ->
             if (closed || !mainFrame || origin.toString() != SitePolicy.ORIGIN) return@addWebMessageListener
             val data = channel.unwrap(runCatching { message.data }.getOrNull()) ?: return@addWebMessageListener
-            when {
-                // Without the keyed channel the site could send these itself: no download and no home-tile change.
-                !channel.actions && (data.startsWith(DownloadBatch.MESSAGE_PREFIX) || data.startsWith(Shortcuts.MESSAGE_PREFIX)) -> Unit
-                data.startsWith(DownloadBatch.MESSAGE_PREFIX) -> DownloadBatch.parse(data)?.let(onDownloadAll)
+            // A tap command from a page that has no keyed channel is dropped before any parser. Reports (the week, the
+            // totals, the exams) still pass. Each kind is parsed only as itself: a pin body under the calendar prefix
+            // is a bad calendar event, not a saved pin.
+            if (!ChannelGuard.accepts(data, channel.actions)) return@addWebMessageListener
+            when (ChannelGuard.kind(data)) {
+                ChannelGuard.Kind.DOWNLOAD -> DownloadBatch.parse(data)?.let(onDownloadAll)
                 // Our own journal sent it, so a report out of shape is said, not dropped in silence.
-                data.startsWith(GradeReport.MESSAGE_PREFIX) -> onReport(ReportMessage.parse(data))
+                ChannelGuard.Kind.REPORT -> onReport(ReportMessage.parse(data))
                 // «В календарь» on an exam or a class; one out of shape is said as well.
-                data.startsWith(CalendarEvent.MESSAGE_PREFIX) -> onCalendar(CalendarMessage.parse(data))
+                ChannelGuard.Kind.CALENDAR -> onCalendar(CalendarMessage.parse(data))
                 // The schedule's week, sent without a tap: one out of shape, or not this week, is dropped.
-                data.startsWith(Timetable.MESSAGE_PREFIX) -> TimetableMessage.parse(data)?.let(onTimetable)
+                ChannelGuard.Kind.SCHEDULE -> TimetableMessage.parse(data)?.let(onTimetable)
                 // The journal's totals, sent without a tap for the background check's base; one out of shape is dropped.
-                data.startsWith(GradeTotals.MESSAGE_PREFIX) -> GradesMessage.parse(data)?.let(onGrades)
+                ChannelGuard.Kind.GRADES -> GradesMessage.parse(data)?.let(onGrades)
                 // The schedule's «В календарь» or «Картинкой»; a page that could not be read, or one out of shape, is said.
-                data.startsWith(SchedulePair.MESSAGE_PREFIX) -> onSchedule(ScheduleExportMessage.parse(data))
+                ChannelGuard.Kind.EXPORT -> onSchedule(ScheduleExportMessage.parse(data))
                 // The exam or midterm schedule's coming items, sent without a tap; one out of shape is dropped.
-                data.startsWith(ExamPlan.MESSAGE_PREFIX) -> ExamMessage.parse(data)?.let { (kind, items) -> onExams(kind, items) }
-                else -> parse(data)?.let(onRequest)
+                ChannelGuard.Kind.EXAMS -> ExamMessage.parse(data)?.let { (kind, items) -> onExams(kind, items) }
+                ChannelGuard.Kind.PIN -> parse(data)?.let(onRequest)
+                null -> Unit
             }
         }
     }

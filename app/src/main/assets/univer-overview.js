@@ -1,5 +1,8 @@
 /* Read-only summaries on the tab pages: Бакалавр shows today's classes and the grade summary, the Е-услуги desk
    shows the latest requests. Each is read from the site's own GET page once per visit and never changes it. */
+// The class cards' «В календарь» (univer-mobile.js) reads the week pair through this. The modules go in together inside
+// MobilePageAdapter's wrapper, so it is a variable of that call, which no site script reaches.
+var __univerWeekPair = null;
 (function () {
     'use strict';
     if (location.origin !== 'https://univer.kaznu.kz' || window.__univerOverviewV1) return;
@@ -271,7 +274,13 @@
        `missing`: no other week stands in for it. */
     var EXPORT_VALUE = /^\/student\/myschedule\/\d{4}\/[12]\/\d{1,2}\.\d{1,2}\.\d{4}\/\d{1,2}\.\d{1,2}\.\d{4}\/?$/;
     var SCHEDULE_PAGE = /^\/student\/myschedule(?:\/\d{4}\/[12](?:\/\d{1,2}\.\d{1,2}\.\d{4}\/\d{1,2}\.\d{1,2}\.\d{4})?)?\/?$/;
-    function dayAfter(date) { return new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1).getTime(); }
+    // The channel's week reader, Promise and clock, taken at document start (univer-channel.js); without them this module's own.
+    var held = typeof __univerClock === 'object' && __univerClock && typeof __univerClock.page === 'function' && typeof __univerClock.promise === 'function' ? __univerClock : null;
+    function timeOf(date) { return held ? held.time(date) : date.getTime(); }
+    function dayAfter(date) {
+        if (!held) return new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1).getTime();
+        var p = held.parts(held.time(date)); return held.at(p.year, p.month, p.date + 1, 0, 0);
+    }
     // The site's number of the week from its option ("7 неделя …"), else its place in the list.
     function weekNumber(option, index) {
         var label = clean(option).replace(/\d{1,2}\.\d{1,2}\.\d{4}/g, ' '), found = parseInt((label.match(/\d{1,2}/) || [''])[0], 10);
@@ -288,6 +297,13 @@
         var range = frame.ranges[index], number = weekNumber(frame.options[index], index), monday = mondayOf(range[0]);
         return {number:number.number, labelled:number.labelled, monday:isoDay(monday), first:isoDay(range[0]), last:isoDay(range[range.length - 1]), lessons:weekLessons(doc, monday)};
     }
+    // [doc] when it shows the week of [range] (its first and last day), else an error.
+    function sameWeek(doc, range) {
+        if (doc.querySelector('#login_frm') || !doc.querySelector('table.schedule')) throw new Error('Unread');
+        var got = weekFrame(doc), shown = got && got.ranges[got.at];
+        if (!shown || timeOf(shown[0]) !== timeOf(range[0]) || timeOf(shown[shown.length - 1]) !== timeOf(range[range.length - 1])) throw new Error('Other week');
+        return doc;
+    }
     async function readWeek(option, range) {
         var value = option.value, url = new URL(value, location.origin);
         if (!EXPORT_VALUE.test(value) || url.origin !== location.origin) throw new Error('Address');
@@ -297,46 +313,88 @@
             var final = new URL(response.url, location.origin);
             if (response.status !== 200 || final.origin !== location.origin || final.pathname !== url.pathname) throw new Error('Unavailable');
             var html = await response.text(); if (html.length > MAX_HTML) throw new Error('Oversized');
-            var doc = new DOMParser().parseFromString(html, 'text/html');
-            if (doc.querySelector('#login_frm') || !doc.querySelector('table.schedule')) throw new Error('Unread');
-            var got = weekFrame(doc), asked = range[range.length - 1].getTime();
-            var shown = got && got.ranges[got.at];
-            if (!shown || shown[0].getTime() !== range[0].getTime() || shown[shown.length - 1].getTime() !== asked) throw new Error('Other week');
-            return doc;
+            return sameWeek(new DOMParser().parseFromString(html, 'text/html'), range);
         } finally { clearTimeout(timeout); }
     }
     // {v, term, until (the last day the site lists), weeks (the shown one first, then its neighbour), missing (numbers)}.
-    async function readPair(doc) {
-        doc = doc || document;
-        var frame = weekFrame(doc); if (!frame) throw new Error('No week');
-        var shown = frame.ranges[frame.at], start = shown[0].getTime(), end = dayAfter(shown[shown.length - 1]), after = -1, before = -1, latest = shown[shown.length - 1];
-        frame.ranges.forEach(function (r, i) {
-            if (!r) return;
-            if (r[r.length - 1] > latest) latest = r[r.length - 1];
-            if (i === frame.at) return;
-            if (r[0].getTime() === end && after < 0) after = i;
-            if (dayAfter(r[r.length - 1]) === start && before < 0) before = i;
+    // With the channel the neighbour is fetched and parsed by its reader (clock.page), the promise is its Promise, and the
+    // pair's own `then` (undefined, never sent) keeps a then the page put on Object.prototype from answering for the pair:
+    // a page that swaps fetch, DOMParser, Response, URL or Promise methods at load can neither block the neighbour nor
+    // replace the pair. The arrays are literals, so no push or index setter of the page's takes part.
+    function readPair(doc) {
+        if (!held) return readPairHere(doc);
+        return held.promise(function (resolve) {
+            var base = pairBase(doc || document), pair = base.pair, other = base.other;
+            if (other < 0) { resolve(pair); return; }
+            var missing = function () { pair.missing = [weekNumber(base.frame.options[other], other).number]; resolve(pair); };
+            var reading = null, value = base.frame.options[other].value;
+            try { reading = typeof value === 'string' && EXPORT_VALUE.test(value) ? held.page(value, MAX_HTML, READ_TIMEOUT) : null; } catch (_) { reading = null; }
+            // A WebView that had no fetch or Response at document start: this module's own reader.
+            var own = !reading;
+            if (own) reading = readWeek(base.frame.options[other], base.frame.ranges[other]);
+            held.then(reading, function (got) {
+                try { pair.weeks = [pair.weeks[0], weekEntry(base.frame, other, own ? got : sameWeek(got.doc, base.frame.ranges[other]))]; resolve(pair); }
+                catch (_) { missing(); }
+            }, missing);
         });
-        var pair = {v:1, term:frame.term, until:isoDay(latest), weeks:[weekEntry(frame, frame.at, doc)], missing:[]}, other = after >= 0 ? after : before;
+    }
+    function pairBase(doc) {
+        var frame = weekFrame(doc); if (!frame) throw new Error('No week');
+        var shown = frame.ranges[frame.at], start = timeOf(shown[0]), end = dayAfter(shown[shown.length - 1]), after = -1, before = -1, latest = shown[shown.length - 1];
+        for (var i = 0; i < frame.ranges.length; i++) {
+            var r = frame.ranges[i];
+            if (!r) continue;
+            if (timeOf(r[r.length - 1]) > timeOf(latest)) latest = r[r.length - 1];
+            if (i === frame.at) continue;
+            if (timeOf(r[0]) === end && after < 0) after = i;
+            if (dayAfter(r[r.length - 1]) === start && before < 0) before = i;
+        }
+        return {frame:frame, other:after >= 0 ? after : before,
+            pair:{v:1, term:frame.term, until:isoDay(latest), weeks:[weekEntry(frame, frame.at, doc)], missing:[], then:undefined}};
+    }
+    // Without the channel: this module's own fetch, DOMParser and Promise.
+    async function readPairHere(doc) {
+        var base = pairBase(doc || document), pair = base.pair, other = base.other;
         if (other >= 0) {
-            try { pair.weeks.push(weekEntry(frame, other, await readWeek(frame.options[other], frame.ranges[other]))); }
-            catch (_) { pair.missing.push(weekNumber(frame.options[other], other).number); }
+            try { pair.weeks = [pair.weeks[0], weekEntry(base.frame, other, await readWeek(base.frame.options[other], base.frame.ranges[other]))]; }
+            catch (_) { pair.missing = [weekNumber(base.frame.options[other], other).number]; }
         }
         return pair;
     }
     // One reading shared by the class cards' buttons for a minute; a failed one is not kept.
+    // Its age is read with the channel's Date.now taken at document start, so a page's Date.now cannot force a new reading
+    // between the card and the tap. It is handed only to univer-mobile.js (__univerWeekPair), not put on window.
     var pairCache = null, EXPORT_LIMIT = 98304; // the keyed channel's limit for univer-export: (MobilePageAdapter NATIVE)
+    var pairNow = typeof __univerClock === 'object' && __univerClock ? __univerClock.now : function () { return Date.now(); };
     function weekPair() {
-        var select = document.getElementById('weekSelect'), key = location.pathname + '|' + (select ? select.selectedIndex : -1);
-        if (!pairCache || pairCache.key !== key || Date.now() - pairCache.at > 60000) {
-            var made = {key:key, at:Date.now(), promise:readPair()};
+        var select = document.getElementById('weekSelect'), key = location.pathname + '|' + (select ? select.selectedIndex : -1), now = pairNow();
+        if (!pairCache || pairCache.key !== key || now - pairCache.at > 60000) {
+            var made = {key:key, at:now, promise:readPair()};
             made.promise.catch(function () { if (pairCache === made) pairCache = null; });
             pairCache = made;
         }
         return pairCache.promise;
     }
+    __univerWeekPair = weekPair;
 
     /* The schedule page's «В календарь» and «Картинкой». Only the student's own press counts; the app builds the file. */
+    function canAct() {
+        if (typeof __univerActions === 'boolean') return __univerActions;
+        return typeof __univerNative === 'function';
+    }
+    function deliver(prefix, value) {
+        if (typeof __univerPost === 'function') { __univerPost(prefix, value); return; }
+        var body;
+        try { body = (typeof __univerJson === 'function' ? __univerJson : JSON.stringify)(value); } catch (e) { return; }
+        if (typeof body === 'string' && typeof __univerNative === 'function') __univerNative(prefix + body);
+    }
+    // A press on [node] itself, its target read with the channel's getter taken at document start (univer-channel.js clock).
+    var targetOf = typeof __univerClock === 'object' && __univerClock ? __univerClock.target : function (event) { return event.target; };
+    function onTap(node, handler) {
+        var run = function (event) { if (event && event.isTrusted && targetOf(event) === node) handler(event); };
+        if (typeof __univerListen === 'function') __univerListen(node, 'click', run);
+        else node.addEventListener('click', run);
+    }
     var exporting = false, exportToken = 0;
     function exportButtons(on) {
         Array.prototype.forEach.call(document.querySelectorAll('.univer-app-schedule-export button[data-univer-export]'), function (b) {
@@ -347,27 +405,34 @@
     function exportDone(token) { if (token !== exportToken) return; exporting = false; exportToken++; exportButtons(false); }
     function exportBox() {
         var select = document.getElementById('weekSelect');
-        if (!select || select.tagName !== 'SELECT' || typeof __univerNative !== 'function' || document.querySelector('.univer-app-schedule-export')) return;
+        if (!select || select.tagName !== 'SELECT' || !canAct() || document.querySelector('.univer-app-schedule-export')) return;
         var box = el('div', 'univer-app-schedule-export'); box.setAttribute('role', 'group'); box.setAttribute('aria-label', text().exportLabel);
         [['ics', text().exportIcs, text().exportIcsTitle], ['png', text().exportPng, text().exportPngTitle]].forEach(function (kind) {
             var button = el('button', '', kind[1]); button.type = 'button'; button.title = kind[2]; button.setAttribute('data-univer-export', kind[0]); box.appendChild(button);
+            // On the button itself, its kind kept here: a click elsewhere, or on content the page moved into it, is not its press.
+            onTap(button, function () { startExport(kind[0]); });
         });
         (select.closest('.ts') || select.parentElement).appendChild(box); owned.push(box);
     }
-    document.addEventListener('click', function (event) {
-        var button = event.isTrusted && event.target && event.target.closest ? event.target.closest('.univer-app-schedule-export button[data-univer-export]') : null;
-        if (!button || exporting || typeof __univerNative !== 'function' || !SCHEDULE_PAGE.test(location.pathname)) return;
-        var kind = button.getAttribute('data-univer-export'); if (kind !== 'ics' && kind !== 'png') return;
+    function startExport(kind) {
+        if (exporting || !canAct() || !SCHEDULE_PAGE.test(location.pathname) || (kind !== 'ics' && kind !== 'png')) return;
         exporting = true; var token = ++exportToken; exportButtons(true);
         var timer = setTimeout(function () { exportDone(token); }, 40000);
         // A page that cannot be read at all is sent as {v:0}: the app says so.
-        readPair().then(function (pair) { pair.kind = kind; return pair; }, function () { return {v:0, kind:kind}; }).then(function (pair) {
-            // Past the channel's limit the message would be dropped without a word: the app is told it failed instead.
-            var message = 'univer-export:' + JSON.stringify(pair);
-            if (message.length > EXPORT_LIMIT) message = 'univer-export:' + JSON.stringify({v:0, kind:kind});
-            if (token === exportToken) __univerNative(message);
-        }).then(function () { clearTimeout(timer); exportDone(token); }, function () { clearTimeout(timer); exportDone(token); });
-    }, true);
+        var send = function (pair) {
+            try {
+                // Past the channel's limit the message would be dropped without a word: the app is told it failed instead.
+                var encode = typeof __univerJson === 'function' ? __univerJson : JSON.stringify, body = '';
+                try { body = encode(pair); } catch (e) { body = ''; }
+                if (token === exportToken) deliver('univer-export:', body && ('univer-export:' + body).length <= EXPORT_LIMIT ? pair : {v:0, kind:kind});
+            } finally { clearTimeout(timer); exportDone(token); }
+        };
+        // Through the channel's then (taken at document start): a then the page swaps cannot answer for the reading.
+        var reading;
+        try { reading = readPair(); } catch (_) { send({v:0, kind:kind}); return; }
+        var settle = held ? held.then : function (promise, done, failed) { promise.then(done, failed); };
+        settle(reading, function (pair) { pair.kind = kind; send(pair); }, function () { send({v:0, kind:kind}); });
+    }
     // Hands the week to the app once per page; the same week read again (another pass, the kept copy) is not sent twice.
     // The site alternates odd and even weeks, so the neighbouring week (one GET, read-only) goes along as `second` and the
     // widget and reminders follow the parity; with it unread (or none listed) the week goes alone and repeats as before.
@@ -783,7 +848,7 @@
         // Test hooks: the same readers on a supplied document.
         // A site page read once per visit (GET, same origin), shared with the tab-page helpers.
         page: function (url) { return once(url, url); },
-        weekPair: weekPair, readPair: readPair,
+        readPair: readPair,
         lessonsToday: lessonsToday, timetable: timetable, courseScores: courseScores, requests: requests, nextClasses: nextClasses, dayCaption: dayCaption
     };
 })();

@@ -60,9 +60,11 @@ data class DownloadRecord(
     val key: String = "",
     val place: String? = null,
 ) {
-    val kind get() = FileKinds.of(fileName, mime)
+    val kind: FileKind by lazy(LazyThreadSafetyMode.PUBLICATION) { FileKinds.of(fileName, mime) }
     val displayTime get() = finished ?: started
     val progress: Int? get() = if (total > 0) (received * 100 / total).coerceIn(0, 100).toInt() else null
+    /** Precomputed lowercase/"ё"-folded name and course, built once on first search. */
+    internal val searchKey: String by lazy(LazyThreadSafetyMode.PUBLICATION) { FileKinds.searchKey(fileName, source) }
 }
 
 object FileKinds {
@@ -103,13 +105,16 @@ object FileKinds {
 
     fun matchesFilter(record: DownloadRecord, filter: FileKind?): Boolean = filter == null || filterKind(record.kind) == filter
 
+    internal fun searchKey(fileName: String, source: String): String = fold("$fileName $source")
+
+    internal fun queryWords(query: String): List<String> = fold(query).trim().split(SPACES).filter { it.isNotEmpty() }
+
+    /** Every word must occur in the precomputed name and course key; case is ignored and "ё" equals "е". */
+    internal fun matchesQuery(record: DownloadRecord, words: List<String>): Boolean =
+        words.isEmpty() || words.all { record.searchKey.contains(it) }
+
     /** Every word must occur in the name or source; case is ignored and "ё" equals "е". */
-    fun matchesQuery(record: DownloadRecord, query: String): Boolean {
-        val words = fold(query).trim().split(SPACES).filter { it.isNotEmpty() }
-        if (words.isEmpty()) return true
-        val text = fold(record.fileName + " " + record.source)
-        return words.all { text.contains(it) }
-    }
+    fun matchesQuery(record: DownloadRecord, query: String): Boolean = matchesQuery(record, queryWords(query))
 
     fun matches(record: DownloadRecord, query: String, filter: FileKind?) =
         matchesFilter(record, filter) && matchesQuery(record, query)
@@ -226,13 +231,16 @@ object TextSearch {
     /** Lower case and "ё" → "е" without changing the length, so positions map back to the original text. */
     fun fold(value: String): String = buildString(value.length) { value.forEach { append(if (it == 'ё' || it == 'Ё') 'е' else it.lowercaseChar()) } }
 
-    private fun words(query: String) = fold(query).trim().split(SPACES).filter { it.isNotEmpty() }
+    internal fun words(query: String) = fold(query).trim().split(SPACES).filter { it.isNotEmpty() }
 
     fun matches(folded: String, query: String) = words(query).let { list -> list.isNotEmpty() && list.any { folded.contains(it) } }
 
-    fun snippet(text: String, folded: String, query: String, radius: Int = 60): Snippet? {
+    fun snippet(text: String, folded: String, query: String, radius: Int = 60): Snippet? =
+        snippet(text, folded, words(query), radius)
+
+    internal fun snippet(text: String, folded: String, words: List<String>, radius: Int = 60): Snippet? {
         // Only a word that is really in the text can be highlighted: the others of the query may be absent.
-        val first = words(query).firstOrNull { folded.contains(it) } ?: return null
+        val first = words.firstOrNull { folded.contains(it) } ?: return null
         val at = folded.indexOf(first)
         var from = (at - radius).coerceAtLeast(0)
         var to = (at + first.length + radius).coerceAtMost(text.length)

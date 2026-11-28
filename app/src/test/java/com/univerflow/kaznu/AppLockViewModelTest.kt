@@ -2,6 +2,7 @@ package com.univerflow.kaznu
 
 import androidx.lifecycle.ViewModelStore
 import com.univerflow.kaznu.domain.*
+import com.univerflow.kaznu.ui.PinFlowController
 import kotlinx.coroutines.*
 import kotlinx.coroutines.test.*
 import org.junit.After
@@ -159,6 +160,148 @@ class AppLockViewModelTest {
         assertFalse(model.state.value.hasCredentials)
         assertFalse(model.state.value.lock.enabled)
         assertFalse(model.state.value.locked)
+    }
+
+    @Test fun aWipeAnsweredJustBeforeCancellationStillClearsTheAccountFromMemoryAndState() = runTest(dispatcher) {
+        // The vault answers Wiped, then the work is cancelled (the pad hidden, the screen re-entered) before the
+        // follow-up has run; the follow-up suspends on the notice store, where a cancelled coroutine would stop.
+        val repository = object : SessionRepository by ProtectedRepository(account, "493827", enabled = true) {
+            override suspend fun unlockWithPin(pin: CharArray): UnlockResult {
+                currentCoroutineContext().job.cancel()
+                return UnlockResult.Wiped
+            }
+            override suspend fun setNotices(notices: List<SiteNotice>) { yield() }
+        }
+        val model = model(repository)
+        advanceUntilIdle()
+        try { model.unlockWithPin("111222".toCharArray()) } catch (_: CancellationException) { }
+        advanceUntilIdle()
+        assertFalse("The wiped account must not stay in state", model.state.value.hasCredentials)
+        assertTrue(model.state.value.paused)
+        assertNull(model.credentials)
+    }
+
+    /** The repository's own dispatcher, run by hand so a test can act while the vault call waits for it. */
+    private class VaultDispatcher : CoroutineDispatcher() {
+        val tasks = ArrayDeque<Runnable>()
+        override fun dispatch(context: kotlin.coroutines.CoroutineContext, block: Runnable) { tasks += block }
+        fun runAll() { while (tasks.isNotEmpty()) tasks.removeFirst().run() }
+    }
+    private val io = VaultDispatcher()
+
+    /** The pad driven by the real controller; the vault call crosses to [io] through [committedOn], as in production. */
+    private fun TestScope.padAndVault(asked: suspend () -> Unit = {}, guessed: () -> Unit): Triple<PinFlowController, LifecycleFixesTest.FakePinPad, ProtectedRepository> {
+        val base = ProtectedRepository(account, "493827", enabled = true)
+        val repository = object : SessionRepository by base {
+            override suspend fun unlockWithPin(pin: CharArray): UnlockResult = com.univerflow.kaznu.data.committedOn(io) {
+                guessed()
+                // The last wrong guess: the vault wipes the account on the IO side.
+                base.enabled = false; base.erased = true
+                UnlockResult.Wiped
+            }
+        }
+        val model = model(repository)
+        val pad = LifecycleFixesTest.FakePinPad()
+        var attached = true
+        val controller = PinFlowController(
+            scope = this, text = { "" }, clock = { testScheduler.currentTime },
+            acquirePad = { attached = true; pad }, padActive = { attached }, releasePad = { attached = false },
+            moveTaskToBack = { },
+        )
+        controller.enter(title = R.string.lock_unlock_title, hint = null, closeable = false, biometric = false, forgot = false,
+            verify = { asked(); model.unlockWithPin(it) }, onVerified = { it.fill('\u0000') })
+        modelUnderTest = model
+        return Triple(controller, pad, base)
+    }
+    private lateinit var modelUnderTest: UniverViewModel
+
+    @Test fun hidingThePadBeforeTheVaultStartsCancelsTheGuess() = runTest(dispatcher) {
+        var guesses = 0
+        val (controller, pad, base) = padAndVault { guesses++ }
+        advanceUntilIdle()
+        pad.enter("111222".toCharArray())
+        advanceUntilIdle()
+        assertTrue("The check has reached the repository and waits for its dispatcher", io.tasks.isNotEmpty())
+        controller.hide()
+        advanceUntilIdle(); io.runAll(); advanceUntilIdle()
+        assertEquals("A dismissed pad must not leave its guess (PBKDF2) to run", 0, guesses)
+        assertFalse(base.erased)
+        assertTrue(modelUnderTest.state.value.hasCredentials)
+        assertTrue(modelUnderTest.state.value.locked)
+    }
+
+    @Test fun theVaultDispatcherRunningRightAfterHideStartsNoGuess() = runTest(dispatcher) {
+        // hide() cancels the pad's verify job; the vault's dispatcher runs before that job has resumed on main.
+        var guesses = 0
+        val (controller, pad, base) = padAndVault { guesses++ }
+        advanceUntilIdle()
+        pad.enter("111222".toCharArray())
+        advanceUntilIdle()
+        assertTrue(io.tasks.isNotEmpty())
+        controller.hide()
+        io.runAll()
+        advanceUntilIdle(); io.runAll(); advanceUntilIdle()
+        assertEquals("No guess may start in the gap before the cancelled waiter resumes", 0, guesses)
+        assertFalse(base.erased)
+        assertTrue(modelUnderTest.state.value.locked)
+    }
+
+    @OptIn(kotlinx.coroutines.InternalCoroutinesApi::class)
+    @Test fun theVaultDispatcherRunningWhileHideIsStillCancellingStartsNoGuess() = runTest(dispatcher) {
+        // The vault's dispatcher runs while hide() is cancelling the pad's verify job: after that job is cancelling,
+        // before its cancellation has reached the ViewModel's worker.
+        var guesses = 0
+        var ranMidCancel = false
+        val (controller, pad, base) = padAndVault(asked = {
+            kotlinx.coroutines.currentCoroutineContext().job.invokeOnCompletion(onCancelling = true) {
+                ranMidCancel = io.tasks.isNotEmpty(); io.runAll()
+            }
+        }) { guesses++ }
+        advanceUntilIdle()
+        pad.enter("111222".toCharArray())
+        advanceUntilIdle()
+        assertTrue(io.tasks.isNotEmpty())
+        controller.hide()
+        assertTrue("The vault's dispatcher ran during the cancellation", ranMidCancel)
+        advanceUntilIdle(); io.runAll(); advanceUntilIdle()
+        assertEquals("No guess may start once the pad's job is cancelling", 0, guesses)
+        assertFalse(base.erased)
+        assertTrue(modelUnderTest.state.value.locked)
+    }
+
+    @Test fun pinCopiesAreErasedWhenTheCheckIsCancelledBeforeStartUpEnds() = runTest(dispatcher) {
+        val loaded = CompletableDeferred<Unit>()
+        val base = ProtectedRepository(account, "493827", enabled = true)
+        val repository = object : SessionRepository by base {
+            override suspend fun load(): StoredSession { loaded.await(); return base.load() }
+        }
+        val model = model(repository)
+        val copies = mutableListOf<CharArray>()
+        model.copyDigits = { it.copyOf().also(copies::add) }
+        val check = launch { model.unlockWithPin("493827".toCharArray()) }
+        advanceUntilIdle()
+        assertEquals("The check waits for start-up with its copy", 1, copies.size)
+        check.cancel()
+        advanceUntilIdle()
+        assertTrue("A check cancelled before the vault leaves no digits", copies.all { copy -> copy.all { it == '\u0000' } })
+        loaded.complete(Unit)
+        advanceUntilIdle()
+    }
+
+    @Test fun aGuessTheVaultRanIsFollowedUpEvenWhenThePadIsHiddenMeanwhile() = runTest(dispatcher) {
+        lateinit var hide: () -> Unit
+        val (controller, pad, base) = padAndVault { hide() }
+        hide = { controller.hide() }
+        advanceUntilIdle()
+        pad.enter("111222".toCharArray())
+        advanceUntilIdle()
+        io.runAll() // The guess runs, and the pad is hidden while it does.
+        advanceUntilIdle()
+        assertTrue(base.erased)
+        assertFalse("The wiped account must leave state although the pad was hidden mid-guess",
+            modelUnderTest.state.value.hasCredentials)
+        assertTrue(modelUnderTest.state.value.paused)
+        assertNull(modelUnderTest.credentials)
     }
 
     @Test fun theOfferIsRemembered() = runTest(dispatcher) {

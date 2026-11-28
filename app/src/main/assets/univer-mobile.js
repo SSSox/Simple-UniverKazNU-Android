@@ -444,8 +444,40 @@
         if (progress >= 0 && card.progress.getAttribute('aria-valuenow') !== String(progress)) card.progress.setAttribute('aria-valuenow', String(progress));
         card.run = action ? action.run : null;
     }
+    // Cheap fingerprint of the schedule's date, selected week, language and table shape (rows, cells, spans, text):
+    // ordinary minute ticks update countdowns in place without a full adapter pass, while midnight, week or table changes still trigger one.
+    function scheduleStamp(table, now) {
+        var week = document.getElementById('weekSelect');
+        var option = week?.tagName === 'SELECT' && week.selectedIndex >= 0 ? week.selectedIndex + ':' + cleanText(week.options[week.selectedIndex]) : '';
+        var rows = table.rows, spans = '';
+        for (var r = 0; r < rows.length; r++) {
+            var cells = rows[r].cells;
+            spans += ',' + cells.length;
+            for (var c = 0; c < cells.length; c++) {
+                var cell = cells[c];
+                if (cell.rowSpan !== 1 || cell.colSpan !== 1) spans += '.' + c + ':' + cell.rowSpan + 'x' + cell.colSpan;
+            }
+        }
+        // The lesson cards copy the class's links, so an href added to or changed on an existing anchor counts too.
+        var links = '';
+        table.querySelectorAll('a').forEach(function (a) { links += ',' + (a.hasAttribute('href') ? a.getAttribute('href') : '-'); });
+        return [now.getFullYear(), now.getMonth(), now.getDate(), todayInWeek(now), option, selectedLanguage,
+            rows.length, table.textContent.length, spans, links].join('|');
+    }
+    function refreshUpcoming() {
+        var now = new Date(), tables = document.querySelectorAll('table.schedule');
+        if (tables.length !== schedules.size) { schedule(); return; }
+        var stale = false;
+        schedules.forEach(function (record, table) {
+            if (!table.isConnected || !record.view.isConnected || scheduleStamp(table, now) !== record.stamp) stale = true;
+        });
+        if (stale) { schedule(); return; }
+        quiet(function () {
+            schedules.forEach(function (record) { markUpcoming(record, now); });
+        });
+    }
     function tickUpcoming() {
-        upcomingTimer = setTimeout(function () { upcomingTimer = 0; if (enabled && schedules.size) { schedule(); tickUpcoming(); } }, 60500 - Date.now() % 60000);
+        upcomingTimer = setTimeout(function () { upcomingTimer = 0; if (enabled && schedules.size) { refreshUpcoming(); tickUpcoming(); } }, 60500 - Date.now() % 60000);
     }
     function agendaCard() {
         var root = document.createElement('section'); root.className = 'univer-app-now'; root.setAttribute('aria-label', agendaLabels().region);
@@ -511,51 +543,189 @@
             card.querySelector('.univer-app-lesson-main').appendChild(link);
         });
     }
-    // The last day of a class's course dates ("15.12.2026", "2026-12-15", or "15.12" in the shown week's year).
-    function periodEnd(value, monday) {
-        var iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value || ''), dmy = /^(\d{1,2})\.(\d{1,2})(?:\.(\d{2,4}))?$/.exec(value || '');
-        if (iso) return new Date(+iso[1], +iso[2] - 1, +iso[3]);
-        if (!dmy) return null;
-        var year = dmy[3] ? (dmy[3].length === 2 ? 2000 + +dmy[3] : +dmy[3]) : monday.getFullYear();
-        var end = new Date(year, +dmy[2] - 1, +dmy[1]);
-        if (!dmy[3] && end < monday) end.setFullYear(year + 1);
-        return end;
-    }
     // «В календарь» on a class card: the student's own tap hands the next time this class meets to the phone's calendar
     // app, through its course dates when the site gives them. The site alternates odd and even weeks, so the neighbouring week
     // is read first (overview.weekPair): a class in both weeks repeats every week, one in only the shown week every second
     // week; with the neighbour unread it is every second week and the app says that the other week was not read; with
     // none listed it is every week.
-    function repeatOf(pair, info, dayIndex, from, to) {
-        if (!pair || pair.missing.length) return {interval:2, partial:true};
+    // The neighbour is compared by plain loops and characters: no Array or String method the page may swap takes part.
+    function repeatOf(pair, lesson) {
+        if (!pair || !pair.missing || pair.missing.length) return {interval:2, partial:true};
         // No neighbour in the site's week list (a one-week schedule): weekly through the course dates, as before.
-        if (pair.weeks.length < 2) return {interval:1};
-        var begin = +from[0] * 60 + +from[1], finish = +to[0] * 60 + +to[1];
-        var minutes = function (value) { var m = String(value).split(':'); return +m[0] * 60 + +m[1]; };
-        var both = pair.weeks[1].lessons.some(function (l) {
-            return l.day === dayIndex && minutes(l.start) === begin && minutes(l.end) === finish && l.subject === info.subject && l.type === (info.type || '') &&
-                l.room === (info.room || '') && l.teacher === (info.teacher || '');
-        });
+        if (!pair.weeks || pair.weeks.length < 2) return {interval:1};
+        var lessons = pair.weeks[1] && pair.weeks[1].lessons, both = false, i, l;
+        for (i = 0; lessons && i < lessons.length && !both; i++) {
+            l = lessons[i];
+            both = !!l && l.day === lesson.day && minutesOf(l.start) === lesson.begin && minutesOf(l.end) === lesson.finish && l.subject === lesson.subject &&
+                l.type === lesson.type && l.room === lesson.room && l.teacher === lesson.teacher;
+        }
         return {interval:both ? 1 : 2};
     }
-    function calendarButton(info, dayIndex, from, to) {
+    // "9:05" as minutes, or -1.
+    function minutesOf(value) {
+        if (typeof value !== 'string') return -1;
+        var hours = 0, minutes = 0, colon = false, digits = 0, i, c;
+        for (i = 0; i < value.length; i++) {
+            c = value[i];
+            if (c === ':' && !colon && digits) { colon = true; digits = 0; continue; }
+            if (c < '0' || c > '9' || digits >= 2) return -1;
+            if (colon) minutes = minutes * 10 + (c - 0); else hours = hours * 10 + (c - 0);
+            digits++;
+        }
+        return colon && digits === 2 ? hours * 60 + minutes : -1;
+    }
+    function canAct() {
+        if (typeof __univerActions === 'boolean') return __univerActions;
+        return typeof __univerNative === 'function';
+    }
+    function deliver(prefix, value) {
+        if (typeof __univerPost === 'function') { __univerPost(prefix, value); return; }
+        var body;
+        try { body = (typeof __univerJson === 'function' ? __univerJson : JSON.stringify)(value); } catch (e) { return; }
+        if (typeof body === 'string' && typeof __univerNative === 'function') __univerNative(prefix + body);
+    }
+    // The keyed channel's clock (univer-channel.js), taken at document start; this module's own only without the channel.
+    var timer = typeof __univerClock === 'object' && __univerClock ? __univerClock : {
+        now: function () { return Date.now(); },
+        at: function (year, month, date, hours, minutes) { return new Date(year, month, date, hours, minutes, 0, 0).getTime(); },
+        parts: function (time) { var d = new Date(time); return {year:d.getFullYear(), month:d.getMonth(), date:d.getDate(), day:d.getDay(), hours:d.getHours(), minutes:d.getMinutes()}; },
+        then: function (promise, done, failed) { promise.then(done, failed); },
+        target: function (event) { return event.target; }
+    };
+    // The schedule's reader of the shown week and its neighbour, as univer-overview.js handed it over when the modules went
+    // in together: not window.__univerOverviewV1, which the page can reach and change.
+    var readWeekPair = typeof __univerWeekPair === 'function' ? __univerWeekPair : null;
+    // A tap on [node] itself: the target must be the node, so content the page moved into it does not count as its tap.
+    function onTap(node, handler) {
+        var run = function (event) { if (event && event.isTrusted && timer.target(event) === node) handler(event); };
+        if (typeof __univerListen === 'function') __univerListen(node, 'click', run);
+        else node.addEventListener('click', run);
+    }
+    // Text on one line within [max] characters, by characters alone.
+    function flat(value, max) {
+        if (typeof value !== 'string') return '';
+        var out = '', gap = false, i, c;
+        for (i = 0; i < value.length && out.length < max; i++) {
+            c = value[i];
+            if (c === ' ' || c === '\n' || c === '\t' || c === '\r' || c === '\f' || c === '\v' || c === ' ') { gap = out.length > 0; continue; }
+            if (gap) { out += ' '; gap = false; if (out.length >= max) break; }
+            out += c;
+        }
+        return out;
+    }
+    function two(n) { return n < 10 ? '0' + n : '' + n; }
+    function isoOf(p) { return p.year + '-' + two(p.month + 1) + '-' + two(p.date); }
+    function momentOf(time) { var p = timer.parts(time); return isoOf(p) + 'T' + two(p.hours) + ':' + two(p.minutes); }
+    function digit(c) { return c >= '0' && c <= '9'; }
+    // The numbers of "15.12.2026" (sep '.') or "2026-12-15" (sep '-'), by characters alone: {n, v0..v2, l0..l2 (digits)}.
+    // Only literals and own fields: no Array, String or Date method, nor a setter the page put on a prototype, takes part.
+    function numbersOf(value, sep) {
+        if (typeof value !== 'string' || !value.length) return null;
+        var r = {n:0, v0:0, v1:0, v2:0, l0:0, l1:0, l2:0}, num = 0, len = 0, i, c;
+        for (i = 0; i <= value.length; i++) {
+            c = i < value.length ? value[i] : sep;
+            if (c === sep) {
+                if (!len || r.n > 2) return null;
+                if (r.n === 0) { r.v0 = num; r.l0 = len; } else if (r.n === 1) { r.v1 = num; r.l1 = len; } else { r.v2 = num; r.l2 = len; }
+                r.n++; num = 0; len = 0; continue;
+            }
+            if (!digit(c) || len >= 4) return null;
+            num = num * 10 + (c - 0); len++;
+        }
+        return r;
+    }
+    // The first d.m.yyyy date in [text] and how many there are, by characters alone.
+    function datesIn(text) {
+        var found = {count:0, year:0, month:0, date:0}, i, j, k, nums, lens;
+        if (typeof text !== 'string') return found;
+        for (i = 0; i < text.length; i++) {
+            if (!digit(text[i]) || (i > 0 && digit(text[i - 1]))) continue;
+            nums = {0:0, 1:0, 2:0}; lens = {0:0, 1:0, 2:0}; j = i; k = 0;
+            for (;;) {
+                while (j < text.length && digit(text[j]) && lens[k] < 5) { nums[k] = nums[k] * 10 + (text[j] - 0); lens[k]++; j++; }
+                if (k < 2 && text[j] === '.' && j + 1 < text.length && digit(text[j + 1])) { k++; j++; } else break;
+            }
+            if (k === 2 && lens[0] <= 2 && lens[1] <= 2 && lens[2] === 4 && !(j < text.length && digit(text[j]))) {
+                if (!found.count) { found.year = nums[2]; found.month = nums[1] - 1; found.date = nums[0]; }
+                found.count++;
+            }
+            i = j - 1;
+        }
+        return found;
+    }
+    // The first and the last "9:05" in [text] as minutes (-1 for none), by characters alone.
+    function timesIn(text) {
+        var found = {first:-1, last:-1}, i, j, h, value;
+        if (typeof text !== 'string') return found;
+        for (i = 0; i < text.length; i++) {
+            if (!digit(text[i]) || (i > 0 && digit(text[i - 1]))) continue;
+            for (j = i, h = 0; j < text.length && digit(text[j]) && j - i < 3; j++) h = h * 10 + (text[j] - 0);
+            if (j - i > 2 || text[j] !== ':' || !digit(text[j + 1]) || !digit(text[j + 2]) || digit(text[j + 3])) { i = j - 1; continue; }
+            value = h * 60 + (text[j + 1] - 0) * 10 + (text[j + 2] - 0);
+            if (found.first < 0) found.first = value;
+            found.last = value; i = j + 2;
+        }
+        return found;
+    }
+    // Monday of the shown week through the clock taken at document start ({time, year, month, date}); undated: this week.
+    function shownMonday() {
+        var week = document.getElementById('weekSelect'), option = week && week.tagName === 'SELECT' && week.selectedIndex >= 0 ? week.options[week.selectedIndex] : null;
+        var dates = datesIn(option ? option.textContent : ''), base = dates.count >= 2 ? timer.at(dates.year, dates.month, dates.date, 0, 0) : timer.now();
+        var p = timer.parts(base), time = timer.at(p.year, p.month, p.date - (p.day + 6) % 7, 0, 0), m = timer.parts(time);
+        return {time:time, year:m.year, month:m.month, date:m.date};
+    }
+    // The last day of a class's course dates ("15.12.2026", "2026-12-15", or "15.12" in the shown week's year, else the next):
+    // {year, month, date} through the clock taken at document start, or null.
+    function courseEnd(value, monday) {
+        var iso = numbersOf(value, '-'), dmy = iso ? null : numbersOf(value, '.'), time, year;
+        if (iso && iso.n === 3 && iso.l0 === 4 && iso.l1 === 2 && iso.l2 === 2) time = timer.at(iso.v0, iso.v1 - 1, iso.v2, 0, 0);
+        else if (dmy && (dmy.n === 2 || dmy.n === 3) && dmy.l0 <= 2 && dmy.l1 <= 2 && (dmy.n === 2 || dmy.l2 >= 2)) {
+            year = dmy.n === 3 ? (dmy.l2 === 2 ? 2000 + dmy.v2 : dmy.v2) : monday.year;
+            time = timer.at(year, dmy.v1 - 1, dmy.v0, 0, 0);
+            if (dmy.n === 2 && time < monday.time) time = timer.at(year + 1, dmy.v1 - 1, dmy.v0, 0, 0);
+        } else return null;
+        var p = timer.parts(time);
+        return {year:p.year, month:p.month, date:p.date};
+    }
+    // The event as CalendarEvent.of reads it. Everything but the clock was read when the card was drawn.
+    function calendarBody(event, repeat) {
+        var now = timer.now(), step = 7 * repeat.interval, shift = 0, w = event.monday, start, end, until = event.until;
+        var at = function (minutes) { return timer.at(w.year, w.month, w.date + event.day + shift, 0, minutes); };
+        start = at(event.begin);
+        // A class already over this week starts the series from its next turn: the next week's, or the one after for every second week.
+        while (start < now) { shift += step; start = at(event.begin); }
+        end = at(event.finish);
+        if (until) {
+            var first = timer.parts(start), last = timer.at(until.year, until.month, until.date, 0, 0);
+            if (last < timer.at(first.year, first.month, first.date, 0, 0) || last - start > 366 * 86400000) until = null;
+        }
+        var message = {v:1, title:event.title, start:momentOf(start), end:momentOf(end), place:event.place, notes:event.notes, until:until ? isoOf(until) : null};
+        if (repeat.interval === 2) message.interval = 2;
+        if (repeat.partial === true) message.partial = true;
+        return message;
+    }
+    // «В календарь»: what the student sees on the card is read now into this button's closure, its dates and times through
+    // the clock taken at document start and the character readers above; the tap adds only the clock and the neighbouring
+    // week, so a page that edits the card or swaps a built-in does not change the event. [fromText]/[toText] are the slot's times.
+    function calendarButton(info, dayIndex, fromText, toText) {
+        if (!canAct()) return null;
+        var begin = timesIn(fromText).first, finish = timesIn(toText).last;
+        if (begin < 0 || finish < 0) return null;
+        var monday = shownMonday(), end = info.dates.length === 2 ? courseEnd(info.dates[1], monday) : null;
+        var room = info.room ? window.__univerLesson.words(selectedLanguage).roomShort + ' ' + info.room : '';
+        var event = {day:dayIndex, begin:begin, finish:finish, monday:{year:monday.year, month:monday.month, date:monday.date}, until:end,
+            title:flat(info.subject + (info.type ? ' (' + info.type + ')' : ''), 200),
+            place:flat(room && info.faculty ? room + ', ' + info.faculty : room || info.faculty || '', 200), notes:flat(info.teacher || '', 500)};
+        var lesson = {day:dayIndex, begin:begin, finish:finish, subject:info.subject, type:info.type || '', room:info.room || '', teacher:info.teacher || ''};
+        if (!event.title) return null;
         var button = document.createElement('button'); button.type = 'button'; button.className = 'univer-app-calendar';
         button.textContent = labels().calendar;
-        button.addEventListener('click', function (event) {
-            if (!event.isTrusted || typeof __univerNative !== 'function' || !window.__univerDomV1) return;
-            var overview = window.__univerOverviewV1, reading = overview && overview.weekPair ? overview.weekPair() : Promise.reject(new Error('No reader'));
-            reading.then(function (pair) { return pair; }, function () { return null; }).then(function (pair) {
-                var repeat = repeatOf(pair, info, dayIndex, from, to), step = 7 * repeat.interval;
-                var monday = shownWeek(new Date()).monday, start = dayStart(monday, dayIndex), until = info.dates.length === 2 ? periodEnd(info.dates[1], monday) : null;
-                start.setHours(+from[0], +from[1], 0, 0);
-                var end = new Date(start); end.setHours(+to[0], +to[1], 0, 0);
-                // A class already over this week starts the series from its next turn: the next week's, or the one after for every second week.
-                while (start.getTime() < Date.now()) { start.setDate(start.getDate() + step); end.setDate(end.getDate() + step); }
-                if (until && (until < dayStart(start) || until - start > 366 * 86400000)) until = null;
-                var room = info.room ? window.__univerLesson.words(selectedLanguage).roomShort + ' ' + info.room : '';
-                __univerNative(window.__univerDomV1.calendarMessage({title:info.subject + (info.type ? ' (' + info.type + ')' : ''), start:start, end:end,
-                    place:[room, info.faculty].filter(Boolean).join(', '), notes:info.teacher, until:until, interval:repeat.interval, partial:!!repeat.partial}));
-            });
+        onTap(button, function () {
+            var send = function (pair) { deliver('univer-calendar:', calendarBody(event, repeatOf(pair, lesson))); };
+            var reading = null;
+            try { reading = readWeekPair ? readWeekPair() : null; } catch (_) { reading = null; }
+            if (!reading) { send(null); return; }
+            timer.then(reading, function (pair) { send(pair); }, function () { send(null); });
         });
         return button;
     }
@@ -573,8 +743,10 @@
                 if (!cleanText(group) || group.hidden || getComputedStyle(group).display === 'none') return;
                 var info = lessonInfo(group), card = window.__univerLesson.card(info, timeText, selectedLanguage);
                 copyLessonLinks(group, card);
-                if (typeof __univerNative === 'function' && info.subject && from.length === 2 && to.length === 2)
-                    card.querySelector('.univer-app-lesson-main').appendChild(calendarButton(info, dayIndex, from, to));
+                if (info.subject && from.length === 2 && to.length === 2) {
+                    var toCalendar = calendarButton(info, dayIndex, grid[slot.start]?.[0]?.cell?.textContent, grid[Math.min(slot.end, grid.length - 1)]?.[0]?.cell?.textContent);
+                    if (toCalendar) card.querySelector('.univer-app-lesson-main').appendChild(toCalendar);
+                }
                 section.appendChild(card); count++;
                 record.cards.push({card:card, main:card.querySelector('.univer-app-lesson-main'), subject:info.subject, type:info.type,
                     teacher:info.teacher, day:dayIndex, order:record.cards.length, time:start[0] || timeText});
@@ -633,7 +805,7 @@
     }
     // The agenda of one site week grid: a summary card, day buttons, a section of class cards per day and the
     // "By day / Week grid" switch. It replaces the previous agenda of the same table and keeps the user's choices.
-    function buildSchedule(table, header, rows, previous, signature, today) {
+    function buildSchedule(table, header, rows, previous, signature, today, now) {
         var words = labels(), grid = slotGrid(rows), sections = [], buttons = [];
         var view = document.createElement('section'); view.className = 'univer-app-schedule';
         var heading = cleanText(document.querySelector('#l4 tr.top>td.ct'));
@@ -703,26 +875,27 @@
         dayMode.addEventListener('click', function (event) { mode('days', event); }); gridMode.addEventListener('click', function (event) { mode('grid', event); });
         roveDays(tabs, buttons);
         if (previous) { window.__univerMotionUI?.stop(previous.view); previous.view.replaceWith(view); } else scroll.before(view);
-        schedules.set(table, record); table.classList.add('univer-app-schedule-source'); select(record.selected); mode(record.mode); markUpcoming(record, new Date());
+        record.stamp = scheduleStamp(table, now);
+        schedules.set(table, record); table.classList.add('univer-app-schedule-source'); select(record.selected); mode(record.mode); markUpcoming(record, now);
     }
     function adaptSchedules() {
         schedules.forEach(function (record, table) { if (!table.isConnected) { record.view.remove(); schedules.delete(table); } });
         if (!schedules.size && upcomingTimer) { clearTimeout(upcomingTimer); upcomingTimer = 0; }
         if (!/^\/student\/myschedule(\/|$)/.test(location.pathname) || /^\/student\/myschedule\/print\//.test(location.pathname)) return;
         document.documentElement.classList.add('univer-app-schedule-page');
+        var now = new Date(), today = todayInWeek(now);
         document.querySelectorAll('table.schedule').forEach(function (table) {
             table.closest('.scrool,.scrool200,div.inner')?.classList.add('univer-app-schedule-content');
             var rows = ownRows(table), header = rows[0];
             if (!header || header.cells.length < 3 || header.cells[1].tagName !== 'TH') return;
             copyScheduleTimes(table);
-            var today = todayInWeek(new Date());
             Array.from(header.cells).forEach(function (cell, i) { cell.classList.toggle('univer-app-today-col', today >= 0 && i === today + 1); });
             // Taken after the time copies and today's column; the agenda's own class goes on the table itself,
             // outside its innerHTML, so the signature stays stable between passes.
             var signature = table.innerHTML + selectedLanguage, previous = schedules.get(table);
-            if (previous?.signature === signature) { markUpcoming(previous, new Date()); return; }
-            buildSchedule(table, header, rows, previous, signature, today);
-            // A tick at each minute boundary re-runs the adapter, so statuses and countdowns follow the clock.
+            if (previous?.signature === signature) { previous.stamp = scheduleStamp(table, now); markUpcoming(previous, now); return; }
+            buildSchedule(table, header, rows, previous, signature, today, now);
+            // A tick at each minute boundary updates countdowns in place and re-runs the adapter on date/week/DOM changes.
             if (!upcomingTimer) tickUpcoming();
         });
     }
@@ -1262,7 +1435,7 @@
         wrapInnerGrids();
     }
     // Website changes the adapter follows; its own changes happen while the observer is disconnected.
-    var OBSERVED = {childList:true, subtree:true, characterData:true, attributes:true, attributeFilter:['style','class','hidden','title']};
+    var OBSERVED = {childList:true, subtree:true, characterData:true, attributes:true, attributeFilter:['style','class','hidden','title','rowspan','colspan','href']};
     // Under the app's own title bar, a page heading that only repeats the current menu item is redundant.
     function markNativeHeading() {
         var pageHeading = document.querySelector('#l4 tr.top>td.ct');
@@ -1302,11 +1475,12 @@
         });
     }
     // Site dialogs (simplemodal) get a toolbar that holds their own close control, named and keyboard-operable.
+    // Visibility and z-index measurements batch into the pass's single afterLayout(read, write) round.
     function adaptDialogs() {
+        var bars = [];
         document.querySelectorAll('.univer-app-modal-toolbar').forEach(function (bar) {
             if (!bar.__univerContainer?.isConnected) { bar.remove(); return; }
-            var hidden = !bar.__univerContainer.getClientRects().length;
-            if (bar.hidden !== hidden) bar.hidden = hidden;
+            bars.push(bar);
         });
         document.querySelectorAll('#simplemodal-container .simplemodal-close,.univer-app-modal-toolbar .simplemodal-close').forEach(function (close) {
             if (!close.dataset.univerClose) {
@@ -1322,13 +1496,27 @@
                 var container = close.closest('#simplemodal-container');
                 var home = document.createComment('univer-original-close'); close.parentNode.insertBefore(home, close);
                 var toolbar = document.createElement('div'); toolbar.className = 'univer-app-modal-toolbar'; toolbar.__univerCloseHome = home;
-                toolbar.__univerContainer = container;
-                toolbar.style.zIndex = String((parseInt(getComputedStyle(container).zIndex, 10) || 1002) + 1);
-                toolbar.hidden = !container.getClientRects().length;
+                toolbar.__univerContainer = container; toolbar.__univerNeedsZ = true;
                 document.body.appendChild(toolbar); toolbar.appendChild(close);
+                bars.push(toolbar);
             }
             if (close.title !== closeLabel) close.title = closeLabel;
             if (close.getAttribute('aria-label') !== closeLabel) close.setAttribute('aria-label', closeLabel);
+        });
+        if (!bars.length) return;
+        afterLayout(function () {
+            return bars.map(function (bar) {
+                var container = bar.__univerContainer;
+                if (!bar.isConnected || !container?.isConnected) return null;
+                return {hidden:!container.getClientRects().length, z:bar.__univerNeedsZ ? (parseInt(getComputedStyle(container).zIndex, 10) || 1002) + 1 : null};
+            });
+        }, function (measured) {
+            bars.forEach(function (bar, i) {
+                var state = measured[i];
+                if (!state || !bar.isConnected) return;
+                if (state.z !== null) { bar.style.zIndex = String(state.z); delete bar.__univerNeedsZ; }
+                if (bar.hidden !== state.hidden) bar.hidden = state.hidden;
+            });
         });
     }
     // Only the observed static help box and app/resource links are folded, never account notices/forms.

@@ -79,11 +79,15 @@ import com.univerflow.kaznu.launch.CalendarHandoff
 import com.univerflow.kaznu.launch.LaunchTarget
 import com.univerflow.kaznu.main.DiagnosticsExport
 import com.univerflow.kaznu.main.DownloadLauncher
+import com.univerflow.kaznu.main.LinkReturnAction
 import com.univerflow.kaznu.main.LockFlow
 import com.univerflow.kaznu.main.MainChrome
+import com.univerflow.kaznu.main.MainNavigationGate
 import com.univerflow.kaznu.main.NetworkWatch
 import com.univerflow.kaznu.main.NoticeFlow
 import com.univerflow.kaznu.main.PageClient
+import com.univerflow.kaznu.main.PendingLinkReturn
+import com.univerflow.kaznu.main.RendererRecovery
 import com.univerflow.kaznu.main.ReportFlow
 import com.univerflow.kaznu.main.ScheduleFlow
 import com.univerflow.kaznu.main.SettingsForms
@@ -234,14 +238,23 @@ class MainActivity : AppCompatActivity() {
     private var backPending = false
     private var failedPageUrl: String? = null
     private var navigationGetUrl: String? = null
-    /** Until when (elapsed realtime) the online test's redirect may follow the student's tap; main thread only. */
-    private var onlineTestUntil = 0L
     private var pageFailed = false
     private var pageEpoch = 0L
     private var rendererUnavailable = false
     /** The section shown when the renderer was lost; the recreated screen opens it again. */
     private var lostPageUrl: String? = null
-    private var rendererRecoveryPending = false
+    /** A page handed back from the link window while the renderer was lost; it opens once the page is up again. */
+    private val pendingLink = PendingLinkReturn()
+    private val rendererRecovery by lazy(LazyThreadSafetyMode.NONE) {
+        RendererRecovery(
+            backoff = model.rendererRecovery,
+            clock = SystemClock::elapsedRealtime,
+            schedule = { task, delay -> binding.root.postDelayed(task, delay) },
+            cancelCallback = { task -> binding.root.removeCallbacks(task) },
+            canRecover = ::canRecoverRenderer,
+            recreate = ::recreate,
+        )
+    }
     private val pageRecoveryTask = Runnable { recoverFailedPage() }
     // The page plays its own entrance; the placeholder leaves at once instead of fading over it.
     private val cover = PageCover { visible, atOnce ->
@@ -290,6 +303,7 @@ class MainActivity : AppCompatActivity() {
         // Leaving the app for longer than the chosen time locks it: the password leaves memory and the PIN is asked again.
         AppLockSession.track(this) {
             if (model.state.value.lock.enabled) binding.drawer.visibility = View.INVISIBLE
+            rendererRecovery.cancel()
             launchCatching { model.lockNow() }
         }
         lock.restore(savedInstanceState)
@@ -316,6 +330,8 @@ class MainActivity : AppCompatActivity() {
         forms.tab = savedInstanceState?.getInt("settings_tab") ?: 0
         handledDownloadEvent = savedInstanceState?.getString("download_event")
         sessionEpoch = savedInstanceState?.getInt("session_epoch", 0) ?: 0
+        pendingLink.restore(savedInstanceState?.getString("pending_link"),
+            savedInstanceState?.getInt("pending_link_epoch", -1) ?: -1, sessionEpoch)
         launchTarget = LaunchTarget.parse(LaunchTarget.ACTION, savedInstanceState?.getString("launch_target"))
         restoredDocument = savedInstanceState?.getBundle("document_state")
         if (restoredDocument != null && savedInstanceState != null) documentSourcePosition = Pair(
@@ -399,7 +415,8 @@ class MainActivity : AppCompatActivity() {
             if (!sessionChanging && web === documents.webView) web.loadUrl(target)
         }) { automationStatus = it; renderBanner() }
     }, { url ->
-        if (SitePolicy.trusted(url) && !SitePolicy.documentDownload(url)) {
+        if (!MainNavigationGate.canRoute(isDestroyed, isFinishing, rendererUnavailable, sessionChanging, model.sessionClearPending)) return@DocumentViewer
+        if (MainNavigationGate.loadsInMainWebView(url)) {
             documents.close()
             binding.webView.loadUrl(url)
         } else route(url)
@@ -768,6 +785,7 @@ class MainActivity : AppCompatActivity() {
         else if (changedLanguage && !sessionChanging && !rendererUnavailable) {
             if (documents.isOpen) documents.applyLanguage(state.language) else automation.applyLanguage(state.language)
         }
+        replayPendingLink()
         documents.update(state.language, state.textZoom)
         forms.refresh()
         renderBanner()
@@ -800,6 +818,13 @@ class MainActivity : AppCompatActivity() {
                     ?: SingleSignOnPolicy.ENTRY else it, saved) }
             restoredDocument = null
         }
+        replayPendingLink()
+    }
+
+    /** A link kept across a recovery or recreation opens once the page is up and the app unlocked. */
+    private fun replayPendingLink() {
+        if (!webOpened || sessionChanging || rendererUnavailable) return
+        pendingLink.take(sessionEpoch, locked = model.state.value.locked || AppLockSession.locked)?.let(::linkReturned)
     }
 
     private fun localizeChrome(state: AppState) {
@@ -1111,6 +1136,7 @@ class MainActivity : AppCompatActivity() {
      * is done, and the next render opens the website afresh.
      */
     private suspend fun clearSession() {
+        rendererRecovery.cancel()
         noticeLoading.dismiss()
         noticePresentation.setEnabled(false)
         notices.reset()
@@ -1130,6 +1156,7 @@ class MainActivity : AppCompatActivity() {
         documents.close(false)
         documentSourcePosition = null
         restoredDocument = null
+        pendingLink.sessionEnded()
         automation.pause()
         pageTitle = null
         SiteData.erase(binding.webView.takeUnless { rendererUnavailable }, this)
@@ -1201,23 +1228,18 @@ class MainActivity : AppCompatActivity() {
         notices.startChecks()
     }
 
+    private fun canRecoverRenderer(): Boolean {
+        val state = model.state.value
+        return !isDestroyed && !isFinishing && rendererUnavailable && !sessionChanging && !model.sessionClearPending &&
+            state.canBrowse && !state.paused && !state.locked && !AppLockSession.locked && !lock.showing &&
+            !forms.showing && lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+    }
+
     /**
      * A renderer the system killed in the background or that crashed: the screen is recreated by itself while it is
      * visible, ever more slowly if the renderer keeps failing. The recreated screen reopens the section by a GET.
      */
-    private fun recoverRenderer() {
-        val state = model.state.value
-        if (!rendererUnavailable || rendererRecoveryPending || sessionChanging || !state.canBrowse || state.paused ||
-            state.locked || forms.showing || !lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) return
-        rendererRecoveryPending = true
-        val now = SystemClock.elapsedRealtime()
-        val delay = model.rendererRecovery.delay(now)
-        model.rendererRecovery.spend(now)
-        binding.root.postDelayed({
-            if (!isDestroyed && !isFinishing && rendererUnavailable && !sessionChanging) recreate()
-            else rendererRecoveryPending = false
-        }, delay)
-    }
+    private fun recoverRenderer() = rendererRecovery.scheduleIfNeeded()
 
     private fun configureNoticePresentation() {
         val state = model.state.value
@@ -1269,12 +1291,20 @@ class MainActivity : AppCompatActivity() {
             override fun onShowFileChooser(webView: WebView, callback: ValueCallback<Array<Uri>>, params: FileChooserParams) =
                 fileChooser.show(callback, params)
             override fun onCreateWindow(view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: Message): Boolean {
-                if (!isUserGesture) return false
+                if (!MainNavigationGate.canCaptureWindow(isUserGesture = isUserGesture, isDestroyed = isDestroyed,
+                        isFinishing = isFinishing, rendererUnavailable = rendererUnavailable,
+                        sessionChanging = sessionChanging, sessionClearPending = model.sessionClearPending,
+                        locked = model.state.value.locked || AppLockSession.locked, canBrowse = model.state.value.canBrowse)) return false
                 // A page's new window only tells where it wanted to go; that address is routed like a link.
                 captureNewWindow(this@MainActivity, resultMsg) { request ->
-                    if (!WindowCapturePolicy.shouldRoute(request)) return@captureNewWindow
+                    if (!MainNavigationGate.canHandleCapturedWindow(isDestroyed = isDestroyed, isFinishing = isFinishing,
+                            rendererUnavailable = rendererUnavailable, sessionChanging = sessionChanging,
+                            sessionClearPending = model.sessionClearPending,
+                            locked = model.state.value.locked || AppLockSession.locked,
+                            canBrowse = model.state.value.canBrowse,
+                            shouldRoute = WindowCapturePolicy.shouldRoute(request))) return@captureNewWindow
                     if (!logoutNavigation.onNavigation(request)) {
-                        if (!sessionChanging) websiteLanguage.onNavigation(request)
+                        websiteLanguage.onNavigation(request)
                         val url = request.url.toString()
                         if (!route(url, userGesture = true)) binding.webView.loadUrl(url)
                     }
@@ -1331,7 +1361,7 @@ class MainActivity : AppCompatActivity() {
 
     /** Where a link goes: the document viewer, a download, the website itself, or another app. */
     private fun route(url: String, userGesture: Boolean = true): Boolean {
-        if (sessionChanging || model.sessionClearPending) return true
+        if (!MainNavigationGate.canRoute(isDestroyed, isFinishing, rendererUnavailable, sessionChanging, model.sessionClearPending)) return true
         if (SingleSignOnPolicy.opensViewer(url)) {
             if (SitePolicy.trusted(url) || userGesture) openDocument(url)
             return true
@@ -1362,14 +1392,23 @@ class MainActivity : AppCompatActivity() {
 
     /** A Univer or Moodle page tapped in the link window opens here, signed in; logout, language and sign-in pages never do. */
     private fun linkReturned(url: String) {
-        if (sessionChanging || model.sessionClearPending || model.state.value.locked || AppLockSession.locked || !LinkPolicy.handBack(url)) return
-        if (SitePolicy.trusted(url) && !SitePolicy.documentDownload(url)) {
-            if (documents.isOpen) documents.close()
-            binding.webView.loadUrl(url)
-        } else route(url)
+        when (MainNavigationGate.linkReturnAction(url, isDestroyed = isDestroyed, isFinishing = isFinishing,
+            rendererUnavailable = rendererUnavailable, sessionChanging = sessionChanging,
+            sessionClearPending = model.sessionClearPending,
+            locked = model.state.value.locked || AppLockSession.locked,
+            canBrowse = model.state.value.canBrowse)) {
+            LinkReturnAction.IGNORE -> Unit
+            LinkReturnAction.PEND -> pendingLink.keep(url, sessionEpoch)
+            LinkReturnAction.LOAD_MAIN -> {
+                if (documents.isOpen) documents.close()
+                binding.webView.loadUrl(url)
+            }
+            LinkReturnAction.ROUTE -> route(url, userGesture = true)
+        }
     }
 
     private fun openDocument(url: String, saved: Bundle? = null) {
+        if (isDestroyed || isFinishing || rendererUnavailable) return
         automation.pause()
         if (!documents.isOpen && documentSourcePosition == null)
             documentSourcePosition = Pair(binding.webView.scrollX, binding.webView.scrollY)
@@ -1456,6 +1495,11 @@ class MainActivity : AppCompatActivity() {
             outState.putBundle("web_state", state)
         }
         if (rendererUnavailable && !sessionChanging) lostPageUrl?.let { outState.putString("lost_page", it) }
+        // Kept whether the renderer is still down or the screen waits to be unlocked, for this session only.
+        if (!sessionChanging) pendingLink.saved(sessionEpoch)?.let {
+            outState.putString("pending_link", it)
+            outState.putInt("pending_link_epoch", sessionEpoch)
+        }
         super.onSaveInstanceState(outState)
     }
 
@@ -1510,9 +1554,11 @@ class MainActivity : AppCompatActivity() {
         pullGuard.cancel()
         binding.root.removeCallbacks(endPullLater)
         binding.root.removeCallbacks(pageRecoveryTask)
+        rendererRecovery.cancel()
         notices.stopChecks()
         binding.root.removeCallbacks(pageAbandoned)
         dismissTransientDialogs()
+        lock.close()
         lockUi.hide()
         noticeLoading.close()
         noticePresentation.close()
@@ -1638,6 +1684,7 @@ class MainActivity : AppCompatActivity() {
         }
         override fun coverPage(covered: Boolean) {
             if (covered) {
+                rendererRecovery.cancel()
                 // Hidden and unreadable for accessibility services, as well as covered: the page is not in view at all.
                 binding.drawer.visibility = View.INVISIBLE
                 binding.drawer.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS

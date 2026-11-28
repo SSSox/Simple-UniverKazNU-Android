@@ -428,4 +428,80 @@ class SessionGuardTest {
             "https://evil@univer.kaznu.kz/", "https://univer.kaznu.kz:444/", "file:///user/login", "javascript:alert(1)")
             .forEach { assertFalse(it, SitePolicy.trusted(it)) }
     }
+
+    @Test
+    fun theReauthenticationResponseTimerRunsFromTheScriptsAcknowledgement() {
+        val guard = SessionGuard()
+        assertTrue(guard.tryReauthenticate("challenge", 1_000, "doc"))
+        // The renderer ran the queued call 10 s later; the site's 25 s start from there.
+        guard.reauthenticationSent("challenge", 11_000)
+        assertFalse(guard.reauthenticationTimedOut(30_000))
+        assertTrue(guard.reauthenticationTimedOut(36_001))
+    }
+
+    @Test
+    fun anAcknowledgementForAnotherChallengeMovesNoTimer() {
+        val guard = SessionGuard()
+        assertTrue(guard.tryReauthenticate("challenge", 1_000, "doc"))
+        guard.reauthenticationSent("other", 20_000)
+        assertTrue(guard.reauthenticationTimedOut(26_001))
+    }
+
+    @Test
+    fun aCallWhoseWaitWasCancelledIsAcknowledgedByItsDocumentsProbe() {
+        val guard = SessionGuard()
+        assertTrue(guard.tryReauthenticate("challenge", 1_000, "doc"))
+        guard.reauthenticationQueued("challenge", "doc", deadline = 5_000)
+        // A pause cancelled the wait: no answer, and no timer runs from the queueing.
+        assertFalse(guard.reauthenticationTimedOut(40_000))
+        guard.reauthenticationProbed("doc", "", now = 41_000, wallNow = 4_000)
+        assertEquals("challenge", guard.pendingReauthentication)
+        // After the resume the page shows that the script sent the dialog: the timer starts at that probe.
+        guard.reauthenticationProbed("doc", "challenge", now = 50_000, wallNow = 60_000)
+        assertFalse(guard.reauthenticationTimedOut(75_000))
+        assertTrue(guard.reauthenticationTimedOut(75_001))
+    }
+
+    @Test
+    fun onlyItsOwnDocumentPastTheDeadlineWithoutASubmissionGivesTheAttemptBack() {
+        val guard = SessionGuard()
+        assertTrue(guard.tryReauthenticate("c1", 1_000, "doc"))
+        guard.reauthenticationQueued("c1", "doc", deadline = 3_000)
+        guard.reauthenticationProbed("doc", "", now = 2_000, wallNow = 3_001)
+        assertEquals(null, guard.pendingReauthentication)
+        // Given back: three more attempts fit in the minute.
+        for (challenge in listOf("c2", "c3", "c4")) {
+            assertTrue(challenge, guard.tryReauthenticate(challenge, 4_000, "doc"))
+            guard.reauthenticationResult(challenge, success = true, now = 4_000)
+        }
+    }
+
+    @Test
+    fun aReplacedDocumentLeavesTheOutcomeUnknownAndTheAttemptCounted() {
+        val guard = SessionGuard()
+        assertTrue(guard.tryReauthenticate("c1", 1_000, "old"))
+        guard.reauthenticationQueued("c1", "old", deadline = 3_000)
+        // The old document may have sent before it went; the new one cannot say.
+        guard.reauthenticationProbed("new", "", now = 2_000, wallNow = 10_000)
+        assertEquals(null, guard.pendingReauthentication)
+        assertFalse(guard.blocked)
+        for (challenge in listOf("c2", "c3")) {
+            assertTrue(challenge, guard.tryReauthenticate(challenge, 4_000, "new"))
+            guard.reauthenticationResult(challenge, success = true, now = 4_000)
+        }
+        assertFalse("c1 still counts", guard.tryReauthenticate("c4", 5_000, "new"))
+    }
+
+    @Test
+    fun aRefusalAnsweredByTheScriptGivesTheAttemptBack() {
+        val guard = SessionGuard()
+        assertTrue(guard.tryReauthenticate("c1", 1_000, "doc"))
+        guard.reauthenticationQueued("c1", "doc", deadline = 3_000)
+        guard.reauthenticationRefused("c1")
+        assertEquals(null, guard.pendingReauthentication)
+        for (challenge in listOf("c2", "c3", "c4")) {
+            assertTrue(challenge, guard.tryReauthenticate(challenge, 4_000, "doc"))
+            guard.reauthenticationResult(challenge, success = true, now = 4_000)
+        }
+    }
 }

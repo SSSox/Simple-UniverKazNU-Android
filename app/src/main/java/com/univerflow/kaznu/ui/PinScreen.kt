@@ -30,11 +30,13 @@ import com.univerflow.kaznu.domain.PinPolicy
  * optional biometric key and "forgot" link. It only collects digits; the owner decides what a PIN means.
  */
 @SuppressLint("ViewConstructor")
-class PinScreen(context: Context, private val describe: (Int) -> String) : FrameLayout(context) {
+internal class PinScreen(context: Context, private val describe: (Int) -> String) : FrameLayout(context), PinPad {
     private val digits = CharArray(PinPolicy.LENGTH)
     private var count = 0
     private var inputEnabled = true
+    private var controlsEnabled = true
     private var succeeded = false
+    private val clearDots = Runnable { paintDots() }
     private val density = resources.displayMetrics.density
     private fun dp(value: Int) = (value * density).toInt()
 
@@ -49,11 +51,11 @@ class PinScreen(context: Context, private val describe: (Int) -> String) : Frame
     private val forgot = MaterialButton(context, null, androidx.appcompat.R.attr.borderlessButtonStyle)
     private val close = ImageButton(context)
 
-    val isCloseable get() = close.isVisible
-    var onComplete: ((CharArray) -> Unit)? = null
-    var onBiometric: (() -> Unit)? = null
-    var onForgot: (() -> Unit)? = null
-    var onClose: (() -> Unit)? = null
+    override val isCloseable get() = close.isVisible
+    override var onComplete: ((CharArray) -> Unit)? = null
+    override var onBiometric: (() -> Unit)? = null
+    override var onForgot: (() -> Unit)? = null
+    override var onClose: (() -> Unit)? = null
 
     private val primary = MaterialColors.getColor(context, androidx.appcompat.R.attr.colorPrimary, Color.BLUE)
     private val onSurface = MaterialColors.getColor(context, com.google.android.material.R.attr.colorOnSurface, Color.BLACK)
@@ -118,14 +120,14 @@ class PinScreen(context: Context, private val describe: (Int) -> String) : Frame
         column.addView(pad, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
 
         forgot.setTextColor(primary); forgot.minHeight = dp(48)
-        forgot.setOnClickListener { onForgot?.invoke() }
+        forgot.setOnClickListener { if (controlsEnabled) onForgot?.invoke() }
         column.addView(forgot, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(8) })
 
         addView(ScrollView(context).apply { isFillViewport = true; isVerticalScrollBarEnabled = false; addView(column, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)) },
             LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         close.setImageResource(R.drawable.ic_close)
         close.setBackgroundResource(android.R.color.transparent); close.imageTintList = ColorStateList.valueOf(onSurface)
-        close.setOnClickListener { onClose?.invoke() }
+        close.setOnClickListener { if (controlsEnabled) onClose?.invoke() }
         addView(close, LayoutParams(dp(48), dp(48), Gravity.TOP or Gravity.START).apply { topMargin = dp(8); marginStart = dp(8) })
         ViewCompat.setOnApplyWindowInsetsListener(this) { view, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
@@ -148,7 +150,7 @@ class PinScreen(context: Context, private val describe: (Int) -> String) : Frame
     }
 
     /** Title, hint, and which extra controls are offered. */
-    fun configure(titleText: String, hint: String?, closeable: Boolean, biometric: Boolean, forgotText: String?) {
+    override fun configure(titleText: String, hint: String?, closeable: Boolean, biometric: Boolean, forgotText: String?) {
         Motion.text(title, titleText)
         // The hint keeps its two lines when empty, so the keypad does not jump between the steps.
         subtitle.text = hint.orEmpty()
@@ -160,23 +162,31 @@ class PinScreen(context: Context, private val describe: (Int) -> String) : Frame
         showMessage(null)
     }
 
-    fun showMessage(text: String?, isError: Boolean = true) {
+    override fun showMessage(text: String?, isError: Boolean) {
         message.text = text.orEmpty()
         message.setTextColor(if (isError) error else onSurfaceVariant)
     }
 
-    fun setInputEnabled(enabled: Boolean) {
+    override fun setInputEnabled(enabled: Boolean) {
         inputEnabled = enabled
         keys.forEach { Motion.dim(it, if (enabled) 1f else 0.4f) }
     }
 
+    override fun setCloseEnabled(enabled: Boolean) {
+        controlsEnabled = enabled
+        close.isEnabled = enabled
+        forgot.isEnabled = enabled
+        Motion.dim(close, if (enabled) 1f else 0.4f)
+        Motion.dim(forgot, if (enabled) 1f else 0.4f)
+    }
+
     /** Empties the entered digits (nothing is kept anywhere). */
-    fun reset() { digits.fill('\u0000'); count = 0; succeeded = false; paintDots() }
+    override fun reset() { removeCallbacks(clearDots); digits.fill('\u0000'); count = 0; succeeded = false; paintDots() }
 
     /** The right PIN: every dot takes the success colour as the screen leaves, so the entry is seen to have worked. */
-    fun succeed() { setInputEnabled(false); succeeded = true; paintDots() }
+    override fun succeed() { removeCallbacks(clearDots); setInputEnabled(false); setCloseEnabled(false); succeeded = true; paintDots() }
 
-    fun shake() {
+    override fun shake() {
         performHapticFeedback(if (Build.VERSION.SDK_INT >= 30) HapticFeedbackConstants.REJECT else HapticFeedbackConstants.LONG_PRESS)
         if (!Motion.active) return
         ObjectAnimator.ofFloat(dotRow, View.TRANSLATION_X, 0f, -dp(14).toFloat(), dp(14).toFloat(), -dp(8).toFloat(), dp(8).toFloat(), 0f).apply { duration = 320 }.start()
@@ -192,7 +202,8 @@ class PinScreen(context: Context, private val describe: (Int) -> String) : Frame
             digits.fill('\u0000'); count = 0
             onComplete?.invoke(pin)
             // The dots clear a moment after the last one fills, so the entry is seen to complete.
-            postDelayed({ paintDots() }, 120)
+            removeCallbacks(clearDots)
+            postDelayed(clearDots, 120)
         }
     }
 
@@ -219,5 +230,5 @@ class PinScreen(context: Context, private val describe: (Int) -> String) : Frame
             ?.let { setPadding(it.left, it.top, it.right, it.bottom) }
     }
 
-    override fun onDetachedFromWindow() { digits.fill('\u0000'); count = 0; super.onDetachedFromWindow() }
+    override fun onDetachedFromWindow() { removeCallbacks(clearDots); digits.fill('\u0000'); count = 0; super.onDetachedFromWindow() }
 }
