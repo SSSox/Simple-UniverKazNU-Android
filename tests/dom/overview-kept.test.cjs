@@ -169,8 +169,11 @@ test('the site\'s sign-out link removes the record; other links leave it', async
   const p = visit({storage, hold: true});
   try {
     p.w.document.addEventListener('click', event => event.preventDefault());
+    p.w.localStorage.setItem('univer.app.syllabus-own.v1', '{}'); p.w.localStorage.setItem('univer.app.discussion-tasks.v1', '{}');
     p.node('#in').click(); assert.equal(p.stored(), storage);
     p.node('#out').click(); assert.equal(p.stored(), null);
+    assert.equal(p.w.localStorage.getItem('univer.app.syllabus-own.v1'), null);
+    assert.equal(p.w.localStorage.getItem('univer.app.discussion-tasks.v1'), null);
   } finally { p.close(); }
 });
 

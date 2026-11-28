@@ -123,8 +123,8 @@ test('the report button sends every course\'s totals, the term and the student n
   assert.deepEqual(JSON.parse(sent[0].slice('univer-report:'.length)), {
     v: 1, term: {year: 2026, term: 1}, student: 'Иванова Айгерим',
     courses: [
-      {name: 'Социология', scores: [{label: 'РК1', max: '100', value: '63'}, {label: 'РК2', max: '100', value: '0'}], absences: 0},
-      {name: 'Психология', scores: [{label: 'РК1', max: '100', value: '92'}, {label: 'РК2', max: '100', value: ''}], absences: 0},
+      {name: 'Социология', scores: [{label: 'РК1', max: '100', value: '63'}, {label: 'РК2', max: '100', value: '0'}], absences: 0, excused: 0},
+      {name: 'Психология', scores: [{label: 'РК1', max: '100', value: '92'}, {label: 'РК2', max: '100', value: ''}], absences: 0, excused: 0},
     ],
     goal: null,
   });
@@ -184,20 +184,35 @@ const marked = (id, type, cells) => `<tr class="mid"><td class="ts"><a class="lt
   `<tr>${cells.map(c => `<td>${c}</td>`).join('')}<td>5</td></tr></table></td></tr>`;
 const MISSED = '<table class="wrappertable"><tr id="l4"><td class="center"><table class="mt">' +
   '<tr class="top"><td class="ct">Социология ([РК1 + РК2 + Экз] (100)) 01.09.2026 - 12.12.2026</td></tr><tr class="mid"><td class="ct"><b>РК1 (100): 63</b></td></tr>' +
-  marked(1, 'лекция', ['н', 'Н', '5', 'нб']) + marked(2, 'семинар', ['н', '4']) + marked(3, 'лабораторная', ['н']) +
+  marked(1, 'лекция', ['н', 'Н', '5', 'нб']) + marked(2, 'семинар', ['н', '4', 'Н/Б']) + marked(3, 'лабораторная', ['н', ' ну ', 'нб.']) +
   '<tr class="top"><td class="ct">Психология ([РК1 + РК2 + Экз] (100)) 01.09.2026 - 12.12.2026</td></tr><tr class="mid"><td class="ct"><b>РК1 (100): 80</b></td></tr>' +
   marked(4, 'лекция', ['5', '5']) + '</table></td></tr></table>';
 
-test('each course counts its «н» marks by class type; a course without any says nothing', async () => {
+test('courses and the term separate the two kinds of absence, with no lines or chips for zero counts', async () => {
   const p = await page('ru', MISSED);
   const lines = () => p.all('.univer-app-attendance-absences').map(n => n.textContent);
-  assert.deepEqual(lines(), ['Пропуски: 4 · лекции 2, семинары 1, другие 1']);
-  p.all('.univer-app-attendance-filters button').find(b => b.dataset.kind === 'lecture').click();
-  assert.deepEqual(lines(), ['Пропуски: 2']);
+  const term = p.d.querySelector('.univer-app-attendance-term');
+  const types = p.all('.univer-app-attendance-filters button');
+  assert.deepEqual(lines(), ['Пропуски Без уважительной причины 4 По уважительной причине 3 лекции 2, семинары 1, другие 1']);
+  assert.equal(term.textContent, 'Пропуски за семестр Без уважительной причины 4 По уважительной причине 3');
+  assert.ok(term.compareDocumentPosition(p.d.querySelector('.univer-app-attendance-courses')) & p.w.Node.DOCUMENT_POSITION_FOLLOWING);
+  types.find(b => b.dataset.kind === 'lecture').click();
+  assert.deepEqual(lines(), ['Пропуски Без уважительной причины 2 По уважительной причине 1']);
+  assert.equal(term.querySelector('[data-kind=excused] b').textContent, '3', 'filters do not narrow the term bar');
+  types.find(b => b.dataset.kind === 'sro').click();
+  assert.deepEqual(lines(), []);
   p.w.close();
   const en = await page('en', MISSED);
-  assert.deepEqual(en.all('.univer-app-attendance-absences').map(n => n.textContent), ['Absences: 4 · lectures 2, seminars 1, other 1']);
+  assert.deepEqual(en.all('.univer-app-attendance-absences').map(n => n.textContent), ['Absences Unexcused 4 Excused 3 lectures 2, seminars 1, other 1']);
   en.w.close();
+  const zero = await page();
+  assert.equal(zero.d.querySelector('.univer-app-attendance-term').hidden, true);
+  assert.equal(zero.all('.univer-app-attendance-absences').length, 0);
+  zero.w.close();
+  const excusedOnly = await page('kz', MISSED.replaceAll('<td>н</td>', '<td>5</td>').replace('<td>Н</td>', '<td>5</td>'));
+  assert.deepEqual(excusedOnly.all('.univer-app-attendance-absence-count').map(n => n.dataset.kind), ['excused', 'excused']);
+  assert.equal(excusedOnly.d.querySelector('.univer-app-attendance-term').textContent, 'Семестрдегі қатыспаған сабақтар Себепті 3');
+  excusedOnly.w.close();
 });
 
 const missedTerm = hours => '<table class="wrappertable"><tr id="l4"><td class="center"><table class="mt">' +
@@ -206,19 +221,19 @@ const missedTerm = hours => '<table class="wrappertable"><tr id="l4"><td class="
   '<tr class="top"><td class="ct">Психология ([РК1 + РК2 + Экз] (100)) 01.09.2026 - 12.12.2026</td></tr><tr class="mid"><td class="ct"><b>РК1 (100): 80</b></td></tr>' +
   marked(4, 'лекция', Array(hours - 4).fill('н').concat(['5'])) + '</table></td></tr></table>';
 
-test('more than 25 missed hours in the term warns over every course, whichever course is shown', async () => {
+test('only unexcused hours count toward the term warning, whichever course is shown', async () => {
   const shown = p => p.all('.univer-app-attendance-limit').filter(n => !n.hidden).map(n => n.textContent);
   const quiet = await page('ru', missedTerm(25));
   assert.deepEqual(shown(quiet), []);
   quiet.w.close();
   const p = await page('ru', missedTerm(26));
-  assert.deepEqual(shown(p), ['Пропущено 26 ч за семестр: это больше 25 ч']);
+  assert.deepEqual(shown(p), ['Пропущено 26 ч без уважительной причины за семестр. Лимит: 25 ч.']);
   p.all('.univer-app-attendance-course-list button').find(b => b.textContent === 'Социология').click();
   p.all('.univer-app-attendance-filters button').find(b => b.dataset.kind === 'seminar').click();
-  assert.deepEqual(shown(p), ['Пропущено 26 ч за семестр: это больше 25 ч']);
+  assert.deepEqual(shown(p), ['Пропущено 26 ч без уважительной причины за семестр. Лимит: 25 ч.']);
   p.w.close();
   const kz = await page('kz', missedTerm(30));
-  assert.deepEqual(shown(kz), ['Семестрде 30 сағат қатыспадыңыз: бұл 25 сағаттан көп']);
+  assert.deepEqual(shown(kz), ['Семестрде себепсіз қалған сағат: 30. Шегі: 25 сағат.']);
   kz.w.close();
 });
 
@@ -230,10 +245,12 @@ test('the report carries each course\'s absences and the chosen goal', async () 
   w.localStorage.setItem('univer.app.grade-goal.v1', 'top');
   w.eval(read('univer-dom.js')); w.eval(read('univer-attendance.js'));
   w.__univerAttendanceV1.apply('ru');
+  w.document.querySelector('.univer-app-attendance-course-list button:last-child').click();
+  w.document.querySelector('.univer-app-attendance-filters button[data-kind=seminar]').click();
   trustedClick(w, w.document.querySelector('.univer-app-attendance-report'));
   const data = JSON.parse(sent[0].slice('univer-report:'.length));
   assert.equal(data.goal, 'top');
-  assert.deepEqual(data.courses.map(c => [c.name, c.absences]), [['Социология', 4], ['Психология', 0]]);
+  assert.deepEqual(data.courses.map(c => [c.name, c.absences, c.excused]), [['Социология', 4, 3], ['Психология', 0, 0]]);
   w.close();
 });
 

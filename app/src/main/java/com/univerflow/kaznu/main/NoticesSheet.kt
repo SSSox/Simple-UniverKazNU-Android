@@ -122,7 +122,7 @@ class NoticesSheet(
             if (blocked) com.google.android.material.R.attr.colorErrorContainer else com.google.android.material.R.attr.colorPrimaryContainer))
         row.noticeIcon.imageTintList = ColorStateList.valueOf(MaterialColors.getColor(row.root,
             if (blocked) com.google.android.material.R.attr.colorOnErrorContainer else com.google.android.material.R.attr.colorOnPrimaryContainer))
-        row.noticeTitle.text = if (blocked) notice.title else "${notice.title} (${notice.count})"
+        row.noticeTitle.text = if (blocked) notice.title else "${notice.title} (${Notices.shown(notice)})"
         val details = notice.details.joinToString("\n") { detail ->
             if (detail.until.isEmpty()) "• ${detail.title}" else "• " + labels.getString(R.string.notice_detail_until, detail.title, detail.until)
         }

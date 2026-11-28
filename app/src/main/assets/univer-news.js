@@ -77,15 +77,19 @@
     }
     function writeFold(record, fold) {
         if (!fold) return;
-        var t = text();
-        attr(record.body, 'data-collapsed', String(fold.long && !fold.open));
+        var t = text(), closing = !!record.closing;
+        attr(record.body, 'data-collapsed', String(fold.long && !fold.open && !closing));
         if (fold.long && !fold.open) attr(record.body, 'style', '--univer-news-fold:' + fold.height + 'px');
+        if (fold.long && fold.open && !closing) attr(record.row, 'data-univer-expanded', 'true');
+        else record.row.removeAttribute('data-univer-expanded');
         setHidden(record.button, !fold.long);
         attr(record.button, 'aria-expanded', String(!fold.long || fold.open));
         setText(record.button, fold.long ? (fold.open ? t.collapse : t.expand) : '');
     }
     function updateFold(record) { writeFold(record, measureFold(record)); }
     function unfold(record) {
+        record.closing = null;
+        record.row.removeAttribute('data-univer-expanded');
         window.__univerMotionUI?.stop(record.body);
         foldObserver?.unobserve(record.body); record.button.remove();
         record.body.querySelectorAll(':scope > [data-univer-blank]').forEach(node => node.removeAttribute('data-univer-blank'));
@@ -99,14 +103,29 @@
     }
     // The disclosure button: opens or closes the article, animated only for a pointer click.
     function toggleFold(record, event) {
-        var body = record.body, row = record.row;
+        var body = record.body, row = record.row, motion = window.__univerMotionUI;
         event.stopPropagation();
-        var wasOpen = expanded.get(record.source) === true, before = body.getBoundingClientRect().height, motion = window.__univerMotionUI;
-        motion?.stop(body);
-        expanded.set(record.source, !wasOpen); updateFold(record);
-        if (event.detail > 0) motion?.resize(body, before, wasOpen ? 180 : 220);
-        if (!wasOpen && event.detail > 0) motion?.reveal(body, 'content');
-        if (wasOpen && row.getBoundingClientRect().top < 80) row.scrollIntoView?.({block:'start', behavior:event.detail > 0 && window.__univerMotion !== false && !motion?.reduced() ? 'smooth' : 'auto'});
+        var wasOpen = expanded.get(record.source) === true;
+        expanded.set(record.source, !wasOpen);
+        if (wasOpen) {
+            var fold = measureFold(record);
+            if (event.detail > 0 && fold && fold.long && fold.height > 0 && motion?.shut) {
+                var pending = {}; record.closing = pending;
+                writeFold(record, fold);
+                var animated = motion.shut(body, fold.height, function () {
+                    if (record.closing !== pending) return;
+                    record.closing = null; writeFold(record, fold);
+                }, {follow:row});
+                if (!animated && row.getBoundingClientRect().top < 80) row.scrollIntoView?.({block:'start', behavior:'instant'});
+            } else {
+                record.closing = null; motion?.stop(body); writeFold(record, fold);
+                if (row.getBoundingClientRect().top < 80) row.scrollIntoView?.({block:'start', behavior:'instant'});
+            }
+            return;
+        }
+        var before = body.getBoundingClientRect().height;
+        record.closing = null; motion?.stop(body); updateFold(record);
+        if (event.detail > 0) motion?.resize(body, before);
     }
     // Moves the article of [row] into a collapsible body followed by its disclosure button.
     function createFold(row, cell) {
@@ -119,7 +138,7 @@
         var record = {body, button, row, source:foldSources.get(row) || row};
         button.addEventListener('click', event => toggleFold(record, event));
         // A keyboard user reaching a link below the preview gets the full article before continuing.
-        body.addEventListener('focusin', () => { window.__univerMotionUI?.stop(body); expanded.set(record.source, true); updateFold(record); });
+        body.addEventListener('focusin', () => { record.closing = null; window.__univerMotionUI?.stop(body); expanded.set(record.source, true); updateFold(record); });
         body.addEventListener('load', scheduleFolds, true);
         foldObserver?.observe(body);
         return record;
@@ -426,13 +445,20 @@
         var results = el('section', 'univer-app-news-results'); results.hidden = true;
         return {bar, query, from, to, important, reset, all, counter, results, period, periodName, periodBox, presets, line};
     }
+    function closePeriod(c, returnFocus, animate) {
+        if (!c.period.open) return;
+        var motion = window.__univerMotionUI;
+        if (animate) motion?.exit(c.periodBox); else motion?.stop(c.periodBox);
+        c.period.open = false;
+        if (returnFocus) c.period.querySelector('summary')?.focus({preventScroll:true});
+    }
     // The usual date ranges, each up to today.
     function addPresets(c) {
         [['anyDate', 0], ['week', 7], ['month', 31], ['half', 183]].forEach(item => {
             var preset = toolButton('preset'); preset.dataset.key = item[0];
-            preset.addEventListener('click', () => {
+            preset.addEventListener('click', event => {
                 var day = new Date(Date.now() - item[1] * 86400000), iso = isoDay(day);
-                c.from.value = item[1] ? iso : ''; c.to.value = ''; c.period.open = false; changed();
+                c.from.value = item[1] ? iso : ''; c.to.value = ''; closePeriod(c, true, event.detail > 0); changed();
             });
             c.presets.appendChild(preset);
         });
@@ -445,15 +471,19 @@
             running:false, searched:false, generation:0, pageSize:Math.max(1, rows.length),
             known:page + (more ? 1 : 0), total:more ? 0 : page});
         if (!state.total) state.total = savedCount(state.known);
-        if (typeof ResizeObserver === 'function') foldObserver = new ResizeObserver(scheduleFolds);
+        if (typeof ResizeObserver === 'function') foldObserver = new ResizeObserver(entries => {
+            if (entries.some(entry => !entry.target.hasAttribute('data-univer-resizing'))) scheduleFolds();
+        });
         window.addEventListener('resize', scheduleFolds);
         [c.query, c.from, c.to].forEach(n => n.addEventListener('input', changed));
         c.important.addEventListener('click', () => { c.important.setAttribute('aria-pressed', String(c.important.getAttribute('aria-pressed') !== 'true')); changed(); });
         c.reset.addEventListener('click', () => { c.query.value = c.from.value = c.to.value = ''; c.important.setAttribute('aria-pressed', 'false'); changed(); });
         c.all.addEventListener('click', search);
         addPresets(c);
-        c.period.addEventListener('toggle', () => { if (c.period.open) window.__univerMotionUI?.reveal(c.periodBox, 'popup'); });
-        state.closePeriod = event => { if (c.period.open && !c.period.contains(event.target)) c.period.open = false; };
+        c.period.addEventListener('keydown', event => {
+            if (event.key === 'Escape' && c.period.open) { event.preventDefault(); closePeriod(c, true); }
+        });
+        state.closePeriod = event => { if (!c.period.contains(event.target)) closePeriod(c, false, true); };
         document.addEventListener('pointerdown', state.closePeriod, true);
         ['pointerdown', 'focusin', 'toggle'].forEach(type => document.addEventListener(type, wantCount, true));
         if (active()) timer = setTimeout(search, SEARCH_DELAY);
@@ -492,6 +522,7 @@
         clearTimeout(foldTimer); foldTimer = null; window.removeEventListener('resize', scheduleFolds);
         document.removeEventListener('pointerdown', state.closePeriod, true);
         ['pointerdown', 'focusin', 'toggle'].forEach(type => document.removeEventListener(type, wantCount, true));
+        window.__univerMotionUI?.stop(state.period);
         foldObserver?.disconnect(); foldObserver = null;
         folds.forEach(unfold); folds.clear(); foldSources = new WeakMap(); expanded = new WeakMap();
         state.hidden.forEach((hidden, row) => { row.hidden = hidden; }); state.table.removeAttribute('data-univer-news-source');

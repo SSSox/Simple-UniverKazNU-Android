@@ -348,7 +348,10 @@
     <string name="report_reached">Все пороги пройдены</string>
     <string name="report_goal">Цель — «%1$s», от %2$d&#160;%% максимума. Под каждой оценкой указано, сколько баллов до неё осталось.</string>
     <string name="report_goal_reached">Цель достигнута</string>
-    <string name="report_absences">Пропуски: %1$d</string>
+    <string name="report_absences">Пропуски</string>
+    <string name="report_absences_term">Пропуски за семестр</string>
+    <string name="report_absences_unexcused">Без уважительной причины %1$d</string>
+    <string name="report_absences_excused">По уважительной причине %1$d</string>
     <string name="report_out_of">%1$s из %2$s</string>
     <string name="report_no_grade">оценки пока нет</string>
     <string name="report_no_grades">Оценки пока не выставлены</string>

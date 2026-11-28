@@ -7,10 +7,13 @@ package com.univerflow.kaznu.domain
  * [goal] is the level chosen on the page (`PASS`, `GOOD` or `TOP`; null for none): what is left is counted to it.
  */
 data class GradeReport(val term: Term?, val student: String, val courses: List<Course>, val goal: Band? = null) {
+    val unexcusedAbsences: Int get() = courses.sumOf { it.absences }
+    val excusedAbsences: Int get() = courses.sumOf { it.excused }
+
     /** [term] 1 is the autumn term, 2 the spring term and 3 the summer term of the academic year starting in [year]. */
     data class Term(val year: Int, val term: Int)
-    /** [absences] is the count of the journal's «н» marks in the course's classes. */
-    data class Course(val name: String, val scores: List<Score>, val absences: Int = 0)
+    /** [absences] counts «н» (unexcused). [excused] is the count of excused marks. */
+    data class Course(val name: String, val scores: List<Score>, val absences: Int = 0, val excused: Int = 0)
     /** A control period ("РК1") with its maximum and grade as written ("100", "63", "12,5"); either may be empty. */
     data class Score(val label: String, val max: String, val value: String)
 
@@ -30,7 +33,7 @@ data class GradeReport(val term: Term?, val student: String, val courses: List<C
          * version 1 with 1–[MAX_COURSES] courses of at most [MAX_SCORES] scores each.
          */
         fun of(message: Map<String, Any?>): GradeReport? {
-            if ((message["v"] as? Number)?.toInt() != 1) return null
+            if (whole(message["v"]) != 1) return null
             val term = message["term"].let { if (it == null) null else term(it) ?: return null }
             val student = text(message["student"], 120, allowEmpty = true) ?: return null
             val list = message["courses"] as? List<*> ?: return null
@@ -60,9 +63,13 @@ data class GradeReport(val term: Term?, val student: String, val courses: List<C
                 val grade = (score["value"] as? String)?.trim()?.takeIf(AMOUNT::matches) ?: return null
                 Score(label, max, grade)
             }
-            val absences = map["absences"]?.let { whole(it)?.takeIf { count -> count in 0..MAX_ABSENCES } ?: return null } ?: 0
-            return Course(name, scores, absences)
+            val absences = absenceCount(map, "absences") ?: return null
+            val excused = absenceCount(map, "excused") ?: return null
+            return Course(name, scores, absences, excused)
         }
+
+        private fun absenceCount(course: Map<*, *>, key: String): Int? =
+            if (key in course) whole(course[key])?.takeIf { it in 0..MAX_ABSENCES } else 0
 
         private fun whole(value: Any?): Int? = (value as? Number)?.toDouble()?.takeIf { it % 1.0 == 0.0 && it in -1e6..1e6 }?.toInt()
 

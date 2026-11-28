@@ -59,4 +59,79 @@ class GradeTotalsTest {
         assertEquals("12/25", GradeChange("Право", "РК1", "12", "25").score)
         assertEquals("7", GradeChange("Право", "Экзамен", "7", "").score)
     }
+
+    @Test fun aTotalThatIsZeroOrEmptyIsNotNews() {
+        val before = totals("Социология" to listOf(score("РК1", "85"), score("РК2", "")))
+        for (zero in listOf("0", "0.0", "0,00", "00")) {
+            val withZero = totals("Социология" to listOf(score("РК1", "85"), score("РК2", zero)),
+                "История" to listOf(score("РК1", zero), score("РК2", "")))
+            assertEquals("zero=$zero", emptyList<GradeChange>(), withZero.changes(before.values()))
+        }
+        assertTrue(GradeTotals.isZero("0*"))
+        // Moving from zero to a real score IS news.
+        val zeroBase = totals("Социология" to listOf(score("РК1", "85"), score("РК2", "0")))
+        val realGrade = totals("Социология" to listOf(score("РК1", "85"), score("РК2", "71")))
+        assertEquals(listOf(GradeChange("Социология", "РК2", "71", "100")), realGrade.changes(zeroBase.values()))
+        // A single score going back to empty or zero is not news, and does not hide a real change elsewhere.
+        val mixedBefore = totals("Социология" to listOf(score("РК1", "85")), "Право" to listOf(score("РК1", "60")))
+        val mixedAfter = totals("Социология" to listOf(score("РК1", "0")), "Право" to listOf(score("РК1", "75")))
+        assertEquals(listOf(GradeChange("Право", "РК1", "75", "100")), mixedAfter.changes(mixedBefore.values()))
+    }
+
+    @Test fun aNewTermWithDisjointOrMostlyDifferentCoursesIsSilent() {
+        val before = totals(
+            "Физика" to listOf(score("РК1", "90"), score("РК2", "80")),
+            "История" to listOf(score("РК1", "82")),
+            "Литература" to listOf(score("РК1", "70")),
+        )
+        val disjoint = totals("Математика" to listOf(score("РК1", "95")))
+        assertEquals(emptyList<GradeChange>(), disjoint.changes(before.values()))
+        // Only 1 of 3 previous courses kept: still a new term, silent.
+        val oneShared = totals(
+            "Физика" to listOf(score("РК1", "90")),
+            "Математика" to listOf(score("РК1", "85")),
+            "География" to listOf(score("РК1", "77")),
+        )
+        assertEquals(emptyList<GradeChange>(), oneShared.changes(before.values()))
+    }
+
+    @Test fun aMassResetOfPublishedScoresIsSilentEvenWhenCourseNamesStay() {
+        val before = totals(
+            "Иностранный язык" to listOf(score("РК1", "90"), score("РК2", "80")),
+            "Спорт" to listOf(score("РК1", "70")),
+        )
+        val resetToZero = totals(
+            "Иностранный язык" to listOf(score("РК1", "0"), score("РК2", "0")),
+            "Спорт" to listOf(score("РК1", "0")),
+            "Новая дисциплина" to listOf(score("РК1", "88")),
+        )
+        assertEquals(emptyList<GradeChange>(), resetToZero.changes(before.values()))
+        val resetToEmpty = totals(
+            "Иностранный язык" to listOf(score("РК1", ""), score("РК2", "")),
+            "Спорт" to listOf(score("РК1", "70")),
+            "Новая дисциплина" to listOf(score("РК1", "88")),
+        )
+        assertEquals(emptyList<GradeChange>(), resetToEmpty.changes(before.values()))
+    }
+
+    @Test fun coursesAndColumnsStillMatchByNameWhenReorderedOrAdded() {
+        val before = totals(
+            "Математика" to listOf(score("РК1", "70"), score("Экзамен", "")),
+            "История" to listOf(score("РК1", "82")),
+            "Физика" to listOf(score("РК1", "90")),
+        )
+        val after = totals(
+            "Физика" to listOf(score("РК1", "90")),
+            "Искусство" to listOf(score("РК2", "80"), score("РК1", "0")),
+            "Математика" to listOf(score("РК2", "75"), score("РК1", "72")),
+        )
+        assertEquals(
+            listOf(
+                GradeChange("Искусство", "РК2", "80", "100"),
+                GradeChange("Математика", "РК2", "75", "100"),
+                GradeChange("Математика", "РК1", "72", "100"),
+            ),
+            after.changes(before.values()),
+        )
+    }
 }

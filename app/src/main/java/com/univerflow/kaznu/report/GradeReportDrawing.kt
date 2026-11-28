@@ -139,10 +139,12 @@ class GradeReportDrawing(private val words: Context, private val language: AppLa
             add(layout(words.getString(R.string.report_made, date), paint(9f, MUTED), width))
         }
         val height = title.height + 6f + lines.sumOf { it.height + 3.0 }.toFloat()
-        return Block(height, 0f) { canvas ->
+        val attendance = absences(report.unexcusedAbsences, report.excusedAbsences, term = true)
+        return Block(height + (attendance?.let { it.gap + it.height } ?: 0f), 0f) { canvas ->
             var y = 0f
             canvas.text(title, 0f, y); y += title.height + 6f
             lines.forEach { canvas.text(it, 0f, y); y += it.height + 3f }
+            attendance?.let { canvas.withTranslation(0f, y + it.gap) { it.draw(this) } }
         }
     }
 
@@ -199,7 +201,7 @@ class GradeReportDrawing(private val words: Context, private val language: AppLa
     private fun course(course: GradeReport.Course): List<Block> {
         val name = layout(course.name, paint(13f, INK, bold = true), width)
         val rows = (if (course.scores.isEmpty()) listOf(emptyRow(words.getString(R.string.report_no_grades))) else course.scores.map(::scoreRow)) +
-            listOfNotNull(absences(course.absences))
+            listOfNotNull(absences(course.absences, course.excused))
         val first = rows.first()
         val top = name.height + 6f
         return listOf(Block(top + first.height, GAP) { canvas ->
@@ -208,14 +210,23 @@ class GradeReportDrawing(private val words: Context, private val language: AppLa
         }) + rows.drop(1).map { Block(it.height, it.gap, course.name, it.draw) }
     }
 
-    /** "Пропуски: 4": the journal's «н» marks, after the course's periods; nothing when there are none. */
-    private fun absences(count: Int): Block? {
-        if (count <= 0) return null
-        val text = SpannableStringBuilder(words.getString(R.string.report_absences, count))
-        val digits = count.toString()
-        text.lastIndexOf(digits).takeIf { it >= 0 }?.let { text.setSpan(StyleSpan(Typeface.BOLD), it, it + digits.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE) }
-        val line = layout(text, paint(10f, TEXT), width - 20f)
-        return Block(line.height + 4f, ROW_GAP) { canvas -> canvas.text(line, 10f, 2f) }
+    private fun absences(unexcused: Int, excused: Int, term: Boolean = false): Block? {
+        if (unexcused == 0 && excused == 0) return null
+        val counts = buildList {
+            if (unexcused > 0) add(words.getString(R.string.report_absences_unexcused, unexcused))
+            if (excused > 0) add(words.getString(R.string.report_absences_excused, excused))
+        }
+        val pad = 10f
+        val title = words.getString(if (term) R.string.report_absences_term else R.string.report_absences)
+        val text = SpannableStringBuilder(title).append(if (term) "\n" else "   ").append(counts.joinToString("   ·   "))
+        text.setSpan(StyleSpan(Typeface.BOLD), 0, title.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        val line = layout(text, paint(10f, TEXT), width - 2 * pad)
+        val inset = if (term) pad else 2f
+        val height = line.height + 2 * inset
+        return Block(height, if (term) GAP else ROW_GAP) { canvas ->
+            if (term) canvas.drawRoundRect(RectF(0f, 0f, width, height), 8f, 8f, fill(SURFACE))
+            canvas.text(line, pad, inset)
+        }
     }
 
     private fun carried(name: String): Block {

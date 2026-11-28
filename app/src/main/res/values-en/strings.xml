@@ -342,7 +342,10 @@
     <string name="report_reached">Every mark reached</string>
     <string name="report_goal">Goal: “%1$s”, from %2$d&#160;%% of the maximum. Each grade shows how many points are left to it.</string>
     <string name="report_goal_reached">Goal reached</string>
-    <string name="report_absences">Absences: %1$d</string>
+    <string name="report_absences">Absences</string>
+    <string name="report_absences_term">Absences this term</string>
+    <string name="report_absences_unexcused">Unexcused %1$d</string>
+    <string name="report_absences_excused">Excused %1$d</string>
     <string name="report_out_of">%1$s of %2$s</string>
     <string name="report_no_grade">no grade yet</string>
     <string name="report_no_grades">No grades yet</string>

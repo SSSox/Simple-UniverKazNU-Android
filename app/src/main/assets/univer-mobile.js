@@ -1607,6 +1607,87 @@
         localizeMenu();
         if (tools) groupMenu(tools);
     }
+    // Keeps the questionnaire red count accurate on the first adapted frame from the last verified check
+    // (univer-notices.js takes over once injected) and restores the original site node in Original mode.
+    var surveyBadges = new Map();
+    var SURVEY_COUNT_PATTERN = /[(\[]\s*(\d{1,4})\s*[)\]]\s*$/;
+    var SURVEY_MARK_CLASS = /(^|[\s_-])(red|danger|attention|warning|alert|badge|counter|count|notify|notification|unread)($|[\s_-])/i;
+    var SURVEY_SHOWN_MS = 60 * 60 * 1000;
+    function surveyRed(value) {
+        var color = String(value || '').trim().toLowerCase(), m;
+        if (/^(red|crimson|darkred|firebrick|orangered)$/.test(color)) return true;
+        if ((m = color.match(/^#([0-9a-f])([0-9a-f])([0-9a-f])$/))) color = '#' + m[1] + m[1] + m[2] + m[2] + m[3] + m[3];
+        if ((m = color.match(/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/))) m = [0, parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)];
+        else m = color.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+        return !!m && +m[1] >= 170 && +m[2] <= 100 && +m[3] <= 100;
+    }
+    function surveyMarked(node) {
+        return [node].concat(Array.from(node.querySelectorAll('*'))).some(function (element) {
+            var style = element.getAttribute('style') || '', color = style.match(/(?:^|;)\s*color\s*:\s*([^;!]+)/i);
+            return (color && surveyRed(color[1])) || (element.tagName === 'FONT' && surveyRed(element.getAttribute('color'))) ||
+                (typeof element.className === 'string' && SURVEY_MARK_CLASS.test(element.className) && !/univer-app-/.test(element.className));
+        });
+    }
+    function restoreSurveyBadge(badge) {
+        if (badge.text.data === badge.shown) badge.text.data = badge.source;
+        if (badge.hidden === null) badge.node.removeAttribute('hidden');
+        else badge.node.setAttribute('hidden', badge.hidden);
+        surveyBadges.delete(badge.node);
+    }
+    function releaseSurveyBadges() {
+        surveyBadges.forEach(restoreSurveyBadge);
+    }
+    function cachedSurveyOpen(count) {
+        try {
+            var mark = localStorage.getItem('univer.app.account.v1') || '';
+            if (!mark) return null;
+            var raw = localStorage.getItem('univer.app.survey-count.v1');
+            var value = raw && raw.length <= 10000 ? JSON.parse(raw) : null;
+            if (!value || value.owner !== mark || value.count !== count || !Number.isInteger(value.open) ||
+                value.open < 0 || value.open > 10 || !Number.isFinite(value.at)) return null;
+            var age = Date.now() - value.at;
+            if (age < 0 || age >= SURVEY_SHOWN_MS || !Array.isArray(value.details) || value.details.length !== value.open) return null;
+            return value.open;
+        } catch (_) { return null; }
+    }
+    function adaptSurveyBadges(active) {
+        if (window.__univerNoticesV1 && typeof window.__univerNoticesV1.present === 'function') {
+            releaseSurveyBadges();
+            window.__univerNoticesV1.present(active);
+            return;
+        }
+        if (!active) { releaseSurveyBadges(); return; }
+        var current = Array.from(document.querySelectorAll('#tools a[href*="/student/rating"]')).filter(function (a) {
+            try { var url = new URL(a.getAttribute('href'), location.href); return url.origin === location.origin && url.pathname + url.search === '/student/rating/'; }
+            catch (_) { return false; }
+        }).map(function (a) {
+            var node = (a.closest('.univer-app-pin-row') || a).nextElementSibling;
+            if (!node || node.tagName !== 'B' || !surveyMarked(node)) return null;
+            var previous = surveyBadges.get(node);
+            if (previous) {
+                if (node.firstChild === previous.text && previous.text.data === previous.shown) return previous;
+                restoreSurveyBadge(previous);
+            }
+            var text = node.firstChild;
+            if (!text || text.nodeType !== 3 || text !== node.lastChild) return null;
+            var match = cleanText(text).match(SURVEY_COUNT_PATTERN);
+            return match ? {node:node, text:text, source:text.data, count:+match[1], hidden:node.getAttribute('hidden')} : null;
+        }).filter(Boolean);
+        if (!current.length && !surveyBadges.size) return;
+        var live = new Set(current.map(function (badge) { return badge.node; }));
+        surveyBadges.forEach(function (badge, node) { if (!live.has(node)) restoreSurveyBadge(badge); });
+        current.forEach(function (badge) {
+            var open = cachedSurveyOpen(badge.count);
+            if (open === null || open === badge.count || badge.count === 0) {
+                if (surveyBadges.has(badge.node)) restoreSurveyBadge(badge);
+                return;
+            }
+            surveyBadges.set(badge.node, badge);
+            badge.shown = open === 0 ? badge.source : badge.source.replace(/\d{1,4}(?=\s*[)\]]\s*$)/, String(open));
+            if (badge.text.data !== badge.shown) badge.text.data = badge.shown;
+            if (badge.node.hidden !== (open === 0 || badge.hidden !== null)) badge.node.hidden = open === 0 || badge.hidden !== null;
+        });
+    }
     // Wide semantic tables scroll sideways; the shell and decorative layout, menu and login tables already fit.
     function wrapLayoutTables(shell) {
         Array.from(document.querySelectorAll('table')).forEach(function (table) {
@@ -1650,6 +1731,7 @@
             guarded(function () { window.__univerPolishV1?.apply(selectedLanguage); });
             guarded(function () { window.__univerScreensV1?.apply(selectedLanguage); });
             adaptFrames();
+            guarded(function () { adaptSurveyBadges(true); });
             guarded(function () { window.__univerTablesV1?.fit(afterLayout); });
             scrollHints();
             afterLayout(function () { return innerWidth; }, function (width) { passWidth = width; });
@@ -1853,6 +1935,7 @@
         document.querySelectorAll('.univer-app-catalog tr.file').forEach(function (row) { if (catalogHidden.has(row)) row.hidden = catalogHidden.get(row); }); catalogHidden = new WeakMap();
         undoMoves(usabilityMoves); usabilityMoves = [];
         pageMarkers.forEach(function (value, node) { if (value === null) node.removeAttribute('aria-current'); else node.setAttribute('aria-current', value); }); pageMarkers.clear();
+        adaptSurveyBadges(false);
         [window.__univerNewsV1, window.__univerShortcutsV1, window.__univerStudyV1, window.__univerAttendanceV1,
             window.__univerTermsV1, window.__univerAttestationV1, window.__univerDiscussionV1, window.__univerFoldsV1, window.__univerPolishV1, window.__univerScreensV1].forEach(function (module) { module?.release(); });
         document.querySelectorAll('.univer-app-menu-close,.univer-app-menu-collapse,.univer-app-quick,.univer-app-menu-return,.univer-app-catalog,.univer-app-catalog-search,.univer-app-catalog-empty,.univer-app-catalog-download,.univer-app-faq,.univer-app-sort-toggle,.univer-app-semester-nav,.univer-app-academic-meta,.univer-app-video-link').forEach(function (node) { node.remove(); });
@@ -1892,7 +1975,7 @@
     window.__univerMobileV1 = {setEnabled:setEnabled, mutate:function (action) {
         observer?.disconnect();
         try { action(); } finally { schedule(); }
-    }, quiet:quiet, afterLayout:afterLayout, setNativeChrome:function (value) {
+    }, quiet:quiet, afterLayout:afterLayout, releaseSurveyBadges:releaseSurveyBadges, setNativeChrome:function (value) {
         nativeChrome = !!value;
         document.documentElement.classList.toggle('univer-native-chrome', enabled && nativeChrome);
     }};

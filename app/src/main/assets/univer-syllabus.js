@@ -30,9 +30,16 @@
         program: 86400000,       // the student's programme is reread after this, so a change of speciality is noticed
         timetable: 7 * 86400000, // the group's weeks are reread after this
         list: 3 * 86400000,      // the semester's course list is reread after this
+        ownWait: 30000,         // deadline for the personal syllabus lookup: twelve slow pages
+        weekTerms: 4,
+        weekStore: 350000,
+        ownStore: 250000,
+        ownRecords: 120,
         store: 1500000           // characters of the stored cache
     };
     var STORE = 'univer.mobile.syllabus.v1', PREFS = 'univer.mobile.syllabus-ui.v1';
+    var OWN = 'univer.app.syllabus-own.v1', WEEKS = 'univer.app.syllabus-weeks.v1';
+    var COURSE = /^\/student\/umkd\/\d+\/\d{4}\/[12]\/?$/;
     var PRINT = /^\/student\/interactive\/syllabus\/print\/\d+\/\d+\/?$/, CODE = /\d[A-ZА-ЯЁ]\d{5}/;
     var WEEK = /^\/student\/myschedule\/(\d{4})\/([12])\/\d{1,2}\.\d{1,2}\.\d{4}\/\d{1,2}\.\d{1,2}\.\d{4}\/?$/;
     // The classes a seminar row or independent work can belong to.
@@ -160,8 +167,9 @@
     }
     // A syllabus counts only when it names the student's programme and, where it gives one, the semester's academic
     // year. Among those the student's language division and a teacher from the schedule decide.
+    function codeKey(code) { return code.replace(/В/g, 'B').replace(/М/g, 'M').replace(/Д/g, 'D'); }
     function rate(parsed, program, year, people) {
-        var mine = parsed.programs.filter(function (group) { return group.code ? group.code === program.code : !!program.name && group.text.indexOf(program.name) >= 0; });
+        var mine = parsed.programs.filter(function (group) { return group.code ? codeKey(group.code) === codeKey(program.code) : !!program.name && group.text.indexOf(program.name) >= 0; });
         if (!mine.length || (parsed.year && year && parsed.year !== year)) return -1;
         var score = 1;
         if (parsed.year && year) score += 8;
@@ -231,8 +239,8 @@
         }
         return placed;
     }
-    async function read(url) {
-        var abort = new AbortController(), timer = setTimeout(function () { abort.abort(); }, LIMITS.wait); controllers.add(abort);
+    async function read(url, wait) {
+        var abort = new AbortController(), timer = setTimeout(function () { abort.abort(); }, wait || LIMITS.wait); controllers.add(abort);
         try {
             var response = await fetch(url, {credentials:'same-origin', cache:'no-store', redirect:'error', signal:abort.signal});
             var final = new URL(response.url || url, location.origin), expected = new URL(url, location.origin);
@@ -259,7 +267,10 @@
             var raw = localStorage.getItem(key), memo = parsed.get(key), value;
             if (memo && memo.raw === raw) value = memo.value;
             else { value = JSON.parse(raw || 'null') || {}; parsed.set(key, {raw:raw, value:value}); }
-            if (key === STORE && (value.owner || '') !== account()) { delete value.program; delete value.list; delete value.pattern; value.owner = account(); }
+            if (key === STORE) {
+                delete value.pattern; // Only path-keyed week snapshots are reusable.
+                if ((value.owner || '') !== account()) { delete value.program; delete value.list; value.owner = account(); }
+            }
             return value;
         } catch (_) { parsed.delete(key); return {}; }
     }
@@ -276,6 +287,33 @@
             parsed.set(key, {raw:serialized, value:value});
         } catch (_) { parsed.delete(key); }
     }
+    function scopedStore(key, who, field, size) {
+        try {
+            var raw = who && localStorage.getItem(key), memo = parsed.get(key), saved;
+            if (raw && raw.length <= size) {
+                if (memo?.raw === raw) saved = memo.value;
+                else {
+                    saved = JSON.parse(raw);
+                    parsed.set(key, {raw:raw, value:saved});
+                }
+                if (saved?.owner === who && saved[field] && typeof saved[field] === 'object' && !Array.isArray(saved[field])) return saved;
+            }
+        } catch (_) { }
+        var empty = {owner:who}; empty[field] = {}; return empty;
+    }
+    function keepScoped(key, saved, field, count, size) {
+        if (!saved.owner || saved.owner !== account()) return;
+        var entries = saved[field], keys = Object.keys(entries).sort(function (a, b) { return (entries[a]?.at || 0) - (entries[b]?.at || 0); });
+        while (keys.length > count) delete entries[keys.shift()];
+        try {
+            var raw = JSON.stringify(saved);
+            while (raw.length > size && keys.length) { delete entries[keys.shift()]; raw = JSON.stringify(saved); }
+            if (raw.length <= size) {
+                localStorage.setItem(key, raw);
+                parsed.set(key, {raw:raw, value:saved});
+            }
+        } catch (_) { }
+    }
     function preferences() {
         if (!prefs) { var saved = stored(PREFS); prefs = {lessons:saved.lessons !== false, sro:saved.sro !== false, folded:saved.folded && typeof saved.folded === 'object' ? saved.folded : {}}; }
         return prefs;
@@ -286,32 +324,36 @@
         keep(PREFS, prefs);
     }
     function studentProgram(force) {
-        if (programPromise && !force) return programPromise;
+        var who = account(), epoch = generation;
+        if (programPromise?.who === who && !force) return programPromise.promise;
         var saved = stored(STORE).program;
-        if (!force && saved && CODE.test(saved.code || '') && Date.now() - saved.at < LIMITS.program) return programPromise = Promise.resolve(saved);
-        programPromise = (async function () {
+        if (!force && saved && CODE.test(saved.code || '') && fresh(saved.at, LIMITS.program)) return Promise.resolve(saved);
+        var request = {who:who, promise:(async function () {
             var sources = ['/student/bachelor/', '/student/educplan/'];
             for (var i = 0; i < sources.length; i++) {
                 var found = null;
                 try { found = parseProgram(await read(sources[i])); } catch (_) { }
+                if (epoch !== generation || who !== account()) throw new Error('Programme read cancelled');
                 if (!found) continue;
                 found.at = Date.now();
                 var cache = stored(STORE); cache.program = found; keep(STORE, cache);
                 return found;
             }
             throw new Error('Programme unavailable');
-        })();
-        programPromise.catch(function () { });
-        return programPromise;
+        })()};
+        programPromise = request;
+        var done = function () { if (programPromise === request) programPromise = null; };
+        request.promise.then(done, done);
+        return request.promise;
     }
     // The semester's courses are remembered too, so a page that finds every plan stored makes no request at all.
     async function courseList(force) {
-        var saved = stored(STORE).list;
+        var saved = stored(STORE).list, who = account(), lang = language, epoch = generation;
         var shown = shownWeek(), term = ((saved?.items?.[0]?.href || '').match(/(\/\d{4}\/[12])\/?$/) || ['', ''])[1];
         // Only for the semester on screen and the site's language: course names are written in it.
         if (!force && saved && Array.isArray(saved.items) && saved.items.length && saved.language === language && (!shown?.term || shown.term === term) && fresh(saved.at, LIMITS.list)) return saved.items.slice(0, LIMITS.courses);
         var items = (await window.__univerLesson.courses(force)).slice(0, LIMITS.courses);
-        if (items.length) { var cache = stored(STORE); cache.list = {at:Date.now(), language:language, items:items}; keep(STORE, cache); }
+        if (items.length && who === account() && epoch === generation) { var cache = stored(STORE); cache.list = {at:Date.now(), language:lang, items:items}; keep(STORE, cache); }
         return items;
     }
     function remember(job, program) {
@@ -337,37 +379,78 @@
         var label = clean(option).replace(/\d{1,2}\.\d{1,2}\.\d{4}/g, ' ');
         return parseInt((label.match(/\d{1,2}/) || [''])[0], 10) || index + 1;
     }
+    function day(value, after) {
+        var parts = value.split('.');
+        return new Date(+parts[2], +parts[1] - 1, +parts[0] + after).getTime();
+    }
     function loadPattern(owner, epoch, force) {
-        var select = document.getElementById('weekSelect'), pages = [], pattern = owner.pattern = {state:'loading', weeks:{}};
+        var select = document.getElementById('weekSelect'), pages = [], retrying = owner.pattern.failed;
+        var pattern = owner.pattern = {state:'loading', weeks:{}, failed:new Set()};
+        var livePath = location.pathname.replace(/\/$/, '');
         Array.from(select && select.tagName === 'SELECT' ? select.options : []).slice(0, LIMITS.weeks).forEach(function (option, index) {
             var url; try { url = new URL(option.value, location.origin); } catch (_) { return; }
             var found = url.origin === location.origin && !url.search && !url.hash && url.pathname.match(WEEK), number = weekNumber(option, index);
-            if (found && '/' + found[1] + '/' + found[2] === owner.term && number <= LIMITS.weeks && !pages.some(function (page) { return page.number === number; })) pages.push({number:number, href:url.pathname});
+            if (!found || '/' + found[1] + '/' + found[2] !== owner.term || number > LIMITS.weeks ||
+                pages.some(function (page) { return page.number === number; })) return;
+            var path = url.pathname.replace(/\/$/, ''), end = path.slice(path.lastIndexOf('/') + 1);
+            pages.push({number:number, href:url.pathname, path:path, end:day(end, 1), live:option.selected && path === livePath});
         });
         // A list of one week has nothing to lay the syllabus over.
         if (pages.length < 2) { pattern.state = 'none'; return; }
-        var signature = owner.term + '|' + pages.map(function (page) { return page.number; }).join(','), saved = stored(STORE).pattern;
-        if (!force && saved && saved.signature === signature && saved.weeks && fresh(saved.at, LIMITS.timetable)) { pattern.weeks = saved.weeks; pattern.state = 'ready'; return; }
-        var next = 0, weeks = {}, current = function () { return generation === epoch && model === owner && owner.pattern === pattern; };
+        var who = owner.account, scope = owner.language + '|' + owner.term, weeks = {}, pending = [], next = 0;
+        var cache = scopedStore(WEEKS, who, 'terms', LIMITS.weekStore);
+        var snapshots = owner.weekMemo[scope] || (owner.weekMemo[scope] = {});
+        var current = function () { return generation === epoch && model === owner && owner.pattern === pattern && account() === who; };
+        var add = function (page, items) {
+            items.forEach(function (item) {
+                (weeks[item.key + '|' + item.kind] = weeks[item.key + '|' + item.kind] || []).push(page.number);
+            });
+        };
+        var rememberWeek = function (page, doc) {
+            var items = parseWeek(doc), at = Date.now(), saved = {at:at, items:items};
+            snapshots[page.path] = saved;
+            if (who && items.length <= 300 && items.every(function (item) { return item.key.length <= 400; })) {
+                var store = scopedStore(WEEKS, who, 'terms', LIMITS.weekStore);
+                var entries = store.terms[scope]?.pages;
+                if (!entries || typeof entries !== 'object' || Array.isArray(entries)) entries = {};
+                entries[page.path] = saved;
+                var paths = Object.keys(entries).sort(function (a, b) { return (entries[a]?.at || 0) - (entries[b]?.at || 0); });
+                while (paths.length > LIMITS.weeks) delete entries[paths.shift()];
+                store.terms[scope] = {at:at, pages:entries};
+                keepScoped(WEEKS, store, 'terms', LIMITS.weekTerms, LIMITS.weekStore);
+            }
+            add(page, items);
+        };
+        pages.forEach(function (page) {
+            var saved = snapshots[page.path] || cache.terms[scope]?.pages?.[page.path];
+            var now = Date.now();
+            // A snapshot read before the end of its week can still contain a provisional timetable.
+            if (!force && !retrying?.has(page.path) && Array.isArray(saved?.items) && saved.at <= now &&
+                (saved.at >= page.end || fresh(saved.at, LIMITS.timetable))) add(page, saved.items);
+            else if (!force && page.live && document.querySelector('table.schedule')) rememberWeek(page, document);
+            else pending.push(page);
+        });
+        var finish = function () {
+            // Using half a timetable could move topics to the wrong classes. Keep its successful reads for Retry.
+            if (pattern.failed.size) { pattern.state = 'failed'; return; }
+            Object.keys(weeks).forEach(function (key) { weeks[key].sort(function (a, b) { return a - b; }); });
+            pattern.weeks = weeks; pattern.state = 'ready';
+        };
+        if (!pending.length) { finish(); return; }
         var worker = async function () {
-            while (next < pages.length && current()) {
-                var page = pages[next++];
-                parseWeek(await read(page.href)).forEach(function (item) {
-                    var list = weeks[item.key + '|' + item.kind] = weeks[item.key + '|' + item.kind] || [];
-                    if (list.indexOf(page.number) < 0) list.push(page.number);
-                });
+            while (next < pending.length && current()) {
+                var page = pending[next++];
+                try {
+                    var doc = await read(page.href);
+                    if (current()) rememberWeek(page, doc);
+                } catch (_) { pattern.failed.add(page.path); }
             }
         };
         var workers = []; for (var i = 0; i < LIMITS.parallel; i++) workers.push(worker());
         Promise.all(workers).then(function () {
             if (!current()) return;
-            Object.keys(weeks).forEach(function (key) { weeks[key].sort(function (a, b) { return a - b; }); });
-            pattern.weeks = weeks; pattern.state = 'ready';
-            var cache = stored(STORE); cache.pattern = {at:Date.now(), signature:signature, weeks:weeks}; keep(STORE, cache);
-        }, function () {
-            // Half a timetable would move topics to the wrong classes: without all the weeks nothing is moved.
-            next = pages.length; if (current()) pattern.state = 'failed';
-        }).then(function () { if (current()) renderAll(true); });
+            finish(); renderAll(true);
+        });
     }
     // Where the group has one kind of class of a course, and which syllabus weeks each of those weeks takes.
     // What was worked out for a course holds for one timetable and one plan.
@@ -435,29 +518,146 @@
         teachers.forEach(function (names, key) { if (key === job.key || key.indexOf(job.key) === 0 || job.key.indexOf(key) === 0) names.forEach(function (name) { if (found.indexOf(name) < 0) found.push(name); }); });
         return found;
     }
-    async function resolve(job, program) {
-        var doc = await read(job.href), seen = new Set(), links = [];
-        doc.querySelectorAll('#l4 a[href]').forEach(function (a) {
-            var url; try { url = new URL(a.getAttribute('href'), location.origin); } catch (_) { return; }
-            if (url.origin !== location.origin || url.search || url.hash || !PRINT.test(url.pathname) || seen.has(url.pathname)) return;
-            seen.add(url.pathname); links.push({href:url.pathname, title:clean(a).slice(0, 160)});
+    function printRoute(href) {
+        try {
+            var url = new URL(href, location.origin);
+            if (url.origin === location.origin && !url.search && !url.hash && PRINT.test(url.pathname)) return url.pathname;
+        } catch (_) { }
+        return '';
+    }
+    function printPath(href) { return printRoute(href).replace(/\/$/, ''); }
+    function printLinks(doc) {
+        var links = new Map();
+        doc.querySelectorAll('#l4 a[href]').forEach(function (link) {
+            var href = printRoute(link.getAttribute('href')), path = href.replace(/\/$/, '');
+            if (path && !links.has(path)) links.set(path, {href:href, title:clean(link).slice(0, 160)});
         });
-        if (!links.length) return {status:'nosyllabus'};
+        return Array.from(links.values());
+    }
+    async function chooseSyllabus(links, program, year, people, deadline, current) {
         // Copies for a new year are added at the end of the list, so the newest are read first.
-        links = links.slice(-LIMITS.candidates);
-        var year = (job.href.match(/\/(\d{4})\/[12]\/?$/) || [])[1] || '', people = surnames(job), best = null, failed = 0;
-        var full = 9 + (program.division ? 4 : 0) + (people.length ? 2 : 0);
-        for (var i = links.length - 1; i >= 0; i--) {
+        var best = null, failed = false, full = 9 + (program.division ? 4 : 0) + (people.length ? 2 : 0);
+        var first = Math.max(0, links.length - LIMITS.candidates);
+        for (var i = links.length - 1; i >= first; i--) {
+            var wait = deadline ? deadline - Date.now() : LIMITS.wait;
+            if (wait <= 0) { failed = true; break; }
+            if (current && !current()) throw new Error('Syllabus lookup cancelled');
             var parsed;
-            try { parsed = parseSyllabus(await read(links[i].href)); } catch (_) { failed++; continue; }
+            try {
+                var doc = await read(links[i].href, wait);
+                if (!doc.querySelector('table.students')) throw new Error('Printed syllabus unavailable');
+                parsed = parseSyllabus(doc);
+            } catch (_) { failed = true; continue; }
             var score = rate(parsed, program, year, people);
             if (score < 0 || (best && score <= best.score)) continue;
             best = {score:score, link:links[i], parsed:parsed};
             if (score >= full) break;
         }
+        return {best:best, failed:failed, certain:best?.score >= full || (!failed && first === 0)};
+    }
+    async function resolve(job, program) {
+        var links = printLinks(await read(job.href));
+        if (!links.length) return {status:'nosyllabus'};
+        var year = (job.href.match(/\/(\d{4})\/[12]\/?$/) || [])[1] || '';
+        var result = await chooseSyllabus(links, program, year, surnames(job)), best = result.best, failed = result.failed;
         if (!best) { if (failed) throw new Error('Syllabus unavailable'); return {status:'unmatched'}; }
         var plan = group(best.parsed.entries);
-        return {status:'ready', certain:!failed || best.score >= full, plan:{href:best.link.href, title:best.link.title, weeks:plan.weeks, kinds:plan.kinds}};
+        return {status:'ready', certain:result.certain, plan:{href:best.link.href, title:best.link.title, weeks:plan.weeks, kinds:plan.kinds}};
+    }
+    /* The UMKD and journal use the same programme test as the schedule, without a preference for its teachers. */
+    var ownLookups = new Map(), ownMemory = new Map(), ownOwner = null;
+    function ownText(lang) {
+        if (lang === 'en') return {tag:'Your syllabus', pending:'Looking for your syllabus…'};
+        if (lang === 'kz') return {tag:'Сіздің силлабусыңыз', pending:'Силлабусыңыз ізделуде…'};
+        return {tag:'Ваш силлабус', pending:'Ищем ваш силлабус…'};
+    }
+    function stableOrder(box, closed) {
+        var pending, timer, touching = false;
+        function flush() {
+            if (!pending || (!closed() && (touching || box.contains(document.activeElement)))) return;
+            var move = pending; pending = null; move();
+        }
+        function later() { clearTimeout(timer); timer = setTimeout(flush, 0); }
+        function start() { touching = true; }
+        function end(event) { touching = !!event.touches?.length; later(); }
+        box.addEventListener('focusout', later);
+        box.addEventListener('touchstart', start, {passive:true});
+        box.addEventListener('touchend', end, {passive:true});
+        box.addEventListener('touchcancel', end, {passive:true});
+        return {move:function (work) { pending = work; flush(); }, flush:flush, release:function () {
+            clearTimeout(timer); pending = null;
+            box.removeEventListener('focusout', later); box.removeEventListener('touchstart', start);
+            box.removeEventListener('touchend', end); box.removeEventListener('touchcancel', end);
+        }};
+    }
+    function ownList(hrefs, course) {
+        var routes = new Map();
+        hrefs.forEach(function (href) {
+            var route = printRoute(href), path = route.replace(/\/$/, '');
+            if (path && !routes.has(path)) routes.set(path, {href:route});
+        });
+        course = COURSE.test(course) ? course.replace(/\/$/, '') : '';
+        return {routes:routes, course:course, year:(course.match(/\/(\d{4})\/[12]$/) || [])[1] || '',
+            key:'choice|' + course + '|' + Array.from(routes.keys()).sort().join(',')};
+    }
+    function programmeKey(program) { return [codeKey(program.code), program.division, program.name].join('|'); }
+    function ownRecord(key, who, value) {
+        var saved = scopedStore(OWN, who, 'records', LIMITS.ownStore);
+        if (value === undefined) return saved.records[key];
+        saved.records[key] = value;
+        keepScoped(OWN, saved, 'records', LIMITS.ownRecords, LIMITS.ownStore);
+    }
+    function journal(key, lang, who, items) {
+        if (!who || account() !== who) return;
+        key = 'journal|' + lang + '|' + key;
+        if (items !== undefined) {
+            if (items.length <= 120) ownRecord(key, who, {at:Date.now(), items:items});
+            return;
+        }
+        var saved = ownRecord(key, who);
+        if (Array.isArray(saved?.items) && fresh(saved.at, LIMITS.list)) return saved.items;
+    }
+    function knownChoice(list, who) {
+        if (!list.routes.size) return null;
+        if (ownOwner !== who) { ownMemory.clear(); ownOwner = who; }
+        var saved = ownMemory.get(list.key) || ownRecord(list.key, who), program = stored(STORE).program;
+        if (saved && fresh(saved.at, saved.path && !saved.brief ? LIMITS.fresh : LIMITS.missing) &&
+            (!program?.code || saved.program === programmeKey(program)) && (saved.path === null || list.routes.has(saved.path))) return saved.path;
+    }
+    function peekOwn(hrefs, course) { return knownChoice(ownList(hrefs, course), account()); }
+    async function ownSyllabus(hrefs, course) {
+        var list = ownList(hrefs, course), who = account(), known = knownChoice(list, who);
+        if (known !== undefined) return known;
+        var key = who + '|' + list.key;
+        if (ownLookups.has(key)) return ownLookups.get(key);
+        var epoch = generation, deadline = Date.now() + LIMITS.ownWait, expired = false, timer;
+        var current = function () { return !expired && generation === epoch && who === account(); };
+        var timeout = new Promise(function (_, reject) {
+            timer = setTimeout(function () { expired = true; reject(new Error('Syllabus lookup timed out')); }, LIMITS.ownWait);
+        });
+        var work = (async function () {
+            var program = await studentProgram(false);
+            if (!current()) throw new Error('Syllabus lookup cancelled');
+            var result = await chooseSyllabus(Array.from(list.routes.values()), program, list.year, [], deadline, current);
+            if (!current() || (!result.best && result.failed)) throw new Error('Syllabus lookup incomplete');
+            var path = result.best ? printPath(result.best.link.href) : null;
+            // A complete read of only the newest copies is kept for a short time, so a revisit asks nothing.
+            if (result.certain || !result.failed) {
+                var saved = {at:Date.now(), path:path, program:programmeKey(program), brief:!result.certain};
+                if (ownOwner !== who) { ownMemory.clear(); ownOwner = who; }
+                if (ownMemory.size >= LIMITS.ownRecords) ownMemory.delete(ownMemory.keys().next().value);
+                ownMemory.set(list.key, saved);
+                ownRecord(list.key, who, saved);
+            }
+            return path;
+        })();
+        var request = Promise.race([work, timeout]);
+        ownLookups.set(key, request);
+        try { return await request; }
+        finally {
+            clearTimeout(timer);
+            if (ownLookups.get(key) === request) ownLookups.delete(key);
+        }
     }
     function wanted(job) {
         var found = false;
@@ -465,7 +665,7 @@
         return found;
     }
     function pump() {
-        if (!enabled || !model || model.state !== 'ready') return;
+        if (!enabled || !model || model.state !== 'ready' || model.account !== account()) return;
         // Nothing is read for a schedule of another semester.
         if (!Array.from(views.values()).some(function (state) { return !foreign(state); })) return;
         var owner = model, epoch = generation;
@@ -477,11 +677,11 @@
             job.status = 'loading'; active++;
             (function (current) {
                 resolve(current, owner.program).then(function (result) {
-                    if (generation !== epoch || model !== owner) return;
+                    if (generation !== epoch || model !== owner || account() !== owner.account) return;
                     current.status = result.status; current.plan = result.plan || null; current.certain = result.certain;
                     remember(current, owner.program);
                 }, function (error) {
-                    if (generation !== epoch || model !== owner) return;
+                    if (generation !== epoch || model !== owner || account() !== owner.account) return;
                     current.status = 'error'; current.reason = String(error?.message || error).slice(0, 80);
                     // The site sometimes drops a request while a page is still loading: one more attempt by itself, then the user's button.
                     if (current.retried) return;
@@ -501,13 +701,14 @@
         }
     }
     function boot(force) {
-        var epoch = generation, owner = model = {state:'loading', reason:'', program:null, term:'', jobs:[], pattern:{state:'none', weeks:{}}};
+        var epoch = generation, owner = model = {state:'loading', reason:'', program:null, term:'', jobs:[], pattern:{state:'none', weeks:{}},
+            account:account(), language:language, weekMemo:{}};
         (async function () {
             var program = null;
             try {
                 program = await studentProgram(force);
                 var list = await courseList(force);
-                if (generation !== epoch || model !== owner) return;
+                if (generation !== epoch || model !== owner || account() !== owner.account) return;
                 owner.program = program;
                 owner.term = ((list[0]?.href || '').match(/(\/\d{4}\/[12])\/?$/) || ['', ''])[1];
                 owner.jobs = list.map(function (course) { return {name:course.name, key:fold(course.name), href:course.href, status:'queued', plan:null, certain:true}; });
@@ -528,13 +729,13 @@
     function refresh() {
         generation++; controllers.forEach(function (abort) { abort.abort(); }); controllers.clear(); active = 0;
         timers.forEach(clearTimeout); timers.clear();
-        var cache = stored(STORE); delete cache.courses; delete cache.pattern; delete cache.list; keep(STORE, cache);
+        var cache = stored(STORE); delete cache.courses; delete cache.list; keep(STORE, cache);
         boot(true); renderAll(true);
     }
     function retry() {
         if (!model || model.state !== 'ready') { refresh(); return; }
         model.jobs.forEach(function (job) { if (job.status === 'error') job.status = 'queued'; });
-        if (model.pattern.state === 'failed') loadPattern(model, generation, true);
+        if (model.pattern.state === 'failed') loadPattern(model, generation, false);
         renderAll(true); pump();
     }
 
@@ -546,7 +747,6 @@
         var term = (String(option.value || '').match(/\/myschedule\/(\d{4})\/([12])\//) || location.pathname.match(/^\/student\/myschedule\/(\d{4})\/([12])(?:\/|$)/) || []);
         // The week's first and last day as the option names them; the end is the day after the last one.
         var dates = (String(option.value || '') + ' ' + clean(option)).match(/\d{1,2}\.\d{1,2}\.\d{4}/g) || [];
-        var day = function (value, after) { var p = value.split('.'); return new Date(+p[2], +p[1] - 1, +p[0] + after).getTime(); };
         var start = dates.length >= 2 ? day(dates[0], 0) : NaN, end = dates.length >= 2 ? day(dates[1], 1) : NaN;
         return number >= 1 && number <= LIMITS.weeks ? {number:number, term:term[1] ? '/' + term[1] + '/' + term[2] : '', start:start, end:end} : null;
     }
@@ -944,6 +1144,7 @@
     }
     function release() {
         enabled = false; generation++; active = 0; model = null; programPromise = null; prefs = null; parsed.clear();
+        ownLookups.clear(); ownMemory.clear(); ownOwner = null;
         controllers.forEach(function (abort) { abort.abort(); }); controllers.clear(); teachers.clear(); timers.forEach(clearTimeout); timers.clear();
         views.forEach(function (state) {
             motion()?.stop(state.panel.root); state.panel.root.remove(); state.view.removeAttribute('data-syllabus');
@@ -953,5 +1154,6 @@
     }
     // state: what QA reads to tell a finished page from a waiting one; course names and statuses only.
     function summary() { return {model:model ? model.state : 'off', reason:model?.reason || '', weeks:model ? model.pattern.state : 'off', jobs:(model?.jobs || []).map(function (job) { return {name:job.name, status:job.status, reason:job.reason || ''}; })}; }
-    window.__univerSyllabusV1 = {apply:apply, release:release, state:summary, limits:LIMITS, parseSyllabus:parseSyllabus, parseProgram:parseProgram, sroKind:sroKind, kindOf:kindOf, rate:rate, leadOf:leadOf, tasksFor:tasksFor, parseWeek:parseWeek, align:align, cut:cut};
+    window.__univerSyllabusV1 = {apply:apply, release:release, state:summary, limits:LIMITS, parseSyllabus:parseSyllabus, parseProgram:parseProgram, sroKind:sroKind, kindOf:kindOf, rate:rate, leadOf:leadOf, tasksFor:tasksFor, parseWeek:parseWeek, align:align, cut:cut,
+        own:ownSyllabus, peekOwn:peekOwn, ownText:ownText, printPath:printPath, stableOrder:stableOrder, account:account, journal:journal};
 })();

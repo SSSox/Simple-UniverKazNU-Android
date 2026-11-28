@@ -7,6 +7,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.lifecycleScope
+import androidx.webkit.WebViewCompat
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -48,7 +49,7 @@ class PendingSubmitAutomationTest {
 
     /** One synthetic account and a fixture WebView whose every request [route] answers by path, observed by the controller. */
     @SuppressLint("SetJavaScriptEnabled")
-    private fun withController(alias: String, route: (String) -> String, body: Harness.() -> Unit) {
+    private fun withController(alias: String, route: (String) -> String, beforeController: String? = null, body: Harness.() -> Unit) {
         val context = instrumentation.targetContext
         val vault = CredentialVault(context, "univer.test.$alias")
         val prefsName = "univer.test.$alias.preferences"
@@ -68,6 +69,8 @@ class PendingSubmitAutomationTest {
                 harness.web = web
                 activity.setContentView(web)
                 web.settings.javaScriptEnabled = true
+                // Registered first, so it runs before the controller's sealed library in each document.
+                beforeController?.let { WebViewCompat.addDocumentStartJavaScript(web, it, setOf(SitePolicy.ORIGIN)) }
                 harness.controller = AutomationController(web, model, activity.lifecycleScope) { harness.status = it }
                 web.webViewClient = object : WebViewClient() {
                     override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse =
@@ -109,19 +112,21 @@ class PendingSubmitAutomationTest {
     /** prepareNotice answers a plain "ready": the probe that ticked the checkbox sends the notice too. */
     @Test fun noticeIsSentByTheProbeThatTickedItsCheckbox() {
         // The fixture counts the controller's probes and notes the probe of the tick and the probe of the submit.
+        // The sealed automation cannot be replaced once defined, so it is wrapped while being defined.
+        val counter = """(function(){var define=Object.defineProperty;Object.defineProperty=function(target,name,descriptor){
+            if(target===window&&name==='__univerAutomationV1'){var real=descriptor.value,copy=Object.assign({},real);
+            copy.probe=function(){window.probes++;return real.probe.apply(this,arguments);};
+            copy.prepareNotice=function(){window.tickedAt=window.probes;return real.prepareNotice.apply(this,arguments);};
+            descriptor=Object.assign({},descriptor,{value:copy});}
+            return define.call(Object,target,name,descriptor);};})();"""
         val notice = """<html lang="kz"><head><script>
-            var api;window.probes=0;window.tickedAt=-1;window.sentAt=-1;window.posts=0;
-            Object.defineProperty(window,'__univerAutomationV1',{configurable:true,get:function(){return api;},set:function(v){
-                var probe=v.probe,prepare=v.prepareNotice;
-                v.probe=function(){window.probes++;return probe.apply(this,arguments);};
-                v.prepareNotice=function(){window.tickedAt=window.probes;return prepare.apply(this,arguments);};
-                api=v;}});
+            window.probes=0;window.tickedAt=-1;window.sentAt=-1;window.posts=0;
             function calc(){document.getElementById('btn').disabled=!document.getElementById('check').checked;}
             window.onload=function(){document.getElementById('attentionSt').onsubmit=function(e){e.preventDefault();window.posts++;window.sentAt=window.probes;};};
             </script></head><body><form id="attentionSt" action="/student/attentionStudents/42" method="post">
             <input name="attentions[]" value="-1" hidden><p>Notice fixture</p><input type="checkbox" id="check" onclick="calc();">
             <label for="check">I confirm that I have read this notice</label><input id="btn" type="submit" value="Submit" disabled></form></body></html>"""
-        withController("pending.notice", { notice }) {
+        withController("pending.notice", { notice }, counter) {
             instrumentation.runOnMainSync { controller.resume(); web.loadUrl("${SitePolicy.ORIGIN}/student/attentionStudents/42") }
             awaitCondition { eval("window.posts") == "1" }
             val ticked = eval("window.tickedAt")

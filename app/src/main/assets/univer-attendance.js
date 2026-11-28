@@ -65,14 +65,14 @@
     }
     var reader = window.__univerGradeReadV1, scores = reader.scores;
     var selected = 'all', language = 'ru', state = null, selectedCourse = 'all';
-    var hidden = new Map(), labels = new Map(), owned = [], identities = new WeakMap(), sequence = 0;
+    var hidden = new Map(), absenceMarks = new Map(), labels = new Map(), owned = [], identities = new WeakMap(), sequence = 0;
     // The user's own choice per course; without one, details open only when a single course is shown.
-    var expanded = new Map(), focusToggle = null;
+    var expanded = new Map(), moves = [], logAnimations = new Map();
     var TYPES = ['lecture', 'seminar', 'sro'];
     var WORDS = {
-        en: {all:'All classes', lecture:'Lectures', seminar:'Seminars', sro:'Independent work', filter:'Class type', kind:'Class type', total:'Total', outOf:'of', totals:'Totals by class type', overall:'Overall course total', empty:'No classes of this type', ungraded:'No grades yet', none:'none', note:'The overall course total includes every class type.', lectureLabel:'Lecture', seminarLabel:'Seminar', sroLabel:'Independent work', overview:'Course summary', showDetails:'Show class log', hideDetails:'Hide class log', courses:'Courses', allCourses:'All', noClasses:'No classes yet', low:'Below 50', pass:'Satisfactory', good:'Good', top:'Excellent', short:'{left} short of {at}', reached:'Every mark reached', goal:'Goal', noGoal:'None', goalReached:'Goal reached', absences:'Absences', missedTerm:'{n} hours missed this term: more than {limit}', absenceKinds:{lecture:'lectures', seminar:'seminars', sro:'independent work', other:'other'}, fresh:'new', freshSaid:'new since your last visit', legend:'Score colours', legendLow:'below 50: short', legendPass:'50–69: satisfactory, scholarship at risk', legendGood:'70–89: good', legendTop:'90 and above: excellent', report:'Share grades: PDF or image'},
-        kz: {all:'Барлық сабақтар', lecture:'Дәрістер', seminar:'Семинарлар', sro:'СӨЖ', filter:'Сабақ түрі', kind:'Сабақ түрі', total:'Барлығы', outOf:'/', totals:'Сабақ түрлері бойынша қорытынды', overall:'Пән бойынша жалпы қорытынды', empty:'Бұл түрдегі сабақтар жоқ', ungraded:'Бағалар әлі қойылмаған', none:'жоқ', note:'Пән бойынша жалпы қорытынды сабақтардың барлық түрін қамтиды.', lectureLabel:'Дәріс', seminarLabel:'Семинар', sroLabel:'СӨЖ', overview:'Пәндер бойынша қорытынды', showDetails:'Сабақ журналын көрсету', hideDetails:'Сабақ журналын жасыру', courses:'Пәндер', allCourses:'Барлығы', noClasses:'Сабақтар әлі жоқ', low:'Балл жетпейді', pass:'Қанағаттанарлық', good:'Жақсы', top:'Өте жақсы', short:'{at} шегіне {left} жетпейді', reached:'Барлық шектен өтті', goal:'Мақсат', noGoal:'Жоқ', goalReached:'Мақсатқа жетті', absences:'Қатыспаған сабақтар', missedTerm:'Семестрде {n} сағат қатыспадыңыз: бұл {limit} сағаттан көп', absenceKinds:{lecture:'дәріс', seminar:'семинар', sro:'СӨЖ', other:'басқа'}, fresh:'жаңа', freshSaid:'соңғы кіруден кейін жаңа', legend:'Балл түстері', legendLow:'50-ден төмен: балл жетпейді', legendPass:'50–69: қанағаттанарлық, стипендия қауіпте', legendGood:'70–89: жақсы', legendTop:'90 және жоғары: өте жақсы', report:'Үлгерімді бөлісу: PDF не сурет'},
-        ru: {all:'Все занятия', lecture:'Лекции', seminar:'Семинары', sro:'СРО', filter:'Тип занятий', kind:'Вид занятий', total:'Итого', outOf:'из', totals:'Итоги по видам занятий', overall:'Общий итог предмета', empty:'Нет занятий этого вида', ungraded:'Оценки пока не выставлены', none:'нет', note:'Общий итог предмета учитывает все виды занятий.', lectureLabel:'Лекция', seminarLabel:'Семинар', sroLabel:'СРО / СРОП', overview:'Сводка по предметам', showDetails:'Показать журнал занятий', hideDetails:'Скрыть журнал занятий', courses:'Предметы', allCourses:'Все', noClasses:'Занятия пока не добавлены', low:'Недобор', pass:'Удовлетворительно', good:'Хорошо', top:'Отлично', short:'ещё {left} до {at}', reached:'Все пороги пройдены', goal:'Цель', noGoal:'Нет', goalReached:'Цель достигнута', absences:'Пропуски', missedTerm:'Пропущено {n} ч за семестр: это больше {limit} ч', absenceKinds:{lecture:'лекции', seminar:'семинары', sro:'СРО', other:'другие'}, fresh:'новое', freshSaid:'новое с прошлого захода', legend:'Цвета баллов', legendLow:'ниже 50: недобор', legendPass:'50–69: удовлетворительно, стипендия под риском', legendGood:'70–89: хорошо', legendTop:'90 и выше: отлично', report:'Поделиться успеваемостью: PDF или картинка'}
+        en: {all:'All classes', lecture:'Lectures', seminar:'Seminars', sro:'Independent work', filter:'Class type', kind:'Class type', total:'Total', outOf:'of', totals:'Totals by class type', overall:'Overall course total', empty:'No classes of this type', ungraded:'No grades yet', none:'none', note:'The overall course total includes every class type.', lectureLabel:'Lecture', seminarLabel:'Seminar', sroLabel:'Independent work', overview:'Course summary', showDetails:'Show class log', hideDetails:'Hide class log', courses:'Courses', allCourses:'All', noClasses:'No classes yet', low:'Below 50', pass:'Satisfactory', good:'Good', top:'Excellent', short:'{left} short of {at}', reached:'Every mark reached', goal:'Goal', noGoal:'None', goalReached:'Goal reached', absences:'Absences', absenceKinds:{lecture:'lectures', seminar:'seminars', sro:'independent work', other:'other'}, fresh:'new', freshSaid:'new since your last visit', legend:'Score colours', legendLow:'below 50: short', legendPass:'50–69: satisfactory, scholarship at risk', legendGood:'70–89: good', legendTop:'90 and above: excellent', report:'Share grades: PDF or image'},
+        kz: {all:'Барлық сабақтар', lecture:'Дәрістер', seminar:'Семинарлар', sro:'СӨЖ', filter:'Сабақ түрі', kind:'Сабақ түрі', total:'Барлығы', outOf:'/', totals:'Сабақ түрлері бойынша қорытынды', overall:'Пән бойынша жалпы қорытынды', empty:'Бұл түрдегі сабақтар жоқ', ungraded:'Бағалар әлі қойылмаған', none:'жоқ', note:'Пән бойынша жалпы қорытынды сабақтардың барлық түрін қамтиды.', lectureLabel:'Дәріс', seminarLabel:'Семинар', sroLabel:'СӨЖ', overview:'Пәндер бойынша қорытынды', showDetails:'Сабақ журналын көрсету', hideDetails:'Сабақ журналын жасыру', courses:'Пәндер', allCourses:'Барлығы', noClasses:'Сабақтар әлі жоқ', low:'Балл жетпейді', pass:'Қанағаттанарлық', good:'Жақсы', top:'Өте жақсы', short:'{at} шегіне {left} жетпейді', reached:'Барлық шектен өтті', goal:'Мақсат', noGoal:'Жоқ', goalReached:'Мақсатқа жетті', absences:'Қатыспаған сабақтар', absenceKinds:{lecture:'дәріс', seminar:'семинар', sro:'СӨЖ', other:'басқа'}, fresh:'жаңа', freshSaid:'соңғы кіруден кейін жаңа', legend:'Балл түстері', legendLow:'50-ден төмен: балл жетпейді', legendPass:'50–69: қанағаттанарлық, стипендия қауіпте', legendGood:'70–89: жақсы', legendTop:'90 және жоғары: өте жақсы', report:'Үлгерімді бөлісу: PDF не сурет'},
+        ru: {all:'Все занятия', lecture:'Лекции', seminar:'Семинары', sro:'СРО', filter:'Тип занятий', kind:'Вид занятий', total:'Итого', outOf:'из', totals:'Итоги по видам занятий', overall:'Общий итог предмета', empty:'Нет занятий этого вида', ungraded:'Оценки пока не выставлены', none:'нет', note:'Общий итог предмета учитывает все виды занятий.', lectureLabel:'Лекция', seminarLabel:'Семинар', sroLabel:'СРО / СРОП', overview:'Сводка по предметам', showDetails:'Показать журнал занятий', hideDetails:'Скрыть журнал занятий', courses:'Предметы', allCourses:'Все', noClasses:'Занятия пока не добавлены', low:'Недобор', pass:'Удовлетворительно', good:'Хорошо', top:'Отлично', short:'ещё {left} до {at}', reached:'Все пороги пройдены', goal:'Цель', noGoal:'Нет', goalReached:'Цель достигнута', absences:'Пропуски', absenceKinds:{lecture:'лекции', seminar:'семинары', sro:'СРО', other:'другие'}, fresh:'новое', freshSaid:'новое с прошлого захода', legend:'Цвета баллов', legendLow:'ниже 50: недобор', legendPass:'50–69: удовлетворительно, стипендия под риском', legendGood:'70–89: хорошо', legendTop:'90 и выше: отлично', report:'Поделиться успеваемостью: PDF или картинка'}
     };
     // The journal opens with every course and class type each time; the choice is not kept. A tap on a course in the
     // home overview or in Текущая аттестация hands that course over once: it is read and removed here, so a refresh or
@@ -88,19 +88,41 @@
         if (course && course.length <= 1000) selectedCourse = course;
     } catch (_) {}
     function text() { return WORDS[language] || WORDS.ru; }
-    // Absences are the journal's own «н» marks in a class's date cells; anything else in a cell is not counted.
-    function absences(table) {
-        var count = 0;
-        ownRows(table).forEach(row => Array.from(row.cells).forEach(cell => { if (cell.tagName === 'TD' && /^н$/i.test(clean(cell))) count++; }));
-        return count;
+    var ABSENCE_WORDS = {
+        en: {term:'Absences this term', unexcused:'Unexcused', excused:'Excused', other:'Other classes', log:'Class log',
+            limit:'{n} unexcused hours this term. The limit is {limit}.'},
+        kz: {term:'Семестрдегі қатыспаған сабақтар', unexcused:'Себепсіз', excused:'Себепті', other:'Басқа сабақтар', log:'Сабақ журналы',
+            limit:'Семестрде себепсіз қалған сағат: {n}. Шегі: {limit} сағат.'},
+        ru: {term:'Пропуски за семестр', unexcused:'Без уважительной причины', excused:'По уважительной причине', other:'Другие занятия', log:'Журнал занятий',
+            limit:'Пропущено {n} ч без уважительной причины за семестр. Лимит: {limit} ч.'}
+    };
+    function absenceText() { return ABSENCE_WORDS[language] || ABSENCE_WORDS.ru; }
+    // Only «н» was seen in the live journal. Treating «нб», «н/б» and «ну» as excused marks is an assumption.
+    function absenceKind(mark) {
+        if (/^н$/i.test(mark)) return 'unexcused';
+        if (/^(нб|н\/б|ну)$/i.test(mark)) return 'excused';
+        return '';
     }
-    // Every class counts (labs and practicals with no known type too); a type counts only its own.
+    function absenceTotals(counts) {
+        return counts.reduce((sum, item) => {
+            sum.unexcused += item.unexcused; sum.excused += item.excused; return sum;
+        }, {unexcused:0, excused:0});
+    }
+    function classAbsences(lessons, facts) {
+        return absenceTotals(lessons.flatMap(lesson => lesson.tables.map(table => facts.get(table).counts)));
+    }
+    function absenceLine(box, title, counts) {
+        box.appendChild(el('span', 'univer-app-attendance-absence-title', title));
+        ['unexcused', 'excused'].forEach(kind => {
+            if (!counts[kind]) return;
+            var pair = el('span', 'univer-app-attendance-absence-count');
+            pair.dataset.kind = kind;
+            pair.append(el('span', '', absenceText()[kind]), ' ', el('b', '', String(counts[kind])));
+            box.append(' ', pair);
+        });
+    }
     // More «н» hours than this in a term (one class = one hour) shows a warning over the courses (the student's own limit).
     var MISSED_LIMIT = 25;
-    function missed(group, type) {
-        return group.lessons.filter(lesson => !type || lesson.type === type)
-            .reduce((sum, lesson) => sum + lesson.tables.reduce((n, table) => n + absences(table), 0), 0);
-    }
     // «Новое»: the course totals as they stood at the previous visit (base) and now (current), per term and account.
     // A visit is an app session (a sessionStorage mark) or 12 hours: a reload within one keeps its marks, the next visit
     // starts from what this one showed. Nothing is new on the first visit or for another account.
@@ -276,9 +298,9 @@
                 event.tables = tables.filter(table => before(event.start, table) && (!event.end || before(table, event.end)) && !table.contains(event.start));
             }
         });
-        return groups.filter(group => group.heading || group.lessons.some(lesson => lesson.type));
+        return groups;
     }
-    function sums(table) {
+    function matrixFacts(table) {
         var rows = ownRows(table), entries = [], grid = [];
         // Logical columns account for the observed two-row RK label and any merged date headings.
         rows.forEach((row, r) => {
@@ -286,25 +308,59 @@
             var column = 0;
             Array.from(row.cells).forEach(cell => {
                 while (grid[r][column]) column++;
-                for (var y = r; y < r + cell.rowSpan; y++) {
+                var end = cell.rowSpan ? r + cell.rowSpan : rows.length;
+                for (var y = r; y < end && rows[y]?.parentNode === row.parentNode; y++) {
                     if (!grid[y]) grid[y] = [];
                     for (var x = column; x < column + cell.colSpan; x++) grid[y][x] = cell;
                 }
                 column += cell.colSpan;
             });
         });
+        var sums = new Set(), sections = [], marks = new Map(), counts = {unexcused:0, excused:0};
         rows.forEach((row, r) => {
-            var last = grid[r]?.length - 1, header = grid[r]?.[last];
-            if (!header || header.tagName !== 'TH' || !/^(сумма|sum|total|жиыны|барлығы)$/i.test(clean(header))) return;
-            var period = clean(grid[r][0]);
+            var cells = Array.from(row.cells), header = grid[r][grid[r].length - 1];
+            var hasHead = cells.some(cell => cell.tagName === 'TH');
+            if (!r || (hasHead && Array.from(rows[r - 1].cells).some(cell => cell.tagName === 'TD'))) sections.push([]);
+            sections[sections.length - 1].push(grid[r]);
+            if (header?.tagName !== 'TH' || !/^(сумма|sum|total|жиыны|барлығы)$/i.test(clean(header))) return;
+            sums.add(header);
+            var period = clean(grid[r][0]), last = grid[r].length - 1;
             for (var n = r + 1; n < rows.length; n++) {
                 var value = grid[n]?.[last];
                 if (!value || value.tagName !== 'TD') break;
                 // A spanned value is a single server total, never count it twice.
-                if (!entries.some(e => e.cell === value)) entries.push({period, value:clean(value), cell:value});
+                if (!sums.has(value)) entries.push({period, value:clean(value)});
+                sums.add(value);
             }
         });
-        return entries;
+        rows.forEach(row => Array.from(row.cells).forEach(cell => {
+            if (cell.tagName !== 'TD' || sums.has(cell)) return;
+            var kind = absenceKind(clean(cell));
+            if (kind) { marks.set(cell, kind); counts[kind]++; }
+        }));
+        // Keep date-only and mark-only columns. Empty sites of a merged header may disappear only together.
+        var empty = new Set(), kept = new Set();
+        sections.forEach(section => {
+            var columns = Array.from({length:Math.max(...section.map(row => row.length))}, (_, c) =>
+                new Set(section.map(row => row[c]).filter(Boolean)));
+            var keptColumns = columns.map(cells => Array.from(cells).some(cell =>
+                sums.has(cell) || clean(cell) || cell.querySelector('a,button,input,select,textarea,img')));
+            columns.forEach((cells, c) => {
+                if (keptColumns[c] || Array.from(cells).some(cell => cell.colSpan > 1 &&
+                    columns.some((other, x) => keptColumns[x] && other.has(cell)))) {
+                    cells.forEach(cell => kept.add(cell));
+                } else cells.forEach(cell => empty.add(cell));
+            });
+        });
+        kept.forEach(cell => empty.delete(cell));
+        return {entries, counts, empty, marks};
+    }
+    function journalFacts(groups) {
+        var facts = new Map();
+        groups.forEach(group => group.lessons.forEach(lesson => lesson.tables.forEach(table => {
+            if (!facts.has(table)) facts.set(table, matrixFacts(table));
+        })));
+        return facts;
     }
     // Adds the per-table sums of one control period exactly, keeping their decimals; other values are listed.
     function periodTotal(items) {
@@ -327,6 +383,19 @@
             if (record.classAbsent && !node.className) node.removeAttribute('class');
         });
         hidden.clear();
+    }
+    function markAbsences(marks) {
+        marks.forEach((kind, cell) => {
+            absenceMarks.set(cell, ['data-univer-absence', 'aria-label'].map(name => [name, cell.getAttribute(name)]));
+            cell.dataset.univerAbsence = kind;
+            cell.setAttribute('aria-label', text().absences + '. ' + absenceText()[kind] + ' (' + clean(cell) + ')');
+        });
+    }
+    function restoreAbsenceMarks() {
+        absenceMarks.forEach((attrs, cell) => attrs.forEach(([name, value]) => {
+            if (value === null) cell.removeAttribute(name); else cell.setAttribute(name, value);
+        }));
+        absenceMarks.clear();
     }
     // The lesson link stays (hidden) for Original mode; a passive caption shows "Лекция" over the teacher's name.
     function makeLabel(link) {
@@ -369,28 +438,153 @@
     }
     function removeOwned() { owned.forEach(node => { window.__univerMotionUI?.stop(node); node.remove(); }); owned = []; }
     function revealOwned(direction) { owned.filter(node => !node.closest('[hidden]')).forEach(node => window.__univerMotionUI?.reveal(node, direction)); }
+    function afterLayout(read, write) {
+        var adapter = window.__univerMobileV1;
+        if (adapter?.afterLayout) adapter.afterLayout(read, write); else write(read());
+    }
+    function quiet(write) {
+        var adapter = window.__univerMobileV1;
+        if (adapter?.quiet) adapter.quiet(write); else write();
+    }
+    function stopLog(log) {
+        var animation = logAnimations.get(log);
+        if (animation) { logAnimations.delete(log); animation.cancel(); }
+    }
+    function hideLog(log, hidden) {
+        log.hidden = hidden;
+        var host = log.closest('tr.univer-app-attendance-log-host');
+        if (host) host.hidden = hidden;
+    }
+    function setLogOpen(log, open, animate) {
+        log.setAttribute('aria-hidden', String(!open));
+        log.toggleAttribute('inert', !open);
+        var root = document.documentElement;
+        if (!animate || !log.animate || window.__univerMotion === false ||
+            !root.matches('.univer-mobile:not(.univer-app-still):not(.univer-app-keyboard)') ||
+            window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+            stopLog(log); hideLog(log, !open); return;
+        }
+        if (open) hideLog(log, false);
+        afterLayout(() => {
+            var height = log.firstElementChild.getBoundingClientRect().height;
+            return [logAnimations.has(log) ? log.getBoundingClientRect().height : open ? 0 : height, open ? height : 0];
+        }, ([from, to]) => {
+            if (!log.isConnected) return;
+            stopLog(log);
+            if (Math.abs(from - to) < 1) { hideLog(log, !open); return; }
+            var animation = log.animate([from, to].map(height => ({height:height + 'px', overflow:'hidden'})),
+                {duration:open ? 220 : 180, easing:'cubic-bezier(.23,1,.32,1)', fill:'both'});
+            logAnimations.set(log, animation);
+            animation.onfinish = animation.oncancel = () => {
+                if (logAnimations.get(log) !== animation) return;
+                quiet(() => { hideLog(log, !open); stopLog(log); });
+            };
+        });
+    }
+    // Collect the lesson's whole siblings, including any empty-state row after its caption.
+    function lessonNodes(lesson) {
+        var start = lesson.start, end = lesson.end, parent = start.parentNode, last = start;
+        if (end && start.contains(end)) return null;
+        for (var table of lesson.tables) {
+            var node = table;
+            while (node.parentNode && node.parentNode !== parent && node !== parent) node = node.parentNode;
+            if (node.parentNode !== parent) return null;
+            if (before(last, node)) last = node;
+        }
+        var nodes = [start];
+        for (var node = start.nextElementSibling; node && (!end || (before(node, end) && !node.contains(end))); node = node.nextElementSibling) {
+            if (node.matches('tr.bot,a[href*="/student/attendance/full"]') || node.querySelector('a[href*="/student/attendance/full"]')) break;
+            // The app's own summary row follows the first lesson on a page without a course heading.
+            if (node.matches('script,style,.univer-app-attendance-owned')) continue;
+            nodes.push(node);
+        }
+        return nodes.includes(last) ? nodes : null;
+    }
+    function classLog(group, summaryHost, open) {
+        var parent = summaryHost.parentElement, rows = summaryHost.tagName === 'TR';
+        var lessons = group.lessons.map(lesson => ({lesson, nodes:lessonNodes(lesson)}));
+        // A legacy row with separate, nonempty cells may share its boundary with other site content.
+        if (!lessons.length || lessons.some(({nodes}) => !nodes || nodes.some(node => node.parentElement !== parent ||
+            (rows ? node.tagName !== 'TR' : node.matches('td,th,tr'))))) return null;
+        var log = el('div', 'univer-app-attendance-log'), body = el('div', 'univer-app-attendance-log-body'), blocks = new Map();
+        log.id = 'univer-class-log-' + id(group.heading || group.lessons[0].cell);
+        log.setAttribute('role', 'region');
+        log.setAttribute('aria-label', [absenceText().log, group.name].filter(Boolean).join(' · '));
+        log.appendChild(body);
+        lessons.forEach(({lesson, nodes}) => {
+            var label = lesson.type ? text()[lesson.type] : clean(lesson.link).match(/^(.+?)\s+[-–—]\s+/)?.[1] || absenceText().other;
+            var key = lesson.type || label.toLocaleLowerCase(), block = blocks.get(key);
+            if (!block) {
+                var section = el('div', 'univer-app-attendance-log-type');
+                section.hidden = selected !== 'all' && lesson.type !== selected;
+                section.appendChild(el('h3', 'univer-app-attendance-log-title', label));
+                block = section;
+                if (rows) {
+                    var frame = withRole(el('table', 'mt univer-app-attendance-log-rows'), 'presentation');
+                    block = el('tbody'); frame.appendChild(block); section.appendChild(frame);
+                }
+                body.appendChild(section); blocks.set(key, block);
+            }
+            nodes.forEach(node => {
+                var home = document.createComment(''), source = node;
+                if (node.matches('.univer-app-table-scroll') && node.firstElementChild?.matches('table.inner')) source = node.firstElementChild;
+                node.before(home); block.appendChild(node); moves.push({node:source, home, block});
+            });
+        });
+        var host = log;
+        if (rows) {
+            host = el('tr', 'univer-app-attendance-owned univer-app-attendance-log-host');
+            var holder = el('td');
+            holder.colSpan = summaryHost.cells[0].colSpan;
+            holder.appendChild(log); host.appendChild(holder);
+        }
+        summaryHost.after(host); owned.push(host);
+        setLogOpen(log, open && lessons.some(({lesson}) => selected === 'all' || lesson.type === selected), false);
+        return {log, host};
+    }
+    function restoreLogs() {
+        logAnimations.forEach((_, log) => stopLog(log));
+        moves.forEach(({node, home, block}) => {
+            // The table adapter can add a scroll box around a bare matrix after this module moves it.
+            var scroll = node.parentElement?.closest('.univer-app-table-scroll');
+            var carrier = scroll?.parentNode === block ? scroll : node;
+            if (!home.parentNode || carrier.parentNode !== block) { home.remove(); return; }
+            var hint = carrier.previousElementSibling;
+            if (carrier === scroll && hint?.matches('.univer-app-scroll-hint')) home.before(hint);
+            home.replaceWith(carrier);
+        });
+        moves = [];
+    }
     // The sums of one class type by control period, keyed by the period's name.
-    function typeTotals(lessons) {
+    function typeTotals(lessons, facts) {
         var values = new Map(), totals = new Map();
-        lessons.forEach(lesson => lesson.tables.forEach(table => sums(table).forEach(entry => {
+        lessons.forEach(lesson => lesson.tables.forEach(table => facts.get(table).entries.forEach(entry => {
             if (!values.has(entry.period)) values.set(entry.period, []);
             values.get(entry.period).push(entry.value);
         })));
         values.forEach((items, period) => totals.set(periodKey(period), {period, value:periodTotal(items) || ''}));
         return totals;
     }
-    function detailsToggle(group, open) {
+    function detailsToggle(group, open, log, source) {
         var toggle = el('button', 'univer-app-attendance-details-toggle', open ? text().hideDetails : text().showDetails);
         toggle.type = 'button'; toggle.setAttribute('aria-expanded', String(open));
+        if (log) toggle.setAttribute('aria-controls', log.id);
         toggle.addEventListener('click', event => {
-            var table = group.heading.closest('table'), height = table?.getBoundingClientRect().height || 0;
-            window.__univerMotionUI?.stop(table);
-            expanded.set(group.token, !open); focusToggle = group.token; redraw();
-            if (event.detail > 0) { window.__univerMotionUI?.resize(table, height, open ? 180 : 220); revealOwned('content'); }
+            open = !open;
+            expanded.set(group.token, open);
+            var update = () => {
+                toggle.setAttribute('aria-expanded', String(open));
+                setText(toggle, open ? text().hideDetails : text().showDetails);
+                if (log) setLogOpen(log, open, event.detail > 0);
+                else source.forEach(node => setHidden(node, !open));
+            };
+            // The shared table adapter needs one pass to fit and label matrices that have just become visible.
+            var adapter = window.__univerMobileV1;
+            if (open && adapter?.mutate) adapter.mutate(update); else quiet(update);
         });
         return toggle;
     }
-    function summary(group, open) {
+    function summary(group, facts) {
         var box = el('section', 'univer-app-attendance-summary'), periods = [], rows = [], any = false, t = text();
         // The server's total is always hidden: with all classes its passive copy is shown, while a class-type
         // filter is about the class log, where the course total would only repeat what the filter hides.
@@ -400,7 +594,7 @@
         }
         (selected === 'all' ? TYPES : [selected]).forEach(type => {
             var lessons = group.lessons.filter(l => l.type === type); if (!lessons.length) return;
-            any = true; rows.push({type, values:typeTotals(lessons)});
+            any = true; rows.push({type, values:typeTotals(lessons, facts)});
         });
         var columns = periods.map(p => ({key:periodKey(p.label), label:p.label, max:p.max}));
         rows.forEach(row => row.values.forEach((entry, name) => {
@@ -418,31 +612,29 @@
             periods.forEach(item => totals.appendChild(progress(item, group.name)));
             box.appendChild(totals);
         }
-        // The journal's «н» marks of the classes shown: every class with all types, the chosen type alone.
-        var gone = missed(group, selected === 'all' ? '' : selected);
-        if (gone > 0) {
-            var lost = el('p', 'univer-app-attendance-absences', t.absences + ': '); lost.appendChild(el('b', '', String(gone)));
-            if (selected === 'all') {
-                var parts = TYPES.concat(['']).map(type => [type, group.lessons.filter(l => type ? l.type === type : !TYPES.includes(l.type))
-                    .reduce((n, lesson) => n + lesson.tables.reduce((m, table) => m + absences(table), 0), 0)]).filter(([, n]) => n > 0);
-                if (parts.length > 1 || (parts.length === 1 && parts[0][0])) lost.appendChild(el('span', '', ' · ' + parts.map(([type, n]) => t.absenceKinds[type || 'other'] + ' ' + n).join(', ')));
+        var lessons = group.lessons.filter(lesson => selected === 'all' || lesson.type === selected);
+        var counts = classAbsences(lessons, facts);
+        if (counts.unexcused || counts.excused) {
+            var lost = el('div', 'univer-app-attendance-absences');
+            absenceLine(lost, t.absences, counts);
+            if (selected === 'all' && counts.unexcused) {
+                var parts = TYPES.concat(['']).map(type => [type, classAbsences(lessons.filter(l => l.type === type), facts).unexcused])
+                    .filter(([, n]) => n > 0);
+                if (parts.length > 1) lost.append(' ', el('span', 'univer-app-attendance-absence-breakdown',
+                    parts.map(([type, n]) => t.absenceKinds[type || 'other'] + ' ' + n).join(', ')));
             }
             box.appendChild(lost);
         }
         // Anything the server wrote that is not a recognised period stays readable as its own line.
         if (group.overall && selected === 'all' && !periods.length) box.appendChild(el('p', 'univer-app-attendance-overall-value', clean(group.overall)));
-        if (!any) box.appendChild(el('p', 'univer-app-attendance-nothing', selected === 'all' ? t.noClasses : t.empty));
+        if (!lessons.length) box.appendChild(el('p', 'univer-app-attendance-nothing', selected === 'all' ? t.noClasses : t.empty));
         // Nothing to total: one quiet line instead of an empty card.
         if (!any && !group.overall) box.classList.add('univer-app-attendance-summary-empty');
-        if (group.heading && group.lessons.length && selected === 'all') {
-            box.appendChild(detailsToggle(group, open));
-            if (focusToggle === group.token) { focusToggle = null; box.dataset.univerFocus = 'true'; }
-        }
-        return insertAfterCell(group.heading || group.lessons[0].cell, box);
+        return box;
     }
     // Adapter-owned updates pause the shared DOM observer, so they never re-trigger adaptation.
     function redraw() {
-        var action = () => { var groups = model(), signature = signatureOf(groups); render(groups); if (state) state.signature = signature; };
+        var action = () => { if (state) render(); };
         if (window.__univerMobileV1) window.__univerMobileV1.mutate(action); else action();
     }
     // Another goal: every hint counts what is left to it (the report reads it when it is made).
@@ -473,7 +665,8 @@
             var chip = token === 'all' ? state.allCourse : state.courseButtons.get(token);
             if (chip?.isConnected) chip.focus({preventScroll:true});
         }
-        if (state.host.getBoundingClientRect().top < 0) state.host.scrollIntoView?.({block:'start'});
+        var host = state.host;
+        afterLayout(() => host.getBoundingClientRect().top, top => { if (top < 0) host.scrollIntoView?.({block:'start'}); });
     }
     function chooseType(type, event) {
         selected = type;
@@ -510,55 +703,69 @@
             // The first pass runs before the app style turns the chips into one scrolling row: a course chosen on another
             // page (the home overview, Текущая аттестация) is centred once the row can scroll, not lost on the wrapped one.
             var list = state.courseList, wanted = selectedCourse, owner = state;
-            var centre = function () {
-                if (state !== owner || selectedCourse !== wanted || owner.courseShown === wanted || !chosen.isConnected) return;
-                if (!chosen.offsetWidth || list.scrollWidth <= list.clientWidth) return; // Hidden or wrapped: nothing to scroll yet.
-                owner.courseShown = wanted;
-                list.scrollLeft = Math.max(0, chosen.offsetLeft - (list.clientWidth - chosen.offsetWidth) / 2);
-            };
+            var centre = () => afterLayout(() => {
+                if (!chosen.isConnected || !chosen.offsetWidth || list.scrollWidth <= list.clientWidth) return null;
+                return Math.max(0, chosen.offsetLeft - (list.clientWidth - chosen.offsetWidth) / 2);
+            }, left => {
+                if (left === null || state !== owner || selectedCourse !== wanted || owner.courseShown === wanted) return;
+                owner.courseShown = wanted; list.scrollLeft = left;
+            });
             centre();
             if (typeof requestAnimationFrame === 'function') requestAnimationFrame(centre);
             setTimeout(centre, 120); // A hidden WebView throttles animation frames.
         }
     }
     // Hides the outermost [elements] wholly inside [start, end) (and before [last], when given).
-    function hideRange(elements, start, end, exclude, last) {
+    function rangeNodes(elements, start, end, last) {
         var contained = node => (node === start || before(start, node)) && (!end || (before(node, end) && !node.contains(end))) &&
             (!last || node === last || last.contains(node) || (before(node, last) && !node.contains(last)));
-        elements.filter(node => contained(node) && !contained(node.parentElement)).forEach(node => setHidden(node, exclude));
+        return elements.filter(node => contained(node) && !contained(node.parentElement));
     }
-    function render(groups) {
-        resetVisibility(); removeOwned();
+    function render() {
+        restoreLogs(); resetVisibility(); restoreAbsenceMarks(); removeOwned();
+        var groups = model(), facts = journalFacts(groups);
         courseControls(groups);
         groups.forEach(group => group.lessons.forEach(lesson => { if (lesson.type) makeLabel(lesson.link); }));
         var root = document.querySelector('#l4'), elements = Array.from(root.querySelectorAll('*')), t = text();
+        facts.forEach(item => {
+            item.empty.forEach(cell => setHidden(cell, true));
+            markAbsences(item.marks);
+        });
         // With all courses listed, each course starts as its summary; one chosen course shows its class log.
         var single = selectedCourse !== 'all' || groups.filter(group => group.heading).length < 2;
         groups.forEach(group => {
             var excludeCourse = selectedCourse !== 'all' && selectedCourse !== group.token;
             // Choosing lectures, seminars or independent work opens every course's log of that type.
             var open = !group.heading || selected !== 'all' || (expanded.has(group.token) ? expanded.get(group.token) : single);
-            group.lessons.forEach(lesson => {
-                var exclude = excludeCourse || !open || (selected !== 'all' && selected !== lesson.type);
-                // Hide only maximal elements wholly inside this lesson's document-order range.
-                // This works both with sibling blocks and with legacy tables nesting multiple subjects.
-                hideRange(elements, lesson.start, lesson.end, exclude);
+            if (excludeCourse && group.heading) rangeNodes(elements, group.start, group.end,
+                !group.end && group.overall ? boundary(group.overall) : null).forEach(node => setHidden(node, true));
+            var box = summary(group, facts), host = insertAfterCell(group.heading || group.lessons[0].cell, box);
+            var log = classLog(group, host, open), source = [];
+            if (!log) group.lessons.forEach(lesson => {
+                var nodes = rangeNodes(elements, lesson.start, lesson.end);
+                var show = !excludeCourse && open && (selected === 'all' || selected === lesson.type);
+                nodes.forEach(node => setHidden(node, !show)); source.push(...nodes);
             });
-            if (excludeCourse && group.heading) hideRange(elements, group.start, group.end, true, !group.end && group.overall ? boundary(group.overall) : null);
-            var host = summary(group, open); if (excludeCourse) setHidden(host, true);
+            if (excludeCourse) { setHidden(host, true); if (log) setHidden(log.host, true); }
+            if (group.heading && group.lessons.length && selected === 'all') box.appendChild(detailsToggle(group, open, log?.log, source));
         });
         overview(groups);
         // Every course of the term counts, whichever course or class type is shown.
-        var hours = groups.reduce((n, group) => n + missed(group), 0);
+        var counts = classAbsences(groups.flatMap(group => group.lessons), facts), hours = counts.unexcused;
+        state.term.hidden = !hours && !counts.excused;
+        state.term.textContent = '';
+        if (!state.term.hidden) absenceLine(state.term, absenceText().term, counts);
         state.limit.hidden = hours <= MISSED_LIMIT;
-        setText(state.limit, state.limit.hidden ? '' : t.missedTerm.replace('{n}', hours).replace('{limit}', MISSED_LIMIT));
+        setText(state.limit, state.limit.hidden ? '' : words(absenceText().limit, {n:hours, limit:MISSED_LIMIT}));
         state.bar.querySelectorAll('button').forEach(button => { button.textContent = t[button.dataset.kind]; button.setAttribute('aria-pressed', String(selected === button.dataset.kind)); });
         state.bar.setAttribute('aria-label', t.filter);
         // The note explains a type filter, so it appears only while one is active.
         state.caption.textContent = t.filter; state.note.textContent = t.note; state.note.hidden = selected === 'all';
         setText(state.share, t.report);
         var graded = groups.some(group => group.heading && group.overall && scores(clean(group.overall)).length);
-        dom.setHidden(state.share, !canAct() || !/^\/student\/attendance\/full(\/|$)/.test(location.pathname) || !graded);
+        var reportable = graded || groups.some(group => group.heading && group.lessons.some(lesson =>
+            lesson.tables.some(table => facts.get(table).counts.unexcused || facts.get(table).counts.excused)));
+        dom.setHidden(state.share, !canAct() || !/^\/student\/attendance\/full(\/|$)/.test(location.pathname) || !reportable);
         dom.setHidden(state.goal, !graded || selected !== 'all' || selectedCourse !== 'all');
         setText(state.goalCaption, t.goal); state.goal.setAttribute('aria-label', t.goal);
         state.goal.querySelectorAll('button[data-goal]').forEach(button => {
@@ -566,8 +773,7 @@
             setText(button, name === 'none' ? t.noGoal : t[name]);
             button.setAttribute('aria-pressed', String((dom.goal() || 'none') === name));
         });
-        var focused = root.querySelector('.univer-app-attendance-summary[data-univer-focus] .univer-app-attendance-details-toggle');
-        if (focused) { focused.closest('.univer-app-attendance-summary').removeAttribute('data-univer-focus'); focused.focus?.({preventScroll:true}); }
+        state.signature = signatureOf(model());
     }
     // The course chips, the class-type segment and the course overview, above the first course.
     function buildTools(groups) {
@@ -582,6 +788,7 @@
         allCourse.type = 'button'; allCourse.dataset.course = 'all'; allCourse.addEventListener('click', event => chooseCourse('all', event));
         courseList.appendChild(allCourse); courses.append(courseCaption, courseList);
         var limit = el('p', 'univer-app-attendance-limit'); limit.dataset.band = 'low'; limit.hidden = true;
+        var term = el('div', 'univer-app-attendance-term');
         var note = el('p', 'univer-app-attendance-filter-note'), summaryList = el('section', 'univer-app-attendance-overview');
         // The report for printing or sending (a parent, a curator) is drawn by the app from every course's totals.
         var share = el('button', 'univer-app-attendance-report'); share.type = 'button'; share.hidden = true;
@@ -596,32 +803,36 @@
         });
         goal.append(goalCaption, goalList);
         // The goal sits under the course overview, next to the score colours: the summary stays on the first screen.
-        var tools = el('div', 'univer-app-attendance-tools'); tools.append(limit, courses, caption, bar, note, share, summaryList, goal);
+        var tools = el('div', 'univer-app-attendance-tools'); tools.append(term, limit, courses, caption, bar, note, share, summaryList, goal);
         insertAfterCell(groups[0].heading || groups[0].lessons[0].cell, tools, true);
         // The filter bar has its own lifetime; summary rebuilds must not remove it.
         var host = owned.pop();
-        state = {bar, host, limit, caption, note, share, goal, goalCaption, courses, courseCaption, courseList, allCourse, courseButtons:new Map(), overview:summaryList, signature:null};
+        state = {bar, host, term, limit, caption, note, share, goal, goalCaption, courses, courseCaption, courseList, allCourse, courseButtons:new Map(), overview:summaryList, signature:null};
     }
     function termOf() { return reader.term(document, location.pathname); }
     // What the app's report needs and nothing more: the term, the name shown in the site header and each course's
     // control-period totals, whatever course or class type is chosen. Native code checks every field again.
     function reportData() {
-        var name = document.querySelector('#l2 a[href="/user/pass/"]');
+        var name = document.querySelector('#l2 a[href="/user/pass/"]'), groups = model(), facts = journalFacts(groups);
         return {
             // The header reads "Surname Name (login: id)": the report names the student only.
             v:1, term:termOf(), student:name ? clean(name).replace(/\s*\([^()]*\)$/, '').slice(0, 120) : '',
-            courses:model().filter(group => group.heading).slice(0, 60).map(group => ({
-                name:group.name.slice(0, 200),
-                scores:(group.overall ? scores(clean(group.overall)) : []).slice(0, 8).map(item => ({label:item.label, max:item.max, value:item.value})),
-                absences:Math.min(999, missed(group)),
-            })),
+            courses:groups.filter(group => group.heading).slice(0, 60).map(group => {
+                var counts = classAbsences(group.lessons, facts);
+                return {
+                    name:group.name.slice(0, 200),
+                    scores:(group.overall ? scores(clean(group.overall)) : []).slice(0, 8).map(item => ({label:item.label, max:item.max, value:item.value})),
+                    absences:Math.min(999, counts.unexcused), excused:Math.min(999, counts.excused),
+                };
+            }),
             goal:dom.goal(),
         };
     }
     // Language and every course, lesson and grade table with its text: polling rerenders only when one changes.
     function signatureOf(groups) {
         return language + '|' + (dom.goal() || '') + '|' + groups.map(g => id(g.heading || g.lessons[0].cell) + ':' + (g.token || '') +
-            g.lessons.map(l => id(l.link) + clean(l.link) + l.tables.map(t => id(t) + clean(t)).join('|')).join('/') +
+            g.lessons.map(l => id(l.link) + clean(l.link) + l.tables.map(t => id(t) + ownRows(t).map(row =>
+                Array.from(row.cells, cell => [id(cell), cell.colSpan, cell.rowSpan, clean(cell)].join(':')).join(',')).join('/')).join('|')).join('/') +
             (g.overall ? clean(g.overall) : '')).join(';');
     }
     function apply(lang) {
@@ -633,12 +844,10 @@
         if (!groups.length) return;
         var signature = signatureOf(groups);
         if (!state) buildTools(groups);
-        if (state.signature !== signature) freshness(groups);
-        // The signature is kept only after a complete render, so a failed one is retried on the next pass.
-        if (state.signature !== signature) { render(groups); state.signature = signature; }
+        if (state.signature !== signature) { freshness(groups); render(); }
     }
     function release() {
-        resetVisibility(); removeOwned(); restoreLabels();
+        restoreLogs(); resetVisibility(); restoreAbsenceMarks(); removeOwned(); restoreLabels();
         state?.host.remove(); state = null;
     }
     window.__univerAttendanceV1 = {apply, release};

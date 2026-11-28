@@ -76,7 +76,9 @@ var __univerWeekPair = null;
     // logout link forgets the record at once.
     var KEY = 'univer.app.overview.v2', LIMIT = 200000, WEEK = 7 * 86400000, HOUR = 3600000, AGE = 14 * 86400000;
     function account() { try { return localStorage.getItem('univer.app.account.v1') || ''; } catch (_) { return ''; } }
-    function forget() { try { localStorage.removeItem(KEY); } catch (_) { } }
+    // The other per-account records the page scripts keep go with it.
+    var PERSONAL = [KEY, 'univer.app.syllabus-own.v1', 'univer.app.syllabus-weeks.v1', 'univer.app.discussion-tasks.v1', 'univer.mobile.discussion-tasks.v1', 'univer.app.survey-count.v1'];
+    function forget() { PERSONAL.forEach(function (key) { try { localStorage.removeItem(key); } catch (_) { } }); }
     function kept() {
         var who = account(); if (!who) return null;
         try {

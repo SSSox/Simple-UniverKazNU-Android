@@ -341,7 +341,10 @@
     <string name="report_reached">Барлық шектен өтті</string>
     <string name="report_goal">Мақсат — «%1$s», ең жоғары балдың %2$d&#160;%%-ынан бастап. Әр бағаның астында мақсатқа дейін қанша балл қалғаны көрсетілген.</string>
     <string name="report_goal_reached">Мақсатқа жетті</string>
-    <string name="report_absences">Қатыспаған сабақтар: %1$d</string>
+    <string name="report_absences">Қатыспаған сабақтар</string>
+    <string name="report_absences_term">Семестрдегі қатыспаған сабақтар</string>
+    <string name="report_absences_unexcused">Себепсіз %1$d</string>
+    <string name="report_absences_excused">Себепті %1$d</string>
     <string name="report_out_of">%1$s / %2$s</string>
     <string name="report_no_grade">баға әлі жоқ</string>
     <string name="report_no_grades">Бағалар әлі қойылмаған</string>

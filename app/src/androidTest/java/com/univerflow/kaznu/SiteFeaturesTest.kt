@@ -132,6 +132,9 @@ class SiteFeaturesTest {
            <tr><td><table class="inner" id="$table"><tr><th rowspan="2">РК1 (100)</th><th>01.09</th><th>Сумма</th></tr><tr><td>$sum</td><td>$sum</td></tr></table></td></tr>"""
 
     @Test fun attendanceFiltersCoursesAndLessonTypesAndLinksSyllabiOffline() {
+        // The journal looks for the student's own syllabus ahead; these pages name no programme, so none is marked.
+        pages["/student/bachelor"] = "<html><body></body></html>"
+        pages["/student/educplan"] = "<html><body></body></html>"
         pages["/student/umkd/0/2026/1"] = """<html><body><div id="l4"><table class="inner"><tr><th>#</th><th>Дисциплина</th><th>Тип</th></tr>
             <tr class="link" id="77"><td>1</td><td>Социология</td><td>Обязательная</td></tr></table></div></body></html>"""
         pages["/student/umkd/77/2026/1"] = """<html><body><div id="l4"><a href="/student/interactive/syllabus/print/5/1">Силлабус (рус)</a>

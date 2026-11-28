@@ -43,10 +43,11 @@ class GradeCheck(
         val found = read(page.html) ?: return Outcome.FAILED
         return withContext(Dispatchers.IO) {
             val totals = found.copy(language = language())
-            val base = store.base(totals)
-            val changes = totals.changes(base)
+            val base = store.baseSnapshot(totals)
+            val changes = totals.changesFrom(base)
+            val kept = store.keep(totals, since, after = version)
             when {
-                !store.keep(totals, since, after = version) -> Outcome.SKIPPED
+                !kept -> if (store.generation == since && store.version == version) Outcome.FAILED else Outcome.SKIPPED
                 base == null -> Outcome.BASED
                 changes.isEmpty() -> Outcome.UNCHANGED
                 else -> {

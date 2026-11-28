@@ -284,7 +284,7 @@ class UniverViewModelTest {
         val repository = FakeRepository()
         val model = model(repository)
         advanceUntilIdle()
-        val scan = NoticeScan("/student/bachelor/", listOf(NoticeLink("https://univer.kaznu.kz/student/rating/", "Анкетирование студентов", 2)), emptyList())
+        val scan = NoticeScan("/student/bachelor/", listOf(NoticeLink("https://univer.kaznu.kz/student/rating/", "Анкетирование студентов", 2, open = 2)), emptyList())
         assertTrue("no account: a late scan is ignored", model.applyNoticeScan(scan).isEmpty())
         assertTrue(model.state.value.notices.isEmpty())
         model.save("fixture-user", "fixture-password")
@@ -307,7 +307,7 @@ class UniverViewModelTest {
         val started = model.noticeSession
         model.save("other-user", "other-password")
         assertNotEquals(started, model.noticeSession)
-        val late = NoticeScan("/student/bachelor/", listOf(NoticeLink("https://univer.kaznu.kz/student/rating/", "Анкетирование студентов", 2)), emptyList())
+        val late = NoticeScan("/student/bachelor/", listOf(NoticeLink("https://univer.kaznu.kz/student/rating/", "Анкетирование студентов", 2, open = 2)), emptyList())
         assertTrue("a read from the previous account is dropped", model.applyNoticeScan(late, started).isEmpty())
         assertTrue(model.state.value.notices.isEmpty())
         assertTrue(repository.saved.notices.isEmpty())
@@ -319,7 +319,7 @@ class UniverViewModelTest {
         val model = model(repository)
         advanceUntilIdle()
         model.save("fixture-user", "fixture-password")
-        val scan = NoticeScan("/student/bachelor/", listOf(NoticeLink("https://univer.kaznu.kz/student/rating/", "Анкетирование студентов", 2)), emptyList())
+        val scan = NoticeScan("/student/bachelor/", listOf(NoticeLink("https://univer.kaznu.kz/student/rating/", "Анкетирование студентов", 2, open = 2)), emptyList())
         assertEquals(1, model.applyNoticeScan(scan).size)
         repository.onNotices = { throw IOException("disk full") }
         model.endSession(delete = false)

@@ -12,6 +12,12 @@
     var capable = !!(window.CSS && CSS.supports && CSS.supports('selector(:has(a))') && window.CSSLayerBlockRule);
     var language = 'ru', style = null, page = '', views = {}, entered = {}, examTimer = 0;
     var classes = new Map(), added = [], listeners = [], wraps = [];
+    var syllabusContacts = new Map(), copyStatus = null;
+    var CONTACT_WORDS = {
+        ru:{name:'Ф.И.О.', phone:'Телефон', email:'Электронная почта', copy:'Копировать', copied:'Скопировано', failed:'Не удалось скопировать', none:'Не указаны'},
+        kz:{name:'Аты-жөні', phone:'Ұялы телефон', email:'Электрондық пошта', copy:'Көшіру', copied:'Көшірілді', failed:'Көшіру мүмкін болмады', none:'Көрсетілмеген'},
+        en:{name:'Full name', phone:'Phone', email:'Email', copy:'Copy', copied:'Copied', failed:'Could not copy', none:'Not provided'}
+    };
 
     function words() {
         return language === 'en' ? {
@@ -154,7 +160,7 @@
             return pending.map(function (item) {
                 if (!item.box.isConnected || !item.cell.isConnected) return null;
                 var visible = item.box.getClientRects().length > 0;
-                return {visible:visible, overflows:visible && item.box.scrollHeight > item.box.clientHeight + 24};
+                return {visible:visible, height:visible ? item.box.clientHeight : 0, overflows:visible && item.box.scrollHeight > item.box.clientHeight + 24};
             });
         }, function (measured) {
             pending.forEach(function (item, i) {
@@ -164,13 +170,30 @@
                 if (!result.overflows) { unwrap(box); fits.add(cell); return; }
                 var button = create('button', 'univer-scr-more'); button.type = 'button'; button.setAttribute('aria-expanded', 'false');
                 button.textContent = words().more; button.dataset.univerScrName = item.name;
+                var foldedHeight = result.height, closing = null;
                 listen(button, 'click', function (event) {
-                    var open = !box.classList.contains('univer-scr-open'), before = box.getBoundingClientRect().height;
-                    ui()?.stop(box);
-                    box.classList.toggle('univer-scr-open', open);
-                    button.setAttribute('aria-expanded', String(open)); button.textContent = open ? words().less : words().more;
-                    if (moving(event)) ui()?.resize(box, before, open ? 260 : 200);
-                    if (!open && box.getBoundingClientRect().top < 0) box.scrollIntoView({block:'start', behavior:moving(event) && motionAllowed() ? 'smooth' : 'auto'});
+                    var open = !box.classList.contains('univer-scr-open') || !!closing, motion = ui();
+                    if (open) {
+                        var before = box.getBoundingClientRect().height;
+                        if (!box.classList.contains('univer-scr-open') && before > 0) foldedHeight = before;
+                        closing = null; motion?.stop(box);
+                        box.classList.add('univer-scr-open');
+                        button.setAttribute('aria-expanded', 'true'); button.textContent = words().less;
+                        if (moving(event)) motion?.resize(box, before);
+                    } else {
+                        button.setAttribute('aria-expanded', 'false'); button.textContent = words().more;
+                        var animated = false;
+                        if (moving(event) && foldedHeight > 0 && motion?.shut) {
+                            var pendingClose = {}; closing = pendingClose;
+                            animated = motion.shut(box, foldedHeight, function () {
+                                if (closing !== pendingClose) return;
+                                closing = null; box.classList.remove('univer-scr-open');
+                            }, {follow:box});
+                        } else {
+                            closing = null; motion?.stop(box); box.classList.remove('univer-scr-open');
+                        }
+                        if (!animated && box.getBoundingClientRect().top < 0) box.scrollIntoView({block:'start', behavior:'auto'});
+                    }
                 });
                 cell.appendChild(button); mores.set(box, button);
             });
@@ -178,6 +201,7 @@
     }
     function clampCell(cell, name) { clampCells([cell], name); }
     function unwrap(box) {
+        ui()?.stop(box);
         var i = wraps.indexOf(box); if (i >= 0) wraps.splice(i, 1);
         var more = mores.get(box); if (more) { mores.delete(box); drop(more); }
         if (box.parentNode) { while (box.firstChild) box.parentNode.insertBefore(box.firstChild, box); box.remove(); }
@@ -495,20 +519,37 @@
             var label = el('span', 'univer-scr-fold-label'), chip = el('span', 'univer-scr-fold-count');
             button.append(chip, label); head.appendChild(button);
             mark(panel, 'univer-scr-foldable'); mark(panel, 'univer-scr-folded');
+            var closing = null, foldedHeight = 0;
             listen(button, 'click', function (event) {
-                var open = panel.classList.contains('univer-scr-folded'), before = panel.getBoundingClientRect().height;
-                ui()?.stop(panel);
-                if (open) unmark(panel, 'univer-scr-folded'); else mark(panel, 'univer-scr-folded');
-                button.setAttribute('aria-expanded', String(open));
-                setText(button.querySelector('.univer-scr-fold-label'), open ? words().hide : words().show);
-                if (moving(event)) {
-                    ui()?.resize(panel, before, open ? 260 : 200);
-                    if (open) ownRows(panel).slice(1).forEach(function (row) { ui()?.reveal(row, 'content'); });
+                var open = panel.classList.contains('univer-scr-folded') || !!closing, motion = ui();
+                if (open) {
+                    var before = panel.getBoundingClientRect().height;
+                    if (panel.classList.contains('univer-scr-folded') && before > 0) foldedHeight = before;
+                    closing = null; motion?.stop(panel);
+                    unmark(panel, 'univer-scr-folded');
+                    button.setAttribute('aria-expanded', 'true');
+                    setText(button.querySelector('.univer-scr-fold-label'), words().hide);
+                    if (moving(event)) motion?.resize(panel, before);
+                } else {
+                    if (panel.contains(document.activeElement) && !head.contains(document.activeElement)) button.focus({preventScroll:true});
+                    button.setAttribute('aria-expanded', 'false');
+                    setText(button.querySelector('.univer-scr-fold-label'), words().show);
+                    if (moving(event) && motion?.shut) {
+                        var rect = panel.getBoundingClientRect(), row = head.closest('tr') || head, headRect = row.getBoundingClientRect(), css = getComputedStyle(panel);
+                        var target = foldedHeight > 0 ? foldedHeight : headRect.bottom - rect.top + (parseFloat(css.paddingBottom) || 0) + (parseFloat(css.borderBottomWidth) || 0);
+                        var pendingClose = {}; closing = pendingClose;
+                        motion.shut(panel, target, function () {
+                            if (closing !== pendingClose) return;
+                            closing = null; mark(panel, 'univer-scr-folded');
+                        }, {follow:panel});
+                    } else {
+                        closing = null; motion?.stop(panel); mark(panel, 'univer-scr-folded');
+                    }
                 }
             });
         }
         setText(button.querySelector('.univer-scr-fold-count'), count ? words().files(count) : '');
-        setText(button.querySelector('.univer-scr-fold-label'), panel.classList.contains('univer-scr-folded') ? words().show : words().hide);
+        setText(button.querySelector('.univer-scr-fold-label'), button.getAttribute('aria-expanded') === 'true' ? words().hide : words().show);
     }
 
     // Debts, FX retakes and raising GPA: the long memo folds, and an empty order list or request list gets a titled
@@ -694,6 +735,141 @@
         enter('advisor', [card]);
     }
 
+    function contactWords() { return CONTACT_WORDS[language] || CONTACT_WORDS.ru; }
+    function contactKind(label) {
+        if (/телефон|phone/i.test(label)) return 'phone';
+        if (/e-?mail|почта|пошта/i.test(label)) return 'email';
+        return /^(ф\.?\s*и\.?\s*о\.?|т\.?\s*а\.?\s*ә\.?|аты\s*[-–]?\s*жөні|толық аты(?:-жөні)?|тегі.*аты|full name|name):?$/i.test(label) ? 'name' : '';
+    }
+    function contactHref(kind, value) {
+        if (kind === 'phone') {
+            var digits = value.replace(/\D/g, '');
+            if (/^\+?[\d\s()-]+$/.test(value) && digits.length >= 10 && digits.length <= 15)
+                return 'tel:' + (value.startsWith('+') ? '+' : '') + digits;
+        }
+        if (kind === 'email' && value.length <= 254 && !value.includes('..') && /^[\w.%+-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}$/i.test(value))
+            return 'mailto:' + value.replace(/%/g, '%25');
+        return '';
+    }
+    function updateCopy(item) {
+        var t = contactWords(), label = item.copied ? t.copied : t.copy;
+        setText(item.button, label);
+        if (item.copied) item.button.setAttribute('data-copied', '');
+        else item.button.removeAttribute('data-copied');
+        var name = label + ': ' + item.text;
+        if (item.button.getAttribute('aria-label') !== name) item.button.setAttribute('aria-label', name);
+    }
+    function copySelection(value) {
+        var focus = document.activeElement, area = el('textarea');
+        area.value = value; area.readOnly = true; area.setAttribute('aria-hidden', 'true');
+        area.style.cssText = 'position:fixed;top:0;left:0;opacity:0;pointer-events:none';
+        document.body.appendChild(area);
+        try {
+            area.focus({preventScroll:true}); area.select(); area.setSelectionRange(0, value.length);
+            return document.execCommand('copy');
+        } catch (_) { return false; }
+        finally { area.remove(); focus?.focus({preventScroll:true}); }
+    }
+    async function copyContact(item) {
+        var copied = false;
+        try {
+            if (navigator.clipboard?.writeText) {
+                await navigator.clipboard.writeText(item.text);
+                copied = true;
+            }
+        } catch (_) { /* Older WebViews and denied clipboard access can use the selection instead. */ }
+        if (!item.button.isConnected) return;
+        quiet(function () {
+            if (!copied) copied = copySelection(item.text);
+            item.copied = copied; updateCopy(item);
+            if (copyStatus) {
+                var announcement = copied ? contactWords().copied : contactWords().failed;
+                copyStatus.textContent = ''; copyStatus.textContent = announcement;
+            }
+            clearTimeout(item.timer);
+            if (copied) item.timer = setTimeout(function () {
+                if (!item.button.isConnected) return;
+                item.copied = false; quiet(function () { updateCopy(item); });
+            }, 2200);
+        });
+    }
+    function contactField(field, kind, value) {
+        var label = el('span', 'univer-scr-syllabus-label'), contents = el('span', 'univer-scr-syllabus-value');
+        var href = contactHref(kind, value), link = null;
+        if (href && !field.querySelector('a,button,input,select,textarea,[tabindex],[contenteditable]')) {
+            link = el('a', 'univer-scr-syllabus-link'); link.href = href;
+            link.append(...field.childNodes); contents.appendChild(link);
+        } else contents.append(...field.childNodes);
+        mark(field, 'univer-scr-syllabus-field');
+        field.append(label, contents);
+        var item = {field:field, kind:kind, text:value, label:label, contents:contents, link:link};
+        if (!/^(?:[-–—]+|n\/?a|не указан[аыо]?|көрсетілмеген|not (?:provided|specified))$/i.test(value)) {
+            item.button = el('button', 'univer-scr-syllabus-copy'); item.button.type = 'button';
+            item.onCopy = function () { copyContact(item); };
+            item.button.addEventListener('click', item.onCopy);
+            field.appendChild(item.button);
+        }
+        return item;
+    }
+    function releaseContacts(record) {
+        record.fields.forEach(function (item) {
+            clearTimeout(item.timer);
+            item.button?.removeEventListener('click', item.onCopy);
+            item.button?.remove();
+            item.contents.before(...(item.link || item.contents).childNodes);
+            item.contents.remove(); item.label.remove();
+            unmark(item.field, 'univer-scr-syllabus-field');
+        });
+        unmark(record.head, 'univer-scr-syllabus-head');
+        record.rows.forEach(function (row) {
+            unmark(row, 'univer-scr-syllabus-person'); unmark(row, 'univer-scr-syllabus-empty');
+        });
+        record.emptyFields.forEach(function (field) { unmark(field, 'univer-scr-syllabus-empty'); });
+        record.note?.remove();
+    }
+    function printedSyllabus() {
+        syllabusContacts.forEach(function (record, cell) {
+            if (!cell.isConnected || record.head.parentElement !== cell) {
+                releaseContacts(record); syllabusContacts.delete(cell);
+            }
+        });
+        var fieldsOf = function (row) { return Array.from(row.children).filter(function (field) { return field.classList.contains('input-field'); }); };
+        document.querySelectorAll('#content td > .input-row, #content th > .input-row').forEach(function (head) {
+            var cell = head.parentElement;
+            if (syllabusContacts.has(cell)) return;
+            var kinds = fieldsOf(head).map(function (field) { return contactKind(clean(field)); });
+            if (!kinds.includes('name') || (!kinds.includes('phone') && !kinds.includes('email'))) return;
+            var rows = Array.from(cell.children).filter(function (row) { return row !== head && row.classList.contains('input-row'); });
+            var record = {head:head, rows:rows, fields:[], emptyFields:[]};
+            syllabusContacts.set(cell, record);
+            mark(head, 'univer-scr-syllabus-head');
+            rows.forEach(function (row) {
+                var fields = fieldsOf(row), values = fields.map(clean);
+                if (!values.some(Boolean)) { mark(row, 'univer-scr-syllabus-empty'); return; }
+                mark(row, 'univer-scr-syllabus-person');
+                fields.forEach(function (field, i) {
+                    if (kinds[i] && values[i]) record.fields.push(contactField(field, kinds[i], values[i]));
+                    else if (!values[i]) { mark(field, 'univer-scr-syllabus-empty'); record.emptyFields.push(field); }
+                });
+            });
+            if (rows.every(function (row) { return row.classList.contains('univer-scr-syllabus-empty'); })) {
+                record.note = el('span', 'univer-scr-syllabus-none'); cell.appendChild(record.note);
+            }
+        });
+        if (syllabusContacts.size && !copyStatus?.isConnected) {
+            copyStatus = el('span', 'univer-scr-syllabus-status');
+            copyStatus.setAttribute('role', 'status'); document.body.appendChild(copyStatus);
+        }
+        var t = contactWords();
+        syllabusContacts.forEach(function (record) {
+            if (record.note) setText(record.note, t.none);
+            record.fields.forEach(function (item) {
+                setText(item.label, t[item.kind]);
+                if (item.button) updateCopy(item);
+            });
+        });
+    }
+
     // GPA calculator: the rows read as short cards, the result keeps the count of courses and credits under it, and
     // the wide reference tables become one folded grade scale.
     function number(value) { var n = Number(String(value).replace(',', '.')); return isFinite(n) ? n : NaN; }
@@ -750,10 +926,30 @@
             body.appendChild(list);
         }
         section.append(toggle, body);
+        var closing = null, foldedHeight = 0;
         listen(toggle, 'click', function (event) {
-            var open = body.hidden, before = section.getBoundingClientRect().height;
-            ui()?.stop(section); body.hidden = !open; toggle.setAttribute('aria-expanded', String(open));
-            if (moving(event)) { ui()?.resize(section, before, open ? 260 : 200); if (open) ui()?.reveal(body, 'content'); }
+            var open = body.hidden || !!closing, motion = ui();
+            if (open) {
+                var before = section.getBoundingClientRect().height;
+                if (body.hidden && before > 0) foldedHeight = before;
+                closing = null; motion?.stop(section);
+                body.hidden = false; toggle.setAttribute('aria-expanded', 'true');
+                if (moving(event)) motion?.resize(section, before);
+            } else {
+                if (body.contains(document.activeElement)) toggle.focus({preventScroll:true});
+                toggle.setAttribute('aria-expanded', 'false');
+                if (moving(event) && motion?.shut) {
+                    var rect = section.getBoundingClientRect(), headRect = toggle.getBoundingClientRect(), css = getComputedStyle(section);
+                    var target = foldedHeight > 0 ? foldedHeight : headRect.bottom - rect.top + (parseFloat(css.paddingBottom) || 0) + (parseFloat(css.borderBottomWidth) || 0);
+                    var pendingClose = {}; closing = pendingClose;
+                    motion.shut(section, target, function () {
+                        if (closing !== pendingClose) return;
+                        closing = null; body.hidden = true;
+                    }, {follow:section});
+                } else {
+                    closing = null; motion?.stop(section); body.hidden = true;
+                }
+            }
         });
         var panelCell = layout.closest('td') || layout.parentElement, holder = layout.parentElement.matches('.univer-app-table-scroll') ? layout.parentElement : layout;
         holder.after(section);
@@ -820,12 +1016,30 @@
             if (all) wrap.appendChild(el('p', 'univer-scr-zeros-note', w.zeroAll));
             var button = el('button', 'univer-scr-zeros-toggle', w.zeroShow(zeros)); button.type = 'button'; button.setAttribute('aria-expanded', 'false');
             wrap.appendChild(button);
+            var closing = null;
             listen(button, 'click', function (event) {
-                var open = box.classList.contains('univer-scr-zeros-hidden'), before = box.getBoundingClientRect().height;
-                ui()?.stop(box);
-                if (open) unmark(box, 'univer-scr-zeros-hidden'); else mark(box, 'univer-scr-zeros-hidden');
-                button.setAttribute('aria-expanded', String(open)); button.textContent = open ? w.zeroHide : w.zeroShow(zeros);
-                if (moving(event)) ui()?.resize(box, Math.max(before, 1), open ? 260 : 200);
+                var open = box.classList.contains('univer-scr-zeros-hidden') || !!closing, motion = ui();
+                if (open) {
+                    var before = box.getBoundingClientRect().height;
+                    closing = null; motion?.stop(box);
+                    unmark(box, 'univer-scr-zeros-hidden');
+                    button.setAttribute('aria-expanded', 'true'); button.textContent = words().zeroHide;
+                    if (moving(event)) motion?.resize(box, before);
+                } else {
+                    button.setAttribute('aria-expanded', 'false'); button.textContent = words().zeroShow(zeros);
+                    if (all && moving(event) && motion?.collapse) {
+                        var pendingClose = {}; closing = pendingClose;
+                        motion.collapse(box, function () {
+                            if (closing !== pendingClose) return;
+                            closing = null; mark(box, 'univer-scr-zeros-hidden');
+                        });
+                    } else {
+                        var height = box.getBoundingClientRect().height;
+                        closing = null; motion?.stop(box);
+                        mark(box, 'univer-scr-zeros-hidden');
+                        if (moving(event)) motion?.resize(box, height);
+                    }
+                }
             });
             box.after(wrap); mark(box, 'univer-scr-zeros-hidden'); if (all) mark(box, 'univer-scr-zeros-all');
             nodes.push(wrap); marks.push([box, 'univer-scr-zeros-hidden'], [box, 'univer-scr-zeros-all']);
@@ -867,6 +1081,7 @@
     }
 
     var ROUTES = [
+        [/^\/student\/interactive\/syllabus\/print\/\d+\/\d+\/?$/i, 'syllabus-print', printedSyllabus],
         [/^\/student\/my(exam|midterm)\/schedule(\/|$)/i, 'exams', exams],
         [/^\/student\/stud\/rating\/anket(\/|$)/i, 'igpa', igpa],
         [/^\/student\/(fail|failfx|gpaincrease)(\/|$)/i, 'orders', orders],
@@ -962,12 +1177,12 @@ ${P} #l4 table.mt.univer-scr-folded>tbody>tr:not(:first-child) { display:none; }
 ${P} #l4 table.mt.univer-scr-foldable>tbody>tr:first-child>td.ct { display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; overflow-wrap:break-word; word-break:normal; }
 ${P} #l4 button.univer-scr-fold { display:inline-flex; align-items:center; gap:8px; min-height:40px; margin:0 0 0 auto; padding:0 12px; border:1px solid var(--u-line); border-radius:10px; background:var(--u-surface); color:var(--u-brand); font:500 var(--u-fs-meta)/1.2 var(--u-font); white-space:nowrap; cursor:pointer; }
 ${P} #l4 button.univer-scr-fold::after { content:''; width:16px; height:16px; background:currentColor; ${mask(chevron, '16px')}; transform:rotate(180deg); }
-${P} #l4 table.univer-scr-folded button.univer-scr-fold::after { transform:none; }
+${P} #l4 button.univer-scr-fold[aria-expanded=false]::after { transform:none; }
 ${P} #l4 .univer-scr-fold-count { color:var(--u-muted); font-weight:400; }
 ${P} #l4 .univer-scr-fold-count:empty { display:none; }
 
 /* Folded memo text: a few lines and a fade into the card. */
-${P} #l4 .univer-scr-clamp:not(.univer-scr-open) { max-height:10.5em; overflow:hidden; -webkit-mask-image:linear-gradient(#000 60%,transparent); mask-image:linear-gradient(#000 60%,transparent); }
+${P} #l4 .univer-scr-clamp:not(.univer-scr-open):not([data-univer-resizing]) { max-height:10.5em; overflow:hidden; -webkit-mask-image:linear-gradient(#000 60%,transparent); mask-image:linear-gradient(#000 60%,transparent); }
 ${P} #l4 button.univer-scr-more { display:inline-flex; align-items:center; gap:6px; min-height:44px; margin:8px 0 0; padding:0 14px; border:1px solid var(--u-brand-line); border-radius:10px; background:var(--u-surface); color:var(--u-brand); font:500 var(--u-fs-meta)/1.2 var(--u-font); cursor:pointer; }
 ${P} #l4 button.univer-scr-more::after { content:''; width:16px; height:16px; background:currentColor; ${mask(chevron, '16px')}; }
 ${P} #l4 button.univer-scr-more[aria-expanded=true]::after { transform:rotate(180deg); }
@@ -1156,11 +1371,16 @@ ${M} #l4 :is(a.univer-scr-action,a.univer-scr-link,button.univer-scr-start,butto
     }
     function apply(lang) {
         language = lang || 'ru';
-        if (!capable || document.readyState === 'loading' || !document.body) return;
+        if (document.readyState === 'loading' || !document.body) return;
         var path = location.pathname, route = ROUTES.find(function (r) { return r[0].test(path); });
         var root = document.documentElement;
         if (!route || !root.classList.contains('univer-mobile')) { release(); return; }
         if (page && page !== route[1]) release();
+        if (route[1] === 'syllabus-print') {
+            page = route[1]; mark(root, 'univer-scr-page-' + page);
+            printedSyllabus(); return;
+        }
+        if (!capable) return;
         if (!style || !style.isConnected) {
             style = document.createElement('style'); style.id = 'univer-screens-style'; style.textContent = css();
             // First in <head>: the first declared layer wins among !important rules.
@@ -1179,6 +1399,8 @@ ${M} #l4 :is(a.univer-scr-action,a.univer-scr-link,button.univer-scr-start,butto
         });
     }
     function release() {
+        syllabusContacts.forEach(releaseContacts); syllabusContacts.clear();
+        copyStatus?.remove(); copyStatus = null;
         Object.keys(views).forEach(forget);
         clearInterval(examTimer); examTimer = 0;
         listeners.forEach(function (l) { l[0].removeEventListener(l[1], l[2]); }); listeners = [];

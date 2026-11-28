@@ -230,13 +230,14 @@ html.univer-mobile .univer-app-cards>tbody, html.univer-mobile .univer-app-cards
 html.univer-mobile .univer-app-card-header { display:none!important; }
 html.univer-mobile .univer-app-card-header.univer-app-sort-head { display:flex!important; flex-wrap:wrap; gap:6px; margin:8px 0; }
 html.univer-mobile .univer-app-sort-head>th { display:block!important; min-width:0!important; width:auto!important; padding:12px!important; border:1px solid #d7e3ef!important; border-radius:8px; font-size:12px!important; }
-html.univer-mobile .univer-app-card-row { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:6px 12px; margin:8px 0; padding:10px 12px; background:white; border:1px solid #d7e3ef; border-radius:10px; }
-html.univer-mobile .univer-app-card-row>:is(td,th) { display:block; width:auto!important; min-width:0!important; border:0!important; padding:0!important; white-space:normal!important; overflow-wrap:anywhere; line-height:1.5; }
+html.univer-mobile .univer-app-card-row { display:grid; height:auto!important; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:6px 12px; margin:8px 0; padding:10px 12px; background:white; border:1px solid #d7e3ef; border-radius:10px; }
+html.univer-mobile .univer-app-card-row>:is(td,th) { display:block; width:auto!important; min-width:0!important; height:auto!important; float:none!important; border:0!important; padding:0!important; white-space:normal!important; overflow-wrap:anywhere; line-height:1.5; }
 html.univer-mobile .univer-app-card-row>td:first-child { grid-column:1/-1; font-weight:600; }
 html.univer-mobile .univer-app-card-row>td[data-univer-field]::before { content:attr(data-univer-field); display:block; font-size:12px; font-weight:400; color:#4b5b6c; margin-bottom:4px; }
 html.univer-mobile .univer-app-card-row>td:has(a,input,textarea,select), html.univer-mobile .univer-app-card-row>.univer-app-long-field { grid-column:1/-1; }
+html.univer-mobile .univer-app-card-row>td.univer-app-blank-field { display:none!important; }
 html.univer-mobile .univer-app-card-row a { display:block; min-height:24px; padding:10px 0; overflow-wrap:anywhere; }
-html.univer-mobile .univer-app-card-section, html.univer-mobile .univer-app-card-section>:is(td,th) { display:block; box-sizing:border-box; width:100%!important; min-width:0!important; padding:8px!important; border:0!important; background:none!important; }
+html.univer-mobile .univer-app-card-section, html.univer-mobile .univer-app-card-section>:is(td,th) { display:block; box-sizing:border-box; width:100%!important; min-width:0!important; height:auto!important; padding:8px!important; border:0!important; background:none!important; }
 html.univer-mobile .univer-app-matrix :is(td,th) { min-width:3rem!important; padding:8px!important; overflow-wrap:normal!important; word-break:normal!important; }
 html.univer-mobile .univer-app-matrix tr>:first-child { min-width:6rem!important; }
 html.univer-mobile .univer-app-nav-table, html.univer-mobile .univer-app-nav-table>tbody { display:block; width:100%!important; min-width:0!important; }
@@ -253,13 +254,41 @@ html.univer-mobile.univer-app-document :is(p,span) { font-size:16px!important; }
 html.univer-mobile.univer-app-document h1 { font-size:22px!important; }
 html.univer-mobile .univer-app-document-layout, html.univer-mobile .univer-app-document-layout>tbody,
 html.univer-mobile .univer-app-document-layout>tbody>tr, html.univer-mobile .univer-app-document-layout>tbody>tr>:is(td,th) { display:block!important; width:100%!important; min-width:0!important; max-width:100%!important; box-sizing:border-box; height:auto!important; padding:4px 0!important; border:0!important; }
-html.univer-mobile.univer-app-document .univer-app-table-scroll { margin:12px 0; border:1px solid #d7e3ef; border-radius:8px; }
+html.univer-mobile.univer-app-document .univer-app-table-scroll { float:none!important; width:auto!important; margin:12px 0; border:1px solid #d7e3ef; border-radius:8px; }
 html.univer-mobile.univer-app-document .univer-app-table-scroll>table:not(.univer-app-document-layout):not(.univer-app-pairs) { width:auto!important; min-width:100%; table-layout:auto!important; }
 html.univer-mobile.univer-app-document .noprint { font-size:14px!important; line-height:1.4!important; padding:4px 0!important; }
 html.univer-mobile.univer-app-document .noprint br { display:none!important; }
 html.univer-mobile.univer-app-document .noprint a { display:inline-flex; align-items:center; min-height:48px; padding:0 10px; font-size:14px!important; }
 html.univer-mobile .univer-app-pairs li { margin:0!important; padding:0!important; list-style:none!important; }
 html.univer-mobile.univer-app-document .univer-app-table-scroll>table>:is(thead,tbody,tfoot)>tr>:is(td,th) { min-width:4rem!important; max-width:24rem; font-size:14px!important; padding:8px!important; white-space:normal!important; overflow-wrap:normal!important; word-break:normal!important; }
+@media screen {
+ html:root.univer-mobile.univer-scr-page-syllabus-print #content table.students td div { float:none!important; }
+ html:root.univer-mobile.univer-scr-page-syllabus-print #content .univer-scr-syllabus-person,
+ html:root.univer-mobile.univer-scr-page-syllabus-print #content .univer-scr-syllabus-field,
+ html:root.univer-mobile.univer-scr-page-syllabus-print #content .univer-scr-syllabus-value { float:none!important; position:static!important; width:auto!important; min-width:0!important; height:auto!important; margin:0!important; text-align:start!important; }
+ html:root.univer-mobile.univer-scr-page-syllabus-print #content .univer-scr-syllabus-head,
+ html:root.univer-mobile.univer-scr-page-syllabus-print #content .univer-scr-syllabus-empty { display:none!important; }
+ html:root.univer-mobile.univer-scr-page-syllabus-print #content .univer-scr-syllabus-person { display:grid!important; grid-template-columns:minmax(0,1fr); gap:10px; padding:12px!important; margin:0 0 10px!important; border:1px solid var(--u-line,#dfe5ec); border-radius:12px; background:var(--u-surface-2,#f1f4f7); }
+ html:root.univer-mobile.univer-scr-page-syllabus-print #content .univer-scr-syllabus-field { display:grid!important; grid-template-columns:minmax(0,1fr) auto; gap:0 8px; align-items:center; }
+ html:root.univer-mobile.univer-scr-page-syllabus-print #content span.univer-scr-syllabus-label { grid-column:1/-1; color:var(--u-muted,#5b6b7c)!important; font-size:13px!important; font-weight:600; }
+ html:root.univer-mobile.univer-scr-page-syllabus-print #content .univer-scr-syllabus-value { display:block!important; color:var(--u-ink,#16283b)!important; overflow-wrap:break-word; overflow-wrap:anywhere; padding:2px 0!important; }
+ html:root.univer-mobile.univer-scr-page-syllabus-print #content .univer-scr-syllabus-value a { display:inline-flex; align-items:center; box-sizing:border-box; max-width:100%; min-height:44px; color:var(--u-brand,#1b5fa6)!important; text-decoration:underline!important; text-underline-offset:3px; }
+ html:root.univer-mobile.univer-scr-page-syllabus-print #content .univer-scr-syllabus-none { color:var(--u-muted,#5b6b7c)!important; font-size:14px!important; }
+ html:root.univer-mobile.univer-scr-page-syllabus-print #content button.univer-scr-syllabus-copy { box-sizing:border-box; min-width:6.5rem; min-height:44px; padding:6px 10px; margin:0; border:1px solid var(--u-line-strong,#c8d3df); border-radius:8px; background:var(--u-surface,#fff); color:var(--u-brand,#1b5fa6); font:600 14px/1.2 var(--u-font,system-ui,sans-serif)!important; white-space:nowrap; cursor:pointer; }
+ html:root.univer-mobile.univer-scr-page-syllabus-print #content button.univer-scr-syllabus-copy[data-copied] { background:var(--u-brand-soft,#e9f1fb); border-color:var(--u-brand-line,#bfd3ea); }
+ html:root.univer-mobile.univer-scr-page-syllabus-print #content .univer-scr-syllabus-value a:focus-visible,
+ html:root.univer-mobile.univer-scr-page-syllabus-print #content button.univer-scr-syllabus-copy:focus-visible { outline:2px solid var(--u-brand,#1b5fa6); outline-offset:2px; }
+ html.univer-mobile .univer-scr-syllabus-status { position:absolute!important; width:1px!important; height:1px!important; padding:0!important; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; }
+}
+@media screen and (prefers-reduced-motion:no-preference) {
+ html:root.univer-mobile.univer-scr-page-syllabus-print:not(.univer-app-still):not(.univer-app-keyboard) #content button.univer-scr-syllabus-copy { transition:background-color 140ms ease,border-color 140ms ease,color 140ms ease; }
+}
+@media print {
+ html.univer-mobile .univer-scr-syllabus-label, html.univer-mobile .univer-scr-syllabus-copy,
+ html.univer-mobile .univer-scr-syllabus-status, html.univer-mobile .univer-scr-syllabus-none { display:none!important; }
+ html.univer-mobile #content .univer-scr-syllabus-value { display:contents!important; }
+ html.univer-mobile #content .univer-scr-syllabus-link { color:inherit!important; text-decoration:none!important; }
+}
 html.univer-mobile .univer-app-scroll-hint { margin:12px 0 4px; font-size:13px!important; line-height:1.4; color:#526b82; }
 html.univer-mobile .univer-app-scroll-hint[hidden] { display:none!important; }
 /* Keep study content first; auxiliary information belongs after it. */
@@ -332,8 +361,35 @@ html.univer-mobile .univer-app-news-jump-label { color:#4b5b6c; font-size:14px!i
 html.univer-mobile .univer-app-news-jump input { width:84px; min-height:48px; box-sizing:border-box; padding:8px; border:1px solid #bdcfe3; border-radius:8px; font:inherit; }
 html.univer-mobile .univer-app-news-jump button { min-height:48px; padding:8px 14px; border:0; border-radius:22px; background:#1b5fa6; color:#fff; font:inherit; font-weight:600; }
 html.univer-mobile .univer-app-news-body { display:flow-root; position:relative; }
-html.univer-mobile .univer-app-news-body[data-collapsed=true] { max-height:248px!important; overflow:hidden!important; }
+html.univer-mobile .univer-app-news-body[data-collapsed=true] { max-height:var(--univer-news-fold,132px)!important; overflow:hidden!important; }
 html.univer-mobile .univer-app-news-body[data-collapsed=true]::after { content:''; position:absolute; bottom:0; left:0; right:0; height:40px; pointer-events:none; background:linear-gradient(transparent,#fff); }
+html:root.univer-mobile .univer-app-news-body[data-collapsed=true][data-univer-resizing] { max-height:none!important; }
+html:root.univer-mobile .univer-app-news-body[data-univer-resizing]::after { display:none!important; }
+html.univer-mobile [data-univer-resizing] { overflow:hidden!important; }
+html:root.univer-mobile details[open][data-univer-shutting]>summary::after { transform:rotate(45deg)!important; }
+html:root.univer-mobile .univer-app-news tr.news { margin-bottom:24px!important; }
+html:root.univer-mobile .univer-app-news tr.news[data-univer-expanded=true] { margin-bottom:28px!important; border-color:var(--u-line-strong,#c8d3df)!important; }
+html:root.univer-mobile #l4 .univer-app-news button.univer-app-news-toggle[aria-expanded] { min-height:44px!important; }
+html:root.univer-mobile #l4 .univer-app-news button.univer-app-news-toggle[aria-expanded=true] { width:100%!important; margin:12px 0 0!important; padding-top:8px!important; border-top:1px solid var(--u-line,#dfe5ec)!important; border-radius:0!important; }
+@media (max-width:600px) {
+ html.univer-mobile .univer-app-news-body div[style],
+ html.univer-mobile .univer-app-news-body blockquote[style],
+ html.univer-mobile .univer-app-news-body section[style],
+ html.univer-mobile .univer-app-news-body p[style],
+ html.univer-mobile .univer-app-news-body pre[style],
+ html.univer-mobile .univer-app-news-body ul[style],
+ html.univer-mobile .univer-app-news-body ol[style],
+ html.univer-mobile .univer-app-news-body h1[style],
+ html.univer-mobile .univer-app-news-body h2[style],
+ html.univer-mobile .univer-app-news-body h3[style],
+ html.univer-mobile .univer-app-news-body h4[style],
+ html.univer-mobile .univer-app-news-body h5[style],
+ html.univer-mobile .univer-app-news-body h6[style],
+ html.univer-mobile .univer-app-news-body table[style],
+ html.univer-mobile .univer-app-news .news>td:nth-child(2) div[style]:not(.univer-app-news-body),
+ html.univer-mobile .univer-app-news .news>td:nth-child(2) blockquote[style],
+ html.univer-mobile .univer-app-news .news>td:nth-child(2) section[style] { margin-left:0!important; margin-right:0!important; }
+}
 html.univer-mobile button.univer-app-news-toggle { max-width:100%; box-sizing:border-box; white-space:normal; text-align:start; display:inline-flex; align-items:center; gap:8px; min-height:48px; margin:8px 0 0; padding:8px 12px; border:0; border-radius:22px; background:#eef4fb; color:#164e80; font:inherit; font-size:14px!important; font-weight:600; }
 html.univer-mobile button.univer-app-news-toggle[hidden] { display:none!important; }
 /* Attendance: course and lesson-type filters, passive totals and one syllabus button per course. */

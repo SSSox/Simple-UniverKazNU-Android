@@ -48,7 +48,7 @@ class NoticeBridge(private val web: WebView, private val channel: ChannelGuard, 
         val now = SystemClock.elapsedRealtime()
         // A check on the same interval is not skipped for arriving a little early.
         val fetch = messages && (refresh || lastFetch == Long.MIN_VALUE || now - lastFetch >= fetchIntervalMillis - 30_000)
-        web.evaluateJavascript("$script($fetch, $session, ${channel.senders()})") { result ->
+        web.evaluateJavascript("$script($fetch, $session, ${channel.senders()}, $refresh)") { result ->
             if (closed || url != web.url) return@evaluateJavascript
             val json = decode(runCatching { JSONTokener(result).nextValue() as? String }.getOrNull()) ?: return@evaluateJavascript
             // The interval starts when the page really began fetching (it had section links to read).
@@ -92,14 +92,16 @@ class NoticeBridge(private val web: WebView, private val channel: ChannelGuard, 
                     val item = array.optJSONObject(index) ?: return@mapNotNull null
                     val url = address(item.optString("u")) ?: return@mapNotNull null
                     val details = item.optJSONArray("d")?.let { list ->
-                        (0 until minOf(list.length(), Notices.MAX_DETAILS)).mapNotNull { at ->
+                        (0 until minOf(list.length(), Notices.detailLimit(url))).mapNotNull { at ->
                             val entry = list.optJSONObject(at) ?: return@mapNotNull null
                             val name = clean(entry.optString("t"), Notices.TITLE_LENGTH).ifEmpty { return@mapNotNull null }
                             NoticeDetail(name, entry.optString("e").takeIf { DATE.matches(it) }.orEmpty())
                         }
                     }.orEmpty()
+                    val survey = url == Notices.SURVEYS
+                    val open = (item.opt("o") as? Number)?.toInt()?.coerceIn(0, if (survey) Notices.MAX_SURVEYS else 9999) ?: -1
                     NoticeLink(url, clean(item.optString("t"), Notices.TITLE_LENGTH), item.optInt("n").coerceIn(0, 9999), details,
-                        menu = item.optInt("m") == 1, open = item.optInt("o", -1).coerceIn(-1, 9999), checking = item.optInt("c") == 1)
+                        menu = item.optInt("m") == 1, open = open, checking = survey && item.optInt("c") == 1)
                 }
             }.orEmpty()
             val menu = json.optBoolean("menu") && (json.optJSONArray("links")?.length() ?: 0) < 120 && links.any { it.menu }

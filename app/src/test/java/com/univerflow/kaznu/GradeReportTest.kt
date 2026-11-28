@@ -4,6 +4,7 @@ import com.univerflow.kaznu.domain.AppLanguage
 import com.univerflow.kaznu.domain.Band
 import com.univerflow.kaznu.domain.GradeReport
 import com.univerflow.kaznu.domain.ScoreBand
+import com.univerflow.kaznu.web.ReportMessage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -99,11 +100,32 @@ class GradeReportTest {
     }
 
     @Test fun theGoalAndEachCoursesAbsencesTravelWithTheReport() {
-        val report = GradeReport.of(message(listOf(course() + ("absences" to 4), course("Психология"))) + ("goal" to "top"))!!
+        val first = course() + mapOf("absences" to 4, "excused" to 2)
+        val second = course("Психология") + ("excused" to 3)
+        val report = GradeReport.of(message(listOf(first, second)) + ("goal" to "top"))!!
         assertEquals(Band.TOP, report.goal)
         assertEquals(listOf(4, 0), report.courses.map { it.absences })
+        assertEquals(listOf(2, 3), report.courses.map { it.excused })
+        assertEquals(4, report.unexcusedAbsences)
+        assertEquals(5, report.excusedAbsences)
         // A page without a goal (or an older one without the fields) still makes a report.
         val plain = GradeReport.of(message() + ("goal" to null))!!
         assertNull(plain.goal); assertEquals(0, plain.courses[0].absences)
+        assertEquals(0, plain.courses[0].excused)
+    }
+
+    @Test fun reportMessagesKeepAbsenceCountsBoundedAndRejectDeeperContainers() {
+        val prefix = GradeReport.MESSAGE_PREFIX
+        val start = """${prefix}{"v":1,"term":null,"student":"","courses":[{"name":"History","absences":4,"excused":"""
+        val end = ""","scores":[{"label":"RK1","max":"100","value":"63"}]}]}"""
+        val valid = start + "999" + end
+        assertEquals(999, ReportMessage.parse(valid)!!.excusedAbsences)
+        for (invalid in listOf("-1", "1000", "2.5", "\"4\"", "null", "true", "[]", "{}")) {
+            assertNull(invalid, ReportMessage.parse(start + invalid + end))
+            assertNull(invalid, ReportMessage.parse(valid.replace("\"absences\":4", "\"absences\":$invalid")))
+        }
+        assertNull(ReportMessage.parse(valid.replace("\"v\":1", "\"v\":1.5")))
+        val nested = valid.replace("\"value\":\"63\"", "\"value\":\"63\",\"ignored\":[]")
+        assertNull("a container below a score exceeds the report depth", ReportMessage.parse(nested))
     }
 }

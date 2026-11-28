@@ -1312,6 +1312,25 @@ html:root.univer-mobile #l4 button.univer-app-dist-more { display:flex!important
 html:root.univer-mobile #l4 a.univer-app-dist-due-item[data-closed=true] { background:var(--u-surface-2)!important; }
 html:root.univer-mobile #l4 a.univer-app-dist-due-item[data-closed=true] .univer-app-dist-due-name { color:var(--u-text); font-weight:500; }
 html:root.univer-mobile #l4 section.univer-app-dist-week-tasks { margin-top:0; }
+/* Tasks panel: one head with the single Refresh, the open/closed tabs and one list per tab. */
+html:root.univer-mobile #l4 .univer-app-dist-panel-head { display:flex; align-items:center; flex-wrap:wrap; gap:6px 12px; }
+html:root.univer-mobile #l4 .univer-app-dist-panel-head>h2.univer-app-dist-due-title { flex:1 1 auto; min-width:0; }
+html:root.univer-mobile #l4 button.univer-app-dist-refresh { display:inline-flex!important; align-items:center; justify-content:center; flex:0 0 auto; width:auto!important; min-height:44px!important; margin:0!important; padding:0 14px!important; border:1px solid var(--u-brand-line)!important; border-radius:10px!important; background:var(--u-surface)!important; box-shadow:none!important; color:var(--u-brand-strong)!important; font-size:14px!important; font-weight:600!important; }
+html:root.univer-mobile #l4 button.univer-app-dist-refresh:active { background:var(--u-surface-2)!important; }
+html:root.univer-mobile #l4 button.univer-app-dist-refresh[disabled] { border-color:var(--u-line)!important; color:var(--u-muted)!important; }
+html:root.univer-mobile #l4 p.univer-app-dist-failed { margin:2px 0 0!important; color:var(--u-danger)!important; font-size:13px!important; font-weight:500!important; line-height:1.4!important; overflow-wrap:anywhere; }
+html:root.univer-mobile #l4 p.univer-app-dist-failed[hidden] { display:none!important; }
+html:root.univer-mobile #l4 .univer-app-dist-tabs { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin:10px 0 0; }
+html:root.univer-mobile #l4 .univer-app-dist-tabs[hidden] { display:none!important; }
+html:root.univer-mobile #l4 .univer-app-dist-tabs>button { display:inline-flex; align-items:center; justify-content:center; gap:8px; width:auto!important; min-height:44px!important; margin:0!important; padding:0 12px!important; border:1px solid var(--u-line)!important; border-radius:10px!important; background:var(--u-surface)!important; box-shadow:none!important; color:var(--u-text)!important; font-size:14px!important; font-weight:600!important; }
+html:root.univer-mobile #l4 .univer-app-dist-tabs>button[aria-pressed=true] { border-color:var(--u-brand-fill,#1b5fa6)!important; background:var(--u-brand-fill,#1b5fa6)!important; color:#fff!important; }
+html:root.univer-mobile #l4 .univer-app-dist-tabs>button:not([aria-pressed=true]):active { background:var(--u-surface-2)!important; }
+html:root.univer-mobile #l4 .univer-app-dist-tabs>button[aria-pressed=true] .univer-app-dist-tab-count { color:#fff!important; }
+html:root.univer-mobile #l4 .univer-app-dist-tab-count { color:var(--u-muted); font-size:13px; font-weight:500; font-variant-numeric:tabular-nums; }
+html:root.univer-mobile #l4 .univer-app-dist-tab-panel[hidden] { display:none!important; }
+html:root.univer-mobile #l4 p.univer-app-dist-empty { margin:2px 0 0!important; color:var(--u-muted)!important; font-size:14px!important; line-height:1.4!important; }
+html:root.univer-mobile #l4 p.univer-app-dist-empty[hidden] { display:none!important; }
+html:root.univer-mobile #l4 section.univer-app-dist-tasks-panel[data-state=failed] > p.univer-app-dist-due-status { color:var(--u-danger)!important; }
 /* Task page: one card with the name, deadline, facts and description; the answer form below it. */
 html:root.univer-mobile #l4 table.mt>tbody>tr.top>td.ct.univer-app-task-head.univer-app-task-head { font-size:0!important; line-height:0!important; padding:4px 0 8px!important; }
 html:root.univer-mobile #l4 td.ct.univer-app-task-head>a[href] { display:inline-block; font-size:14px!important; line-height:1.6!important; }
@@ -1556,13 +1575,13 @@ html:root:root:root:root.univer-mobile #l4 .univer-app-attendance-overview { mar
 html:root:root:root:root.univer-mobile #l4 p.univer-app-attendance-overview-title { display:flex; align-items:center; min-height:48px; box-sizing:border-box; margin:0!important; padding:12px 14px!important; border-bottom:1px solid var(--u-line); background:var(--u-surface-2); color:var(--u-ink)!important; font-size:16px!important; font-weight:600!important; }
 html:root:root:root:root.univer-mobile #l4 ul.univer-app-attendance-overview-list { margin:0!important; padding:4px 14px 8px!important; }
 html:root:root:root:root.univer-mobile #l4 ul.univer-app-attendance-overview-list>li:first-child { border-top:0; }
-html:root:root:root:root.univer-mobile #l4 button.univer-app-attendance-overview-name { flex:1 1 auto; min-width:0; min-height:0!important; height:auto!important; padding:0!important; border:0!important; background:none!important; box-shadow:none!important; color:var(--u-brand)!important; font:500 15px/1.3 var(--u-font)!important; text-align:start; }
+html:root:root:root:root.univer-mobile #l4 button.univer-app-attendance-overview-name { flex:1 1 auto; min-width:0; min-height:44px!important; height:auto!important; padding:0!important; border:0!important; background:none!important; box-shadow:none!important; color:var(--u-brand)!important; font:500 15px/1.3 var(--u-font)!important; text-align:start; overflow-wrap:anywhere!important; }
 /* A course: its name, one small table of numbers, and the class log folded under it. */
 html:root:root:root:root.univer-mobile #l4 .univer-app-course-heading { display:block; margin:6px 0 8px; padding-top:14px; text-align:start; }
 html:root:root:root:root.univer-mobile #l4 :is(.univer-app-course-name,.univer-app-course-title>.univer-app-attendance-course) { display:inline; min-height:0!important; height:auto!important; padding:0!important; border:0!important; background:none!important; box-shadow:none!important; color:var(--u-ink)!important; font-size:18px!important; font-weight:600!important; line-height:1.3; text-decoration:none!important; }
 html:root:root:root:root.univer-mobile #l4 .univer-app-course-meta { display:flex; flex-wrap:wrap; gap:0 12px; margin-top:2px; color:var(--u-muted); font-size:13px!important; }
 html:root:root:root:root.univer-mobile #l4 .univer-app-course-meta span { font-size:13px!important; }
-html:root:root:root:root.univer-mobile #l4 button.univer-app-course-syllabus { min-height:40px!important; height:40px; margin:8px 0 0!important; padding:0 12px!important; border-radius:10px!important; font-size:14px!important; }
+html:root:root:root:root.univer-mobile #l4 button.univer-app-course-syllabus { min-height:44px!important; height:auto!important; margin:8px 0 0!important; padding:4px 12px!important; border-radius:10px!important; font-size:14px!important; white-space:normal!important; }
 html:root:root:root:root.univer-mobile #l4 .univer-app-attendance-summary { display:block; width:100%; box-sizing:border-box; margin:0 0 6px!important; padding:0!important; overflow:hidden; border:1px solid var(--u-line); border-radius:12px; background:var(--u-surface); box-shadow:none; }
 html:root:root:root:root.univer-mobile #l4 .univer-app-score-table>div { display:grid; grid-template-columns:minmax(0,1fr) repeat(var(--univer-columns,2),minmax(52px,76px)); align-items:center; min-height:40px; box-sizing:border-box; padding:4px 14px; border:0; border-top:1px solid var(--u-line); }
 html:root:root:root:root.univer-mobile #l4 .univer-app-score-table>div>:not(:first-child) { text-align:end; }
@@ -1572,7 +1591,9 @@ html:root:root:root:root.univer-mobile #l4 .univer-app-score-table .univer-app-t
 html:root:root:root:root.univer-mobile #l4 .univer-app-type-label { min-width:0; color:var(--u-ink); font-size:15px; font-weight:500; }
 html:root:root:root:root.univer-mobile #l4 .univer-app-score-table .univer-app-score { display:block; position:static; min-width:0!important; padding:0!important; border:0; border-radius:0; background:none; box-shadow:none; color:var(--u-ink); font-size:15px; font-weight:500; font-variant-numeric:tabular-nums; }
 html:root:root:root:root.univer-mobile #l4 p.univer-app-attendance-nothing, html:root:root:root:root.univer-mobile #l4 .univer-app-attendance-summary>.univer-app-type-row, html:root:root:root:root.univer-mobile #l4 p.univer-app-attendance-overall-value { margin:0!important; padding:10px 14px!important; }
-html:root:root:root:root.univer-mobile #l4 button.univer-app-attendance-details-toggle { display:flex!important; align-items:center; width:100%; height:44px!important; min-height:44px!important; margin:0!important; padding:0 14px!important; border:0!important; border-top:1px solid var(--u-line)!important; border-radius:0!important; background:none!important; box-shadow:none!important; color:var(--u-brand)!important; font-size:14px!important; font-weight:600!important; }
+html:root:root:root:root.univer-mobile #l4 button.univer-app-attendance-details-toggle { display:flex!important; align-items:center; justify-content:space-between; width:100%; height:auto!important; min-height:44px!important; margin:0!important; padding:6px 14px!important; border:0!important; border-top:1px solid var(--u-line)!important; border-radius:0!important; background:none!important; box-shadow:none!important; color:var(--u-brand)!important; font-size:14px!important; font-weight:600!important; text-align:start; white-space:normal!important; }
+html:root:root:root:root.univer-mobile #l4 button.univer-app-attendance-details-toggle::after { flex:none; margin-inline-end:2px; }
+html:root:root:root:root.univer-mobile #l4 button.univer-app-attendance-details-toggle:focus-visible { outline:2px solid var(--u-brand)!important; outline-offset:-3px; }
 html:root:root:root:root.univer-mobile #l4 .univer-app-lesson-label { gap:2px 10px; margin:12px 0 6px; }
 @media (max-width:359px) {
  html:root:root:root:root.univer-mobile #l4 .univer-app-score-table>div { grid-template-columns:minmax(0,1fr) repeat(var(--univer-columns,2),minmax(44px,60px)); padding-left:12px; padding-right:12px; }
@@ -1582,6 +1603,7 @@ html:root:root:root:root.univer-mobile #l4 .univer-app-lesson-label { gap:2px 10
 html:root:root:root.univer-mobile :is(.univer-app-schedule-modes,#l4 .univer-app-attendance-filters) { position:relative; display:flex; flex-wrap:wrap; gap:0; width:auto; max-width:100%; box-sizing:border-box; margin:0; padding:2px!important; border:0!important; border-radius:10px; background:#e9eef4; box-shadow:none; }
 html:root:root:root.univer-mobile .univer-app-schedule-modes { margin:0 0 8px; }
 html:root:root:root:root.univer-mobile #l4 :is(.univer-app-schedule-modes,.univer-app-attendance-filters) button { position:relative; z-index:1; flex:1 1 auto; min-height:40px!important; height:40px; margin:0!important; padding:0 10px!important; border:0!important; border-radius:8px!important; background:transparent!important; box-shadow:none!important; color:var(--u-muted)!important; font-size:14px!important; font-weight:600!important; white-space:nowrap; }
+html:root:root:root:root.univer-mobile #l4 .univer-app-attendance-filters button { min-height:44px!important; height:auto; padding-block:6px!important; white-space:normal!important; }
 html:root:root:root:root.univer-mobile #l4 :is(.univer-app-schedule-modes,.univer-app-attendance-filters) button[aria-pressed=true] { background:#fff!important; color:var(--u-brand)!important; box-shadow:0 1px 2px rgba(16,40,70,.1),0 0 0 .5px rgba(16,40,70,.08)!important; }
 html:root.univer-mobile .univer-kit-thumb { position:absolute; left:0; top:0; border-radius:8px; background:#fff; box-shadow:0 1px 2px rgba(16,40,70,.1),0 0 0 .5px rgba(16,40,70,.08); transition:transform .3s var(--u-ease-out),width .3s var(--u-ease-out),height .3s var(--u-ease-out); }
 html:root:root:root:root.univer-mobile #l4 .univer-kit-slid button[aria-pressed=true] { background:transparent!important; box-shadow:none!important; color:var(--u-brand)!important; }
@@ -1669,9 +1691,39 @@ html:root:root:root:root.univer-mobile #l4 p.univer-app-progress-next[data-unive
 html:root:root:root:root.univer-mobile #l4 .univer-app-fresh { padding:1px 7px; border-radius:999px; background:var(--u-brand); color:#fff; font-size:var(--u-fs-caption); font-weight:600; line-height:1.5; }
 html:root:root:root:root.univer-mobile.univer-app-dark #l4 .univer-app-fresh { color:var(--u-bg); }
 html:root:root:root:root.univer-mobile .univer-app-overview-score[data-univer-fresh]::after { content:''; position:absolute; top:4px; right:4px; width:7px; height:7px; border-radius:50%; background:var(--u-brand); }
-html:root:root:root:root.univer-mobile #l4 p.univer-app-attendance-absences { margin:0!important; padding:10px 14px!important; border-top:1px solid var(--u-line); color:var(--u-text)!important; font-size:var(--u-fs-meta)!important; line-height:1.4!important; }
-html:root:root:root:root.univer-mobile #l4 p.univer-app-attendance-absences>b { margin-left:4px; color:var(--u-ink); font-weight:650; }
-html:root:root:root:root.univer-mobile #l4 p.univer-app-attendance-absences>span { color:var(--u-muted); }
+html:root:root:root:root.univer-mobile #l4 .univer-app-attendance-term,
+html:root:root:root:root.univer-mobile #l4 .univer-app-attendance-absences { display:flex; flex-wrap:wrap; gap:6px 8px; padding:10px 14px; color:var(--u-text); font-size:var(--u-fs-meta); line-height:1.4; text-align:start; }
+html:root:root:root:root.univer-mobile #l4 .univer-app-attendance-term { margin:0 0 12px; border:1px solid var(--u-line-strong); border-radius:12px; background:var(--u-surface-2); }
+html:root:root:root:root.univer-mobile #l4 .univer-app-attendance-absences { border-top:1px solid var(--u-line); }
+html:root:root:root:root.univer-mobile #l4 .univer-app-attendance-absence-title { flex:0 0 100%; color:var(--u-ink); font-weight:600; }
+html:root:root:root:root.univer-mobile #l4 .univer-app-attendance-absence-count { padding:3px 8px; border-radius:6px; background:var(--univer-band-fair-soft); color:var(--univer-band-fair-ink); }
+html:root:root:root:root.univer-mobile #l4 .univer-app-attendance-absence-count[data-kind=unexcused] { background:var(--univer-band-low-soft); color:var(--univer-band-low-ink); }
+html:root:root:root:root.univer-mobile #l4 .univer-app-attendance-absence-count>b { padding-inline-start:4px; font-variant-numeric:tabular-nums; }
+html:root:root:root:root.univer-mobile #l4 .univer-app-attendance-absence-breakdown { flex:0 0 100%; color:var(--u-muted); }
+html:root:root:root:root.univer-mobile #l4 .univer-app-attendance-term[hidden],
+html:root:root:root:root.univer-mobile #l4 tr.univer-app-attendance-log-host[hidden],
+html:root:root:root:root.univer-mobile #l4 .univer-app-attendance-log[hidden],
+html:root:root:root:root.univer-mobile #l4 .univer-app-attendance-log-type[hidden] { display:none!important; }
+html:root:root:root:root.univer-mobile #l4 tr.univer-app-attendance-log-host,
+html:root:root:root:root.univer-mobile #l4 tr.univer-app-attendance-log-host>td { height:auto!important; min-height:0!important; margin:0!important; padding:0!important; border:0!important; }
+html:root:root:root:root.univer-mobile #l4 .univer-app-attendance-log { display:flow-root; text-align:start; }
+html:root:root:root:root.univer-mobile #l4 .univer-app-attendance-log[aria-hidden=true] { pointer-events:none; }
+html:root:root:root:root.univer-mobile #l4 .univer-app-attendance-log-body { display:flow-root; padding:4px 0 16px; }
+html:root:root:root:root.univer-mobile #l4 .univer-app-attendance-log-type { min-width:0; margin:0; padding:0 12px 4px; border:1px solid var(--u-line); border-radius:12px; background:var(--u-surface); }
+html:root:root:root:root.univer-mobile #l4 .univer-app-attendance-log-type:not([hidden])~.univer-app-attendance-log-type:not([hidden]) { margin-top:8px; }
+html:root:root:root:root.univer-mobile #l4 h3.univer-app-attendance-log-title { margin:0 -12px!important; padding:9px 12px!important; border:0; border-bottom:1px solid var(--u-line); border-radius:11px 11px 0 0; background:var(--u-surface-2); color:var(--u-ink)!important; font-size:var(--u-fs-body)!important; font-weight:600; line-height:1.4; }
+html:root:root:root:root.univer-mobile #l4 .univer-app-attendance-log-rows { width:100%!important; table-layout:fixed!important; border:0!important; border-spacing:0!important; background:none!important; }
+html:root:root:root:root.univer-mobile #l4 .univer-app-attendance-log-rows>tbody>tr>td { height:auto!important; padding:0!important; border:0!important; background:none!important; }
+html:root:root:root:root.univer-mobile #l4 .univer-app-attendance-log-type .univer-app-lesson-label>strong { display:none; }
+html:root:root:root:root.univer-mobile #l4 .univer-app-attendance-log-type .univer-app-lesson-label>span { color:var(--u-ink); font-weight:500; }
+html:root:root:root:root.univer-mobile #l4 td[data-univer-absence=unexcused] { background:var(--univer-band-low-soft)!important; color:var(--univer-band-low-ink)!important; font-weight:700; }
+html:root:root:root:root.univer-mobile #l4 td[data-univer-absence=excused] { background:var(--univer-band-fair-soft)!important; color:var(--univer-band-fair-ink)!important; font-weight:700; }
+@media (prefers-reduced-motion:reduce) {
+ html:root:root:root:root.univer-mobile #l4 .univer-app-attendance-log { height:auto!important; overflow:visible!important; }
+ html:root:root:root:root.univer-mobile #l4 .univer-app-attendance-log[aria-hidden=true] { display:none!important; }
+}
+html:root:root:root:root.univer-mobile.univer-app-still #l4 .univer-app-attendance-log { height:auto!important; overflow:visible!important; }
+html:root:root:root:root.univer-mobile.univer-app-still #l4 .univer-app-attendance-log[aria-hidden=true] { display:none!important; }
 :root.univer-mobile.univer-app-dark { color-scheme:dark;
   --u-brand:#8ebbf0; --u-brand-strong:#b5d3f6; --u-brand-soft:#1a2b40; --u-brand-line:#34507a;
   --u-ink:#e6ecf3; --u-text:#cfd8e2; --u-muted:#9fadbc; --u-line:#2b3746; --u-line-strong:#3b4a5b;

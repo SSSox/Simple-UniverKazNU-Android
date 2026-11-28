@@ -12,6 +12,7 @@ import com.univerflow.kaznu.domain.Notices
 import com.univerflow.kaznu.domain.PinnedLink
 import com.univerflow.kaznu.domain.ReminderSettings
 import com.univerflow.kaznu.domain.SiteNotice
+import com.univerflow.kaznu.domain.SurveyCheck
 import com.univerflow.kaznu.domain.Shortcuts
 import com.univerflow.kaznu.domain.TextZoom
 import org.json.JSONArray
@@ -130,13 +131,16 @@ class AppPreferences(context: Context, name: String = "univer.preferences") {
                     val item = array.optJSONObject(index) ?: return@mapNotNull null
                     val kind = NoticeKind.fromCode(item.optString("kind")) ?: return@mapNotNull null
                     val details = item.optJSONArray("details")?.let { list ->
-                        (0 until minOf(list.length(), Notices.MAX_DETAILS)).mapNotNull { at ->
+                        (0 until minOf(list.length(), Notices.detailLimit(item.optString("url")))).mapNotNull { at ->
                             list.optJSONObject(at)?.let { NoticeDetail(it.optString("title"), it.optString("until")) }
                         }
                     }.orEmpty()
-                    SiteNotice(item.optString("key").ifEmpty { return@mapNotNull null }, kind, item.optString("title"),
+                    val stored = SiteNotice(item.optString("key").ifEmpty { return@mapNotNull null }, kind, item.optString("title"),
                         item.optString("url").ifEmpty { return@mapNotNull null }, item.optInt("count"), item.optString("text"),
                         item.optString("page"), item.optLong("first_seen"), item.optBoolean("read"), details, item.optInt("open", -1), item.optBoolean("menu"))
+                    // Older records have neither field: the constructor's own defaults then stand.
+                    val status = SurveyCheck.entries.firstOrNull { it.name == item.optString("survey") } ?: stored.surveyStatus
+                    stored.copy(surveyStatus = status, readCount = item.optInt("read_count", stored.readCount))
                 }
             }.let(Notices::ordered)
         }.getOrDefault(emptyList())
@@ -145,6 +149,7 @@ class AppPreferences(context: Context, name: String = "univer.preferences") {
                 Notices.ordered(value).forEach {
                     put(JSONObject().put("key", it.key).put("kind", it.kind.code).put("title", it.title).put("url", it.url)
                         .put("count", it.count).put("text", it.text).put("page", it.page).put("first_seen", it.firstSeen).put("read", it.read).put("open", it.open).put("menu", it.menu)
+                        .put("survey", it.surveyStatus.name).put("read_count", it.readCount)
                         .put("details", JSONArray().apply { it.details.forEach { detail -> put(JSONObject().put("title", detail.title).put("until", detail.until)) } }))
                 }
             }

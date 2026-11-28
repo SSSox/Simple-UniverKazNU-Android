@@ -1,5 +1,6 @@
 /* Дистанционные курсы: a row the site opens only on dblclick becomes a card that replays click + dblclick on a tap.
- * Source rows and handlers stay in place, hidden; task counts come from GET reads (3 at a time, cached 5 min). */
+ * Source rows and handlers stay in place, hidden. Tasks live in one panel with open and closed tabs and a single
+ * Refresh; GET reads (3 at a time) are cached per account for ten minutes, an ended week with closed tasks for a day. */
 (function () {
     'use strict';
     if (location.origin !== 'https://univer.kaznu.kz' || window.__univerDiscussionV1) return;
@@ -10,8 +11,9 @@
     var openers = '#subjectShow_btn,#specialityOpen_btn,#discipline_btn,#add_task_btn,#preview_btn';
     // Toolbar actions on the selected row; each card offers them for its own row.
     var rowActions = ['#lessons_btn', '#mark_btn'];
-    var cachePrefix = 'univer.mobile.discussion-tasks.v1:', cacheTime = 5 * 60000;
-    var overview = null, taskCards = new Map();
+    var cacheKey = 'univer.app.discussion-tasks.v1', cacheCourses = 10 * 60000, cacheWeeks = 86400000;
+    var cacheSize = 400000, readWait = 15000;
+    var overview = null, taskCards = new Map(), saved = null;
     // Column headings observed on the site in Russian, Kazakh and English ("Бітіру уақыты", "Completion date", "Number of jobs").
     var columnStart = /^(дата начала|басталу|басталған|start)/i, columnEnd = /^(дата окончания|аяқталу|бітіру|end|completion)/i;
     var columnTasks = /задани|тапсырма|task|job/i;
@@ -19,7 +21,10 @@
     var columnTitle = /дисциплин|специальн|название|пән|мамандық|мамандығ|атау|discipline|specialty|speciality|title|name/i;
     function text() {
         return language === 'en' ? {instructions:'Instructions', current:'This week', description:'Description', items:'List', about:'About the course',
-                due:'Open tasks', checking:'Checking tasks…', noDue:'No open tasks', failed:'Some courses could not be checked', noTasks:'No tasks',
+                due:'Open tasks', closedHeading:'Closed tasks', openTab:'Open', closedTab:'Closed', viewLabel:'Which assignments to show',
+                refresh:'Refresh', noClosed:'No closed assignments', checking:'Checking tasks…',
+                checkingCourse:function (d, t) { return 'Checking courses: ' + d + ' of ' + t; },
+                noDue:'No open tasks', failed:'Some courses could not be checked', noTasks:'No tasks',
                 deadline:function (d) { return 'due ' + d; }, today:'today', tomorrow:'tomorrow', tasks:function (n) { return n + (n === 1 ? ' task' : ' tasks'); },
                 courseTasks:'Course tasks', noCourseTasks:'No tasks in this course yet', closed:'closed', partial:'Some tasks could not be loaded',
                 allWeeks:function (n) { return 'Show all weeks (' + n + ')'; }, hideEmpty:'Hide empty weeks', attempts:'Attempts', maxScore:'Max score', format:'Answer',
@@ -27,7 +32,10 @@
                 left:function (n, hours) { return hours ? n + ' h left' : n + (n === 1 ? ' day left' : ' days left'); }, more:'Show more', less:'Show less',
                 hint:'Up to 3 files', noMessages:'No messages yet'} :
             language === 'kz' ? {instructions:'Нұсқаулықтар', current:'Ағымдағы апта', description:'Сипаттама', items:'Тізім', about:'Курс туралы',
-                due:'Ашық тапсырмалар', checking:'Тапсырмалар тексерілуде…', noDue:'Ашық тапсырмалар жоқ', failed:'Кейбір пәндерді тексеру мүмкін болмады', noTasks:'Тапсырма жоқ',
+                due:'Ашық тапсырмалар', closedHeading:'Жабық тапсырмалар', openTab:'Ашық', closedTab:'Жабық', viewLabel:'Қай тапсырмаларды көрсету',
+                refresh:'Жаңарту', noClosed:'Жабық тапсырмалар жоқ', checking:'Тапсырмалар тексерілуде…',
+                checkingCourse:function (d, t) { return 'Пәндер тексерілуде: ' + d + ' / ' + t; },
+                noDue:'Ашық тапсырмалар жоқ', failed:'Кейбір пәндерді тексеру мүмкін болмады', noTasks:'Тапсырма жоқ',
                 deadline:function (d) { return 'мерзімі: ' + d; }, today:'бүгін', tomorrow:'ертең', tasks:function (n) { return n + ' тапсырма'; },
                 courseTasks:'Пән тапсырмалары', noCourseTasks:'Бұл пәнде әзірге тапсырма жоқ', closed:'мерзімі өтті', partial:'Тапсырмалардың бір бөлігі жүктелмеді',
                 allWeeks:function (n) { return 'Барлық апталар (' + n + ')'; }, hideEmpty:'Бос апталарды жасыру', attempts:'Жауап саны', maxScore:'Ең жоғары балл', format:'Жауап',
@@ -35,7 +43,10 @@
                 left:function (n, hours) { return n + (hours ? ' сағат' : ' күн') + ' қалды'; }, more:'Толығырақ', less:'Жасыру',
                 hint:'3 файлға дейін', noMessages:'Хабарламалар әзірге жоқ'} :
             {instructions:'Инструкции', current:'Текущая неделя', description:'Описание', items:'Список', about:'О курсе',
-                due:'Открытые задания', checking:'Проверяем задания…', noDue:'Открытых заданий нет', failed:'Не удалось проверить часть дисциплин', noTasks:'Заданий нет',
+                due:'Открытые задания', closedHeading:'Закрытые задания', openTab:'Открытые', closedTab:'Закрытые', viewLabel:'Какие задания показать',
+                refresh:'Обновить', noClosed:'Закрытых заданий нет', checking:'Проверяем задания…',
+                checkingCourse:function (d, t) { return 'Проверяем дисциплины: ' + d + ' из ' + t; },
+                noDue:'Открытых заданий нет', failed:'Не удалось проверить часть дисциплин', noTasks:'Заданий нет',
                 deadline:function (d) { return 'срок ' + d; }, today:'сегодня', tomorrow:'завтра', tasks:function (n) {
                     var v = n % 100, d = n % 10; return n + (v > 10 && v < 20 ? ' заданий' : d === 1 ? ' задание' : d > 1 && d < 5 ? ' задания' : ' заданий');
                 },
@@ -131,7 +142,7 @@
                 week:columns.week >= 0 ? clean(cells[columns.week]) : '', title:columns.week >= 0 && span.length ? period(span[0], span[1]) : (count && count[2] !== '0' ? title : taskTitle(name)),
                 discipline:index && /^\d+$/.test(row.id) ? row.id : '', name:name,
                 range:range, facts:facts, description:(row.getAttribute('title') || '').trim(), opens:opens(row), current:columns.week >= 0 && current,
-                tasks:tasks, resources:resources, started:!all.length || day(all[0]) <= today()};
+                tasks:tasks, resources:resources, started:!all.length || day(all[0]) <= today(), until:all[1] ? day(all[1]) + 86399999 : 0};
         })};
     }
     function labelWeek(number) { return (language === 'en' ? 'Week ' : language === 'kz' ? 'Апта ' : 'Неделя ') + number; }
@@ -304,8 +315,17 @@
         }
         return function (run) { return new Promise(function (resolve, reject) { queue.push({run:run, resolve:resolve, reject:reject}); next(); }); };
     }
+    // A read the server leaves unanswered ends at its deadline, body included: its course is reported as not checked
+    // instead of holding the "checking" state and a place in the gate for good.
     function fetchPage(path, signal) {
-        return fetch(path, {credentials:'same-origin', cache:'no-store', signal:signal}).then(function (response) {
+        var abort = new AbortController(), done = false;
+        var cancel = function () { if (!done) abort.abort(); };
+        var timer = setTimeout(cancel, readWait);
+        var stop = function () { clearTimeout(timer); if (signal) signal.removeEventListener('abort', cancel); };
+        if (signal) {
+            if (signal.aborted) cancel(); else signal.addEventListener('abort', cancel);
+        }
+        return fetch(path, {credentials:'same-origin', cache:'no-store', signal:abort.signal}).then(function (response) {
             var url = new URL(response.url || path, location.href);
             // A login page, Univer's 213 "sign in" answer or any redirect is not data: the discipline is reported as not checked.
             if (response.status !== 200 || url.origin !== location.origin || !/^\/student\/discussion\//.test(url.pathname)) throw new Error('unexpected page');
@@ -314,13 +334,57 @@
             var doc = new DOMParser().parseFromString(html, 'text/html');
             if (doc.querySelector('#login_frm') || !doc.querySelector('table.mt')) throw new Error('not a course page');
             return doc;
-        });
+        }).then(function (doc) { done = true; stop(); return doc; }, function (error) { done = true; stop(); throw error; });
     }
-    function weekCounts(doc) {
+    // Cached reads, per account and language: a course list for ten minutes, a week that ended days ago with all its
+    // tasks closed for a day. Only parsed titles, dates and links are kept — never the site's markup — at most a few
+    // hundred records, and nothing without the account mark the sign-in form leaves.
+    function account() { try { return localStorage.getItem('univer.app.account.v1') || ''; } catch (_) { return ''; } }
+    function fresh(at, limit) { return typeof at === 'number' && at <= Date.now() + 60000 && Date.now() - at < limit; }
+    function stored() {
+        var who = account();
+        if (!who) return null;
+        if (saved && saved.owner === who) return saved;
+        var value = null;
+        try { value = JSON.parse(localStorage.getItem(cacheKey) || 'null'); } catch (_) { value = null; }
+        return saved = value && typeof value === 'object' && value.owner === who && value.courses && typeof value.courses === 'object' &&
+            value.weeks && typeof value.weeks === 'object' ? value : {owner:who, courses:{}, weeks:{}};
+    }
+    function store(field, key, value, limit) {
+        var cache = stored(); if (!cache) return;
+        var records = cache[field]; records[key] = value;
+        var keys = Object.keys(records).sort(function (a, b) { return (records[a].at || 0) - (records[b].at || 0); });
+        while (keys.length > limit) delete records[keys.shift()];
+        try {
+            var raw = JSON.stringify(cache);
+            while (raw.length > cacheSize && keys.length) { delete records[keys.shift()]; raw = JSON.stringify(cache); }
+            if (raw.length <= cacheSize) localStorage.setItem(cacheKey, raw);
+        } catch (_) { }
+    }
+    function planPath(discipline, term) { return '/student/discussion/acpos/list/' + discipline + '/' + term + '/'; }
+    function validItem(item) {
+        return !!item && typeof item === 'object' && typeof item.title === 'string' && item.title.length > 0 && item.title.length <= 400 &&
+            (item.end === '' || /^\d{2}\.\d{2}\.\d{4}$/.test(item.end)) && /^\/student\/discussion\/(task|acpos|resource)\//.test(item.href || '');
+    }
+    function cachedCourse(cache, name, discipline, term) {
+        if (!cache) return null;
+        var record = cache.courses[language + '|' + planPath(discipline, term)];
+        if (!record || record.name !== name || !fresh(record.at, cacheCourses) || typeof record.tasks !== 'number' || !Array.isArray(record.items)) return null;
+        return {tasks:record.tasks, items:record.items.filter(validItem).slice(0, 200),
+            plans:Array.isArray(record.plans) ? record.plans.filter(function (id) { return /^\d+$/.test(id); }).slice(0, 6) : []};
+    }
+    // The week rows of a weeks page: their id, the site's own task count and where the week ends (its last minute).
+    function weekRows(doc) {
         var rows = linkRows(doc); if (!rows.length) return [];
         var labels = labelsOf(rows[0].closest('table')), tasks = labels.findIndex(function (label) { return columnTasks.test(label); });
         if (tasks < 0) throw new Error('weeks');
-        return rows.map(function (row) { return {id:row.id, tasks:parseInt(clean(row.cells[tasks]), 10) || 0}; });
+        var spans = [];
+        labels.forEach(function (label, i) { if (columnEnd.test(label) || columnPeriod.test(label)) spans.push(i); });
+        return rows.map(function (row) {
+            var cells = Array.from(row.cells), window = [];
+            spans.forEach(function (i) { window = window.concat(dates(clean(cells[i] || ''))); });
+            return {id:row.id, tasks:parseInt(clean(cells[tasks]), 10) || 0, end:window[1] ? day(window[1]) + 86399999 : 0};
+        });
     }
     function taskRows(doc) {
         var rows = linkRows(doc).filter(function (row) { return row.matches('.link'); }); if (!rows.length) return [];
@@ -328,70 +392,116 @@
         var title = labels.findIndex(function (l) { return /название|атау|title|name/i.test(l); }), end = labels.findIndex(function (l) { return columnEnd.test(l); });
         return rows.map(function (row) { return {id:row.id, title:taskTitle(clean(row.cells[title >= 0 ? title : 1])), end:end >= 0 ? dates(clean(row.cells[end]))[0] || '' : ''}; });
     }
-    function tasksOf(discipline, term, signal, run) {
-        var tail = discipline + '/' + term + '/';
-        return run(function () { return fetchPage('/student/discussion/acpos/list/' + tail, signal); }).then(function (doc) {
+    function tasksOf(discipline, term, signal, run, cache, force) {
+        var tail = discipline + '/' + term + '/', partial = false;
+        return run(function () { return fetchPage(planPath(discipline, term), signal); }).then(function (doc) {
             var plans = linkRows(doc).map(function (row) { return row.id; }).filter(function (id) { return /^\d+$/.test(id); }).slice(0, 6);
             return Promise.all(plans.map(function (plan) {
-                return run(function () { return fetchPage('/student/discussion/acpos/week/list/' + plan + '/' + tail, signal); }).then(function (doc) { return {plan:plan, weeks:weekCounts(doc)}; });
+                return run(function () { return fetchPage('/student/discussion/acpos/week/list/' + plan + '/' + tail, signal); }).then(function (doc) {
+                    return {plan:plan, weeks:weekRows(doc)};
+                }, function (error) { if (signal.aborted) throw error; partial = true; return {plan:plan, weeks:[]}; });
             }));
         }).then(function (plans) {
             var busy = [], total = 0;
-            plans.forEach(function (plan) { plan.weeks.forEach(function (week) { total += week.tasks; if (week.tasks > 0 && /^\d+$/.test(week.id)) busy.push({plan:plan.plan, week:week.id}); }); });
+            plans.forEach(function (plan) { plan.weeks.forEach(function (week) {
+                total += week.tasks; if (week.tasks > 0 && /^\d+$/.test(week.id)) busy.push({plan:plan.plan, week:week});
+            }); });
             return Promise.all(busy.slice(0, 24).map(function (entry) {
-                var href = '/student/discussion/task/list/' + entry.plan + '/' + tail + entry.week + '/';
-                // The task opens at the address the site's own dblclick uses; the week's list is the fallback.
-                return run(function () { return fetchPage(href, signal); }).then(function (doc) { return taskRows(doc).map(function (task) {
-                    return {title:task.title, end:task.end, href:/^\d+$/.test(task.id) ? '/student/discussion/task/preview/' + task.id + '/' + entry.plan + '/' + tail + entry.week + '/0/0/0/' : href};
-                }); });
-            })).then(function (found) { return {tasks:total, items:[].concat.apply([], found), plans:plans.map(function (plan) { return plan.plan; })}; });
-        });
-    }
-    function cached(id, term) {
-        try {
-            var value = JSON.parse(sessionStorage.getItem(cachePrefix + id + '/' + term) || 'null');
-            return value && Date.now() - value.at < cacheTime && Array.isArray(value.items) ? value : null;
-        } catch (_) { return null; }
-    }
-    function startOverview(disciplines, view) {
-        var term = termKey(), key = term + '|' + disciplines.map(function (entry) { return entry.discipline; }).join(',');
-        if (!term) return;
-        if (overview && overview.key === key) { if (overview.section) view.before(overview.section); return; }
-        overview?.controller.abort();
-        var controller = new AbortController(), run = limiter(3);
-        overview = {key:key, controller:controller, results:new Map(), names:new Map(), section:null};
-        var current = overview;
-        disciplines.forEach(function (entry) {
-            current.names.set(entry.discipline, entry.name);
-            var known = cached(entry.discipline, term);
-            current.results.set(entry.discipline, known);
-            if (known) return;
-            tasksOf(entry.discipline, term, controller.signal, run).then(function (result) {
-                result.at = Date.now();
-                try { sessionStorage.setItem(cachePrefix + entry.discipline + '/' + term, JSON.stringify(result)); } catch (_) {}
-                return result;
-            }, function (error) { return controller.signal.aborted ? null : {error:true}; }).then(function (result) {
-                if (controller.signal.aborted || overview !== current) return;
-                current.results.set(entry.discipline, result);
-                window.__univerMobileV1 ? window.__univerMobileV1.mutate(paint) : paint();
+                var href = '/student/discussion/task/list/' + entry.plan + '/' + tail + entry.week.id + '/';
+                return readTasks(href, entry.week, signal, run, cache, force, function (id) {
+                    // The task opens at the address the site's own dblclick uses; the week's list is the fallback.
+                    return /^\d+$/.test(id) ? '/student/discussion/task/preview/' + id + '/' + entry.plan + '/' + tail + entry.week.id + '/0/0/0/' : href;
+                }).then(null, function (error) { if (signal.aborted) throw error; partial = true; return []; });
+            })).then(function (found) {
+                return {tasks:total, items:[].concat.apply([], found), plans:plans.map(function (plan) { return plan.plan; }), partial:partial};
             });
         });
-        var section = el('section', 'univer-app-dist-due'), head = el('h2', 'univer-app-dist-due-title', text().due);
-        var status = el('p', 'univer-app-dist-due-status'); status.setAttribute('role', 'status');
-        var list = el('div', 'univer-app-dist-due-list'); list.setAttribute('role', 'list');
-        section.append(head, status, list); view.before(section);
-        current.section = section;
+    }
+    // One week's task list, served from the cache when the week ended days ago and every task in it is closed.
+    function readTasks(url, week, signal, run, cache, force, link) {
+        var count = Math.max(0, week.tasks || 0), key = language + '|' + url, kept = cache && cache.weeks[key];
+        var ended = week.end > 0 && week.end <= Date.now() - cacheWeeks;
+        if (!force && ended && kept && fresh(kept.at, cacheWeeks) && kept.count === count && Array.isArray(kept.items))
+            return Promise.resolve(kept.items.filter(validItem).slice(0, 200));
+        return run(function () { return fetchPage(url, signal); }).then(function (doc) {
+            var items = taskRows(doc).map(function (task) { return {title:task.title, end:task.end, href:link(task.id)}; });
+            if (ended && items.length && items.every(function (item) { return item.end && day(item.end) < today(); }))
+                store('weeks', key, {at:Date.now(), count:count, items:items}, 512);
+            return items;
+        });
     }
     function open(item) { return !item.end || day(item.end) >= today(); }
-    function paint() {
-        if (!overview?.section) return;
-        var waitingFor = 0, failed = 0, due = [];
-        overview.results.forEach(function (result, id) {
-            if (!result) waitingFor++; else if (result.error) failed++;
-            else result.items.filter(open).forEach(function (item) { due.push({title:item.title, end:item.end, href:item.href, course:overview.names.get(id)}); });
+    function safePath(value) { return typeof value === 'string' && /^\/student\/discussion\/(task|acpos|resource)\//.test(value) ? value : ''; }
+    // One list of tasks, split by whether they can still be handed in; the nearest deadline first in each.
+    function grouped(items) {
+        var groups = {open:[], closed:[]};
+        items.forEach(function (item) { groups[open(item) ? 'open' : 'closed'].push(item); });
+        groups.open.sort(function (a, b) { return (a.end ? day(a.end) : Infinity) - (b.end ? day(b.end) : Infinity); });
+        groups.closed.sort(function (a, b) { return (b.end ? day(b.end) : 0) - (a.end ? day(a.end) : 0); });
+        return groups;
+    }
+    function taskRowLink(item) {
+        var entry = el('div'), href = safePath(item.href), link = el(href ? 'a' : 'span', 'univer-app-dist-due-item');
+        entry.setAttribute('role', 'listitem');
+        if (href) link.href = href;
+        var isOpen = open(item);
+        if (!isOpen) link.dataset.closed = 'true'; else if (item.end && day(item.end) - today() <= 86400000) link.dataset.soon = 'true';
+        link.append(el('span', 'univer-app-dist-due-name', item.title),
+            el('span', 'univer-app-dist-due-meta', [item.course || item.context || '', item.end ? (isOpen ? deadline(item.end) : text().closed + ' ' + item.end.slice(0, 5)) : ''].filter(Boolean).join(' · ')));
+        entry.appendChild(link); return entry;
+    }
+    // A tasks panel: one head with the single Refresh, one row of tabs, one list per tab (the hidden one is out of the
+    // eye's way and out of a screen reader's alike).
+    function tasksBox(className) {
+        var section = el('section', className + ' univer-app-dist-tasks-panel'), head = el('div', 'univer-app-dist-panel-head');
+        section.setAttribute('aria-live', 'polite');
+        var title = el('h2', 'univer-app-dist-due-title'), refresh = el('button', 'univer-app-dist-refresh'); refresh.type = 'button';
+        head.append(title, refresh);
+        var status = el('p', 'univer-app-dist-due-status'); status.setAttribute('role', 'status');
+        var failed = el('p', 'univer-app-dist-failed'); failed.setAttribute('aria-live', 'polite');
+        var tabs = el('div', 'univer-app-dist-tabs'); tabs.setAttribute('role', 'group');
+        var body = el('div', 'univer-app-dist-bodies'), panels = {open:el('div', 'univer-app-dist-tab-panel'), closed:el('div', 'univer-app-dist-tab-panel')};
+        var lists = {open:el('div', 'univer-app-dist-due-list'), closed:el('div', 'univer-app-dist-due-list')};
+        var empty = {open:el('p', 'univer-app-dist-empty'), closed:el('p', 'univer-app-dist-empty')};
+        ['open', 'closed'].forEach(function (view) {
+            panels[view].dataset.view = view; lists[view].setAttribute('role', 'list');
+            empty[view].hidden = true; panels[view].append(lists[view], empty[view]);
         });
+        body.append(panels.open, panels.closed);
+        section.append(head, status, failed, tabs, body);
+        return {section:section, title:title, refresh:refresh, status:status, failed:failed, tabs:tabs, panels:panels, lists:lists, empty:empty};
+    }
+    function renderTabs(box, view, counts, pick) {
+        box.panels.open.hidden = view !== 'open'; box.panels.closed.hidden = view !== 'closed';
+        var signature = language + '|' + view + '|' + counts.open + '|' + counts.closed;
+        if (box.tabs.dataset.signature === signature) return;
+        box.tabs.dataset.signature = signature; box.tabs.textContent = '';
+        box.tabs.hidden = !(counts.open + counts.closed);
+        if (box.tabs.hidden) return;
+        box.tabs.setAttribute('aria-label', text().viewLabel);
+        [['open', text().openTab, counts.open], ['closed', text().closedTab, counts.closed]].forEach(function (entry) {
+            var button = el('button', ''); button.type = 'button'; button.dataset.view = entry[0];
+            button.append(el('span', '', entry[1]), el('span', 'univer-app-dist-tab-count', String(entry[2])));
+            button.setAttribute('aria-pressed', String(view === entry[0]));
+            button.addEventListener('click', function () { if (view !== entry[0]) pick(entry[0]); });
+            box.tabs.appendChild(button);
+        });
+    }
+    function renderList(box, view, items, emptyText) {
+        var list = box.lists[view];
+        setHidden(box.empty[view], !emptyText || !!items.length);
+        setText(box.empty[view], emptyText || '');
+        var signature = language + '|' + view + '|' + items.map(function (item) {
+            return [item.href, item.title, item.end, item.course, item.context].join('/');
+        }).join('|');
+        if (list.dataset.signature === signature) return;
+        list.dataset.signature = signature; list.textContent = '';
+        items.forEach(function (item) { list.appendChild(taskRowLink(item)); });
+    }
+    // The task count on each discipline card, from the same overview.
+    function paintCards() {
         taskCards.forEach(function (nodes, id) {
-            var result = overview.results.get(id), ready = !!result && !result.error;
+            var result = overview?.results.get(id), ready = !!result && !result.error;
             setHidden(nodes.stats, !ready); setHidden(nodes.count, !ready || !result.tasks);
             if (!ready) return;
             var pending = result.items.filter(open).sort(function (a, b) { return (a.end ? day(a.end) : Infinity) - (b.end ? day(b.end) : Infinity); });
@@ -401,22 +511,70 @@
             if (nodes.count.dataset.state !== state) nodes.count.dataset.state = state;
             if (nodes.main.tagName === 'BUTTON' && nodes.main.getAttribute('aria-label') !== nodes.label + '. ' + line) nodes.main.setAttribute('aria-label', nodes.label + '. ' + line);
         });
-        due.sort(function (a, b) { return (a.end ? day(a.end) : Infinity) - (b.end ? day(b.end) : Infinity); });
-        var section = overview.section, status = section.querySelector('.univer-app-dist-due-status'), list = section.querySelector('.univer-app-dist-due-list');
-        setText(section.querySelector('.univer-app-dist-due-title'), text().due + (due.length ? ' · ' + due.length : ''));
-        setText(status, waitingFor ? text().checking : [due.length ? '' : text().noDue, failed ? text().failed : ''].filter(Boolean).join('. '));
-        setHidden(status, !status.textContent);
-        var signature = due.map(function (item) { return item.href + item.title + item.end; }).join('|') + language;
-        if (list.dataset.signature === signature) return;
-        list.dataset.signature = signature; list.textContent = '';
-        due.forEach(function (item) {
-            // The list item wraps the link, so screen readers still announce a link.
-            var entry = el('div'), link = el('a', 'univer-app-dist-due-item'); entry.setAttribute('role', 'listitem'); link.href = item.href;
-            var soon = item.end && day(item.end) - today() <= 86400000;
-            if (soon) link.dataset.soon = 'true';
-            link.append(el('span', 'univer-app-dist-due-name', item.title), el('span', 'univer-app-dist-due-meta', [item.course, item.end ? deadline(item.end) : ''].filter(Boolean).join(' · ')));
-            entry.appendChild(link); list.appendChild(entry);
+    }
+    // One panel for every discipline's tasks: cached results show at once, the rest follow; Refresh rereads them all in
+    // the same panel, and a failed course leaves a named retry state instead of an endless "checking".
+    function startOverview(disciplines, view, force) {
+        var term = termKey();
+        if (!term) return;
+        var key = language + '|' + term + '|' + disciplines.map(function (entry) { return entry.discipline; }).join(',');
+        var previous = overview;
+        if (previous && previous.key === key && !force) {
+            if (view && view.isConnected) { previous.anchor = view; view.before(previous.box.section); }
+            paint(); return;
+        }
+        var box = previous && previous.key === key ? previous.box : tasksBox('univer-app-dist-due');
+        if (previous) { previous.controller.abort(); if (previous.key !== key) previous.box.section.remove(); }
+        var controller = new AbortController(), run = limiter(3), cache = stored();
+        var current = overview = {key:key, controller:controller, results:new Map(), names:new Map(), box:box, anchor:view,
+            view: previous && previous.key === key ? previous.view : 'open'};
+        box.refresh.onclick = function () {
+            if (overview === current && current.anchor.isConnected) startOverview(disciplines, current.anchor, true);
+        };
+        setText(box.refresh, text().refresh);
+        view.before(box.section);
+        disciplines.forEach(function (entry) {
+            current.names.set(entry.discipline, entry.name);
+            var known = force ? null : cachedCourse(cache, entry.name, entry.discipline, term);
+            current.results.set(entry.discipline, known);
+            if (known) return;
+            tasksOf(entry.discipline, term, controller.signal, run, cache, force).then(function (result) {
+                if (controller.signal.aborted || overview !== current) return null;
+                if (!result.partial) store('courses', language + '|' + planPath(entry.discipline, term),
+                    {at:Date.now(), items:result.items, tasks:result.tasks, plans:result.plans, name:entry.name}, 120);
+                return result;
+            }, function (error) { return controller.signal.aborted ? null : {error:true}; }).then(function (result) {
+                if (controller.signal.aborted || overview !== current) return;
+                current.results.set(entry.discipline, result);
+                window.__univerMobileV1 ? window.__univerMobileV1.mutate(paint) : paint();
+            });
         });
+        paint();
+    }
+    function paint() {
+        if (!overview) return;
+        var box = overview.box, waiting = 0, failed = [], items = [];
+        overview.results.forEach(function (result, id) {
+            if (!result) { waiting++; return; }
+            if (result.error) { failed.push(overview.names.get(id)); return; }
+            if (result.partial) failed.push(overview.names.get(id));
+            result.items.forEach(function (item) { items.push({title:item.title, end:item.end, href:item.href, course:overview.names.get(id)}); });
+        });
+        var groups = grouped(items), counts = {open:groups.open.length, closed:groups.closed.length};
+        var loading = waiting > 0;
+        box.section.dataset.state = loading ? 'loading' : failed.length ? 'failed' : 'ready';
+        setText(box.title, (overview.view === 'closed' ? text().closedHeading : text().due) + (counts[overview.view] ? ' · ' + counts[overview.view] : ''));
+        setText(box.status, loading ? text().checkingCourse(overview.results.size - waiting, overview.results.size) : failed.length ? text().failed : '');
+        setHidden(box.status, !box.status.textContent);
+        setText(box.failed, failed.join(', '));
+        setHidden(box.failed, !failed.length);
+        box.refresh.disabled = loading;
+        renderTabs(box, overview.view, counts, function (next) { overview.view = next; paint(); });
+        // An empty tab names its emptiness only when every course was really checked.
+        var certain = !loading && !failed.length;
+        renderList(box, 'open', groups.open, certain ? text().noDue : '');
+        renderList(box, 'closed', groups.closed, certain ? text().noClosed : '');
+        paintCards();
     }
     // A discipline's weeks: its tasks first, empty weeks folded.
     var weeksExpanded = false;
@@ -434,54 +592,66 @@
         toggle.addEventListener('click', function () { weeksExpanded = !weeksExpanded; window.__univerMobileV1 ? window.__univerMobileV1.mutate(sync) : sync(); });
         record.view.after(toggle); record.extra.push(toggle); sync();
     }
-    function weekLink(item) {
-        var entry = el('div'), link = el('a', 'univer-app-dist-due-item'); entry.setAttribute('role', 'listitem'); link.href = item.href;
-        var open = !item.end || day(item.end) >= today();
-        if (!open) link.dataset.closed = 'true'; else if (item.end && day(item.end) - today() <= 86400000) link.dataset.soon = 'true';
-        link.append(el('span', 'univer-app-dist-due-name', item.title), el('span', 'univer-app-dist-due-meta', [item.context,
-            item.end ? (open ? deadline(item.end) : text().closed + ' ' + item.end.slice(0, 5)) : ''].filter(Boolean).join(' · ')));
-        entry.appendChild(link); return entry;
-    }
-    // All tasks of the discipline, read from the task lists of the weeks that have any; open ones first, by deadline.
-    function startWeekTasks(record, entries) {
+    // All tasks of the discipline, read from the task lists of the weeks that have any; open and closed are two tabs of
+    // one panel, and Refresh rereads them without adding a second panel.
+    function startWeekTasks(record, entries, force) {
         var match = location.pathname.match(/^\/student\/discussion\/acpos\/week\/list\/(\d+)\/(\d+)\/(\d{4})\/(\d{1,2})\/?$/);
         if (!match) return;
         var plan = match[1], discipline = match[2], term = match[3] + '/' + match[4];
         var busy = entries.filter(function (entry) { return entry.kind === 'week' && entry.tasks > 0 && /^\d+$/.test(entry.id); });
         var key = language + '|' + location.pathname + '|' + busy.map(function (entry) { return entry.id + ':' + entry.tasks; }).join(',');
+        var previous = weekTasks;
         // A rebuilt week list keeps the tasks already read for it.
-        if (weekTasks && weekTasks.key === key) { record.view.before(weekTasks.section); return; }
-        if (weekTasks) { weekTasks.controller.abort(); weekTasks.section.remove(); }
-        var controller = new AbortController(), run = limiter(3);
-        var section = el('section', 'univer-app-dist-due univer-app-dist-week-tasks'), status = el('p', 'univer-app-dist-due-status'), list = el('div', 'univer-app-dist-due-list');
-        status.setAttribute('role', 'status'); list.setAttribute('role', 'list');
-        section.append(el('h2', 'univer-app-dist-due-title', text().courseTasks), status, list);
-        record.view.before(section);
-        var state = weekTasks = {key:key, controller:controller, section:section};
-        setText(status, busy.length ? text().checking : text().noCourseTasks);
-        if (!busy.length) return;
+        if (previous && previous.key === key && !force) {
+            previous.box.refresh.onclick = function () {
+                if (weekTasks === previous && record.view.isConnected) startWeekTasks(record, entries, true);
+            };
+            record.view.before(previous.box.section); paintWeeks(); return;
+        }
+        var box = previous && previous.key === key ? previous.box : tasksBox('univer-app-dist-due univer-app-dist-week-tasks');
+        if (previous) { previous.controller.abort(); if (previous.key !== key) previous.box.section.remove(); }
+        var state = weekTasks = {key:key, controller:new AbortController(), box:box,
+            view: previous && previous.key === key ? previous.view : 'open', items:null, partial:false};
+        box.refresh.onclick = function () {
+            if (weekTasks === state && record.view.isConnected) startWeekTasks(record, entries, true);
+        };
+        setText(box.refresh, text().refresh);
+        record.view.before(box.section);
+        if (!busy.length) { state.items = []; paintWeeks(); return; }
+        paintWeeks();
+        var run = limiter(3), cache = stored();
         Promise.all(busy.map(function (entry) {
             var href = '/student/discussion/task/list/' + plan + '/' + discipline + '/' + term + '/' + entry.id + '/';
-            return run(function () { return fetchPage(href, controller.signal); }).then(function (doc) {
-                return taskRows(doc).map(function (found) {
-                    return {title:found.title, end:found.end, context:labelWeek(entry.week), href:/^\d+$/.test(found.id) ? taskPath(found.id, plan, discipline, term, entry.id) : href};
-                });
-            }, function () { return null; });
-        })).then(function (found) {
-            if (controller.signal.aborted || weekTasks !== state) return;
-            var items = [].concat.apply([], found.filter(Boolean)).sort(function (a, b) {
-                var openA = !a.end || day(a.end) >= today(), openB = !b.end || day(b.end) >= today();
-                if (openA !== openB) return openA ? -1 : 1;
-                return (a.end ? day(a.end) : Infinity) - (b.end ? day(b.end) : Infinity);
+            return readTasks(href, {id:entry.id, tasks:entry.tasks, end:entry.until}, state.controller.signal, run, cache, force, function (id) {
+                return /^\d+$/.test(id) ? taskPath(id, plan, discipline, term, entry.id) : href;
+            }).then(function (items) {
+                return items.map(function (item) { return {title:item.title, end:item.end, href:item.href, context:labelWeek(entry.week)}; });
+            }, function (error) {
+                if (state.controller.signal.aborted) throw error;
+                state.partial = true; return null;
             });
-            var paintTasks = function () {
-                setText(section.querySelector('.univer-app-dist-due-title'), text().courseTasks + (items.length ? ' · ' + items.length : ''));
-                setText(status, found.some(function (part) { return part === null; }) ? text().partial : items.length ? '' : text().noCourseTasks);
-                setHidden(status, !status.textContent);
-                list.textContent = ''; list.append.apply(list, items.map(weekLink));
-            };
-            window.__univerMobileV1 ? window.__univerMobileV1.mutate(paintTasks) : paintTasks();
-        });
+        })).then(function (found) {
+            if (state.controller.signal.aborted || weekTasks !== state) return;
+            state.partial = state.partial || found.some(function (part) { return part === null; });
+            state.items = [].concat.apply([], found.filter(Boolean));
+            window.__univerMobileV1 ? window.__univerMobileV1.mutate(paintWeeks) : paintWeeks();
+        }, function () {});
+    }
+    function paintWeeks() {
+        var state = weekTasks; if (!state) return;
+        var box = state.box, items = state.items || [], groups = grouped(items), counts = {open:groups.open.length, closed:groups.closed.length};
+        var loading = state.items === null;
+        box.section.dataset.state = loading ? 'loading' : state.partial ? 'failed' : 'ready';
+        setText(box.title, text().courseTasks + (items.length ? ' · ' + items.length : ''));
+        setText(box.status, loading ? text().checking : state.partial ? text().partial : '');
+        setHidden(box.status, !box.status.textContent);
+        setText(box.failed, ''); setHidden(box.failed, true);
+        box.refresh.disabled = loading;
+        renderTabs(box, state.view, counts, function (next) { state.view = next; paintWeeks(); });
+        // An empty tab names its emptiness only when every week was really read.
+        var certain = !loading && !state.partial;
+        renderList(box, 'open', groups.open, certain ? text().noCourseTasks : '');
+        renderList(box, 'closed', groups.closed, certain ? text().noClosed : '');
     }
     // Task page (task/preview): one readable card instead of the two-column information table.
     // The site writes the task as label spans followed by values ("Название задания:" text, "Автор:" text…).
@@ -593,8 +763,8 @@
         unmark();
         if (help) { if (help.home.parentNode) help.home.replaceWith(help.panel); help.box.remove(); help = null; }
         if (facts) { facts.box.remove(); facts = null; }
-        if (overview) { overview.controller.abort(); overview.section?.remove(); overview = null; }
-        if (weekTasks) { weekTasks.controller.abort(); weekTasks.section.remove(); weekTasks = null; }
+        if (overview) { overview.controller.abort(); overview.box.section.remove(); overview = null; }
+        if (weekTasks) { weekTasks.controller.abort(); weekTasks.box.section.remove(); weekTasks = null; }
         if (task) { task.box.remove(); task = null; }
         owned.forEach(function (node) { node.remove(); }); owned = [];
         taskCards.clear();
